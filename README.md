@@ -1,6 +1,6 @@
 # VGP Tools: The VGP tool kit and formats
 
-## _Author:  Gene Myers_
+## _Author:  Gene Myers, Richard Durbin_
 ## _Date:   February 15, 2019_
 
 VGP-Tools is a collection of tools that operate on DNA sequencing data encoded in a collection
@@ -99,14 +99,20 @@ be explicitly described in each of the format descriptions.
 
 The syntax and meaning of each line is as follows, where <string> denotes a length followed after white space by a sequence of characters of that length.
 ```
-   + S <int>		total bases of sequence data in file
-   + P <int:p>		total number of read pairs
+   + P <int>            total number of read pairs in file
+   + F <int>		total bases of sequence data in file in forward reads
+   + R <int>		total bases of sequence data in file in reverse reads
+   @ P <int>		maximum number of read pairs in any read group
    @ F <int>		maximum forward read length
    @ R <int> 		maximum reverse read length
-   F <string>		forward sequence
-   Q <string>		QV scores
-   R <string>		reverse sequence
+
+   G <string:group_header> <string:file> <int:r>   read group with r reads
+   F <string>                                      forward sequence
+   Q <string>                                      QV scores
+   R <string>                                      reverse sequence
 ```
+The G-line contains a header string for the group as well as the file name the group was read
+in from.
 The F and R strings are over the alphabet A, C, G, T, and N.  Each symbol of a Q string is the
 ASCII character 33+qv where qv is the Phred Score.  So Q-strings are over the 94 printable ASCII
 characters [!-~] and correspond to the range 0 to 93.  IUPAC ambiguity codes, except for N,
@@ -114,16 +120,18 @@ are not supported, any unsupported code is turned into an N by VGP tools.  DNA s
 upper or lower case.
 
 The + and @ lines are header lines and must proceed the data lines.  The data portion consists of
-F- and R-lines optionally followed by a corresponding pair of Q-lines.  In terms of a regular
+a G-line indicating the number of reads in a group, followed by that many F- and R-lines
+optionally followed by a corresponding pair of Q-lines.  In terms of a regular
 expression:
 ```
-      (<+-line> | <@-line>)+ (<F-line><R-line>[<Q-line>2])p
+      (<+-line> | <@-line>)+ (<G-line> (<F-line><R-line>[<Q-line>2])r)*
 ```
-Provenance lines beginning with ! as defined in the prolog may also occur in the header section
-of the file.
+Provenance lines beginning with ! as defined in the prolog are also expected to occur in the
+header section of the file.
 
 **VGPpair** is a VGP tool that takes two .fastq files containing corresponding forward and reverse
-reads (the usual bioinformatic convention for such) and produces a .irp from the inputs. 
+reads (the usual bioinformatic convention for such) and produces a .irp from the inputs.  Reads
+with the same header prefix are placed in a given group. 
 
 ## 10X Read Cloud files, .10x
 
@@ -137,10 +145,11 @@ after white space by a sequence of characters of that length.
    @ S <int>		maximum number of read bases in any cloud
    @ F <int>		maximum forward read length
    @ R <int> 		maximum reverse read length
-   C <int:n> <string:bar>	the next n read (pairs) are in the cloud with the given barcode
-   F <string>		forward sequence
-   Q <string>		QV scores
-   R <string>		reverse sequence
+
+   C <int:n> <string:bar>    the next n read (pairs) are in the cloud with the given barcode
+   F <string>                forward sequence
+   Q <string>                QV scores
+   R <string>	             reverse sequence
 ```
 The F, R and Q lines are exactly as described for an .irp file previously.  Provenance lines may
 occur in the header.  The C-lines group read pair lines into clouds which are all the read pairs
@@ -154,13 +163,97 @@ expression:
 ```
 (<+-line>|<@-line>)+ (<C-line> (<F-line><R-line>[<Q-line>2])n )c
 ```
-Provenance lines beginning with ! as defined in the prolog may also occur in the header section
-of the file.
+Provenance lines beginning with ! as defined in the prolog are also expected to occur in the
+header section of the file.
 
 **VGPcloud** is a VGP tool that takes an .irp-file containing the bar-coded Illumina read pairs
 and re-organizes the data into clouds and removes the bar codes.  It understands how barcodes
 are encoded in the forward read of each pair, and takes into account potential errors in the
 barcode sequence.
+
+# Bionano Restriction Maps, .brm
+
+The syntax and meaning of each line is as follows, where <string> denotes a length followed after
+white space by a sequence of characters of that length.  One should be particularly careful to
+observe the subscripted meta-values.
+
+= <int:c> <string1> .. <stringc>                number of channels and their recognition sites
++ D <int:t∈[1,c]> <int>	                        total sites for channel t
++ M <int:m>                                     total number of molecules in file
+@ D <int:t∈[1,c]> <int>                         max. number of sites for channel t in any molecule
+
+M <int:n1> .. <int:nc>                          molecule, number of sites in each channel
+D <int:t∈[1,c]> <real1> … <realnt> <real:len>   site locations in digest + length of molecule
+N <int:t∈[1,c]> <real1> … <realnt>              SNR of each site in digest
+A <int:t∈[1,c]> <real1> … <realnt>              Average intensity of sites in digest
+
+The =-line declares how many distinct probes were used (typically only 1) and their recognition
+sequence.  The other header lines tell one how many molecules were mapped and for each
+probe/channel, the total number of sites in the file, and the maximum number of sites that
+occurred in any molecule.  The data portion of the file consists of a sequence of molecule
+descriptions, where the first M-line tells one how many sites there are in that molecule for
+each probe.  The ensuing lines then give for each channel, the location of the sites and
+length of the molecule (D-line) to within the accuracy of the machine, the SNR at each site
+(N-line), and the average intensity of the spot at each site (A-line).  So for example, if
+a file encodes maps for 2 channels, then each molecule is described by 7 lines.  The lists
+of site information are presumed to be in order across each molecule, so for example, the
+positions of the D-line should always be in increasing order ending with the length of the
+molecule.  Recognition sites are assumed to be simple sequences.  The D,N, and A lines can
+occur in any order within a molecule description.
+
+The = header line must be first followed by + and @ lines header lines that in turn
+must proceed the data lines.  The data portion
+consists of molecule description each of which begins with an M-line followed by D-, N-,
+and A-lines for each channel.
+```
+<=-line> (<+-line>|@-line)+ (<M-line> (<D-line><N-line><A-line>)c )m
+```
+Provenance lines beginning with ! as defined in the prolog are also expected to occur in the
+header section of the file.
+
+**VGPdigest** is a VGP tool that takes a Bionano .bnx-file as input and extracts the information
+to make a .brm-file.
+
+## PacBio Long Reads, .pbr
+
+The syntax and meaning of each line is as follows, where <string> denotes a length followed
+after white space by a sequence of characters of that length.  One should be particularly
+careful to observe the subscripted meta-values.
+```
++ R <int>					total number of reads in file
++ C <int:c>					total number of SMRT cells in file
++ S <int>					total bases of sequence in file
+@ C <int>					max. number of bases in a SMRT cell
+@ R <int>					max. number of reads in a SMRT cell
+@ S <int>					max. number of bases in a read
+
+G <string:SMRT_header> <string:file_name> <int:r>	        SMRT cell with r reads
+L <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	Read well and pulse range
+F <string>				                	sequence
+N <real:A> <real:C> <real:G> <real:T>                   	SNR in each base channel for read
+A <string>				                	capped pulse widths
+```
+The data is grouped into SMRT cells by G-lines that begin each group and declare how many reads
+were produced in that cell.  Each read is described by an L- and S-line and optionally an
+N- and A-line.  The L-line gives the well and pulse range from which the sequence in the F-line
+was extracted.  If present, the N-line give the average SNR in the channels for each base and
+the A-line gives the capped pulse width for each base as the character 1, 2, 3 or 4.  Pulse
+widths larger than 4 are clipped to 4 as Arrow does not treat widths larger than 4 differently.
+Basically the very short pulses are indications of potential error but any pulse over 4 units
+long is almost certainly a good call.  The A and S strings for a given read have the same
+length, therefore the S header information applies also to the A strings.
+
+The + and @ lines are header lines and must proceed the data lines.  The data portion consists of
+a C-line declaring how many read pairs are in the ensuing read group, followed by that many 
+l- and F-lines optionally followed by an N- and A-line.  In terms of a regular
+expression:
+```
+(<+-line>|@=-line)+ (<C-line> (<L-line><F-line>[<N-line><A-line>])r)c
+```
+Provenance lines beginning with ! as defined in the prolog are also expected to occur in the
+header section of the file.
+**VGPextract** is a VGP tool that takes one or more Pacbio subreads.bam or .sam files as input
+and extracts the information to make a .pbr file.
 
 # VGP Tool Manuals
 
