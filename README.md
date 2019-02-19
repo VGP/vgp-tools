@@ -100,31 +100,34 @@ be explicitly described in each of the format descriptions.
 The syntax and meaning of each line is as follows, where <string> denotes a length followed after white space by a sequence of characters of that length.
 ```
    + P <int>            total number of read pairs in file
-   + F <int>		total bases of sequence data in file in forward reads
-   + R <int>		total bases of sequence data in file in reverse reads
-   @ P <int>		maximum number of read pairs in any read group
-   @ F <int>		maximum forward read length
-   @ R <int> 		maximum reverse read length
+   + S <int>		total bases of sequence data in file
+   + G <int>            total number of groups in the file
+   % P <int>		maximum number of read pairs in any read group
+   % S <int>		maximum number of bases in any read group
+   @ S <int>		maximum read length in any read
 
-   G <string:group_header> <string:file> <int:r>   read group with r reads
-   F <string>                                      forward sequence
-   Q <string>                                      QV scores
-   R <string>                                      reverse sequence
+   G <string:lane_header> <string:file> <int:r>   read group with r read pairs
+   P                                              a pair follows immediately
+   S <string>                                     forward and reverse sequence
+   Q <string>                                     QV scores
 ```
-The G-line contains a header string for the group as well as the file name the group was read
-in from.
-The F and R strings are over the alphabet A, C, G, T, and N.  Each symbol of a Q string is the
+The G-line contains a header string for the group which is the standard Illumina through to the
+lane number, and there is a group for each lane.  The G-line also gives the 2 file names the group
+was read in from (separated by a |) and the number of read pairs that follow.
+The P string simply indicates the next two S-lines are a forward/reverse pair is present primarily
+for human interpretability.
+The S strings are over the alphabet A, C, G, T, and N.  Each symbol of a Q string is the
 ASCII character 33+qv where qv is the Phred Score.  So Q-strings are over the 94 printable ASCII
 characters [!-~] and correspond to the range 0 to 93.  IUPAC ambiguity codes, except for N,
 are not supported, any unsupported code is turned into an N by VGP tools.  DNA strings may be
 upper or lower case.
 
-The + and @ lines are header lines and must proceed the data lines.  The data portion consists of
-a G-line indicating the number of reads in a group, followed by that many F- and R-lines
-optionally followed by a corresponding pair of Q-lines.  In terms of a regular
+The +, % and @ lines are header lines and must proceed the data lines.  The data portion consists of
+a G-line indicating the number of reads in a group, followed by that many P-lines, and S-line pairs,
+and optionally followed by a corresponding pair of Q-lines.  In terms of a regular
 expression:
 ```
-      (<+-line> | <@-line>)+ (<G-line> (<F-line><R-line>[<Q-line>2])r)*
+      (<+-line> | <%-line> | <@-line>)+ (<G-line> (<P-line><S-line>[<Q-line>]<S-line>[<Q-line>])r)*
 ```
 Provenance lines beginning with ! as defined in the prolog are also expected to occur in the
 header section of the file.
