@@ -293,7 +293,28 @@ A <string>				                	capped pulse widths
 ```
 
 
-## Alignment/assembly files, .ala
+## Sequence Match List file, .sml
+
+
+## Sequence file, .seq
+
+
+## Scaffolding information file, .scf
+
+```
+< <string:contig_file_name> <int:nseqs>
+B <int:seq> <int:start> <int:end>
+Q <int:phred_confidence>	additional free information after phred score
+J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>  
+G <int:gap>
+Q <int:phred_confidence>
+```
+
+## Scaffolding List file, .slf
+
+
+
+
 
 We view the assembly task as choice of a subset of read alignments that
 result in a consistent layout.  These can then be used to generate
