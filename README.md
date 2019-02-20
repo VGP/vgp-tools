@@ -17,26 +17,31 @@ encoded in such a file (e.g. myfish.pbr)
 **.brm**	An encoding of the Bionano restriction maps for a collection of molecules.
 
 **.irp**	An encoding of Illumina read pairs (linked by a Hi-C protocol, but applies
-more generally to any read pair protocol).
+more generally to any read pair protocol.
 
 **.10x**	An encoding of lllumina read 10X clouds. 
 
-The VGP tool library contains a program that takes the files produced by each instrument supplier
-and converts it into the relevant VGP format and file type above.  Then we support downstream assembly-related file types:
+The VGP tool library contains programs that takes the files produced by each instrument supplier
+and converts it into the relevant VGP format and file type above.  Then, more importantly, we support
+the following downstream file types that allow one to encode assemblies, scaffolds, and important
+intermediates therein:
 
 **.sxs** a collection of sequence to sequence matches.
 
-**.sxl** containing lists of matches that be used to represent, for example, the matches that should contribute to an assembly
+**.sxr** a collection of sequence to restriction map matches.
 
-**.seq** a simple collection of sequences, used to represent contigs
+**.sxl** subsets of matches that define a coherent object, e.g. an assembly contig, a haplotype branch, etc.
+
+**.seq** a simple collection of sequences, used to represent contigs (effectively a basic type)
 
 **.scf** a collection of scaffolding suggestsions representing putative joins and breaks between contigs
 
-**.scl** contains lists of scaffold suggestions, which can be used for example to generate a new set of contigs, or a set of putative chromosomes (two different files for the different haplotypes).
+**.scl** subsets of scaffold suggestions, which can be used for example to generate a new set of contigs,
+         or a set of putative chromosomes (two different files for the different haplotypes).
 
-The VGP format encoding of
-each file type is documented in a separate chapter of this document following the overview
-given here.  The formal definition of all currently valid specs is provided in the code for the utility **VGPformatCheck** which also provides utilities to reconstruct headers.  The design of VGP formats is based on the following principles:
+The VGP format encoding of each file type is documented in a separate chapter of this document following the overview
+given here.  The formal definition of all currently valid specs is provided in the code for the utility **VGPformatCheck**
+which also provides utilities to reconstruct headers.  The design of VGP formats is based on the following principles:
 
 1.	The format should be trivial to parse as input.  All the burden of encoding is placed on the software that produces the formatted file.
 
@@ -62,103 +67,138 @@ any object or object collection should be given before the first object of that 
 
 Following these principles, VGP formats uses a very simple “1-code” schema in which the data is
 encoded in an ASCII file in a sequence of lines where the first character of each line determines
-what kind of object the line encodes.  Consider as a working example,
-the following simple Illumina Read Pair (.irp) file:
+what kind of information the line encodes.  Consider as a working example,
+the following Illumina Read Pair (.irp) file:
 
 ```
-	. VGPirp 1 0 file type, major and minor version
-	# P 2        number of read pairs in file
-	# S 4        number of sequences in file
-	@ S 5        maximum number of bp’s in a read
-	+ S 17       total number of bp's in file
-	P            separator for read pairs - helps 
-	S 5 acgta    forward sequence of pair 1
-	S 3 gtt      reverse sequence of pair 1
+	. irp 1.0              file type, major and minor version
+	# ! 1                  number of provenance lines in the file
+	# P 2                  number of read pairs in file
+	# S 4                  number of sequences in file
+	@ S 5                  maximum number of bp’s in a read
+	+ S 17                 total number of bp's in file
+	! VGPpair 1.0 ...      provenance line saying how file arose
+	P                      separator for read pairs - helps human interpretability 
+	S 5 acgta              forward sequence of pair 1
+	S 3 gtt                reverse sequence of pair 1
 	P
 	S 4 gcta
 	S 5 ggtac 
 ```
-
-Non-alphabetic "1-code" symbols indicate header lines, which must precede data lines denoted by alphabetic symbols. The first line must be a '.' header line confirming the file type. Subsequent header symbols used here are # for the number of lines of a particular type, @ for the maximum
-number of list items (bases in this case) on a line of the given type, and + for the total
-number of list items on lines of this type. In this file P data lines indicate read pairs, and S lines sequence
+Non-alphabetic "1-code" symbols indicate header lines, which must precede data lines that always begin with an
+alphabetic "1-code".  In this file P data lines indicate read pairs, and S lines sequence
 objects.  Tokens on a line are separated by a single whitespace character (space or tab).  The
 1-code and subsequent tokens determine when the encoding of information on a line is at an end,
 therefore optional additional information to the end of the line provides an extensibility
 mechanism where one can add auxiliary information if desired.  In the example above, the
 comments following the information on each line are ignored by a VGP parser.
 
-In line with principle 8, every VGP formatted file should have a provenance line in its header
-that documents how the file came to be.  We illustrate how we formally describe VGP formats
-using this multi-line type as an example.  The first line begins with a ! and is followed by
-the number of ensuing lines that will document a step in the processing that led to the current
-file.  We use basically a “casual” context free rewrite rule where (a) line breaks are indicated
-by actually using lines in the rule,  (b) tokens in angle brackets can define their value,
-e.g. \<int:n\> denotes that n holds the value of the integer, and (c) token names can be indexed
-to indicate count, e.g. step.3:  ** RICHARD COMMENT: I WANT TO CHANGE THIS **
+Considerable effort is invested on headers in VGP-formats in keeping with principles 3 and 8.
+The first header line must always be a '.' line confirming the file type and specifying the major and minor
+version numbers separated by a '.'.  Additional header lines give information about the number of items
+in the file (#-lines), the maximum length of lists (@-lines), and the total number of items in a given list class
+(+-lines).  In addition, provenance lines (!-lines) inform one about how the particular file came to be.
 
+We now introduce how we formally describe VGP formats using the ubiguitous header lines as an example.
+Using a "casual" context free grammar rule the inital file type declaration or '.'-line has the syntax:
 ```
-    <!-line> = ! <int:n>
-                   <step.1>
-                   . . .
-                   <step.n>
+    <.-line> = . <file_suffix> <int:major>.<int:minor>
 ```
-Each step-line contains 4 strings giving the program name, version #, command line that was
-executed and date and time it was run.  Each \<string\>, as per principle 2, is an integer followed,
-possibly after white space, by that number of characters given by the integer.  The style of our
-rewrite rules for this are as follows:
+where \<file_suffix\> is one of the 10 3-letter file suffixes above.
 
+There are 4 header line types -- #, +, @, and % -- that allow one to specify the number, total size,
+max size, across a file, and also across a group, respectively.  The 3 base types all have the syntax:
+```
+    <size_header> = [#+@] <symbol:S> <int>
+```
+\#-lines tell you the number of \<S\>-lines in the file.  For line types that encode a list of items, such as
+string (a list of characters) or say a list of digest sites, a +-line tells you the total number of items
+in all the lists in the file, e.g. "<code>+ S 17</code>" in the example above indicates that altogether the
+sequences in the file total 17 bases.  Similarly, an @-line indicates the length of the largest list that
+occurs in any given line of the specified type.  Lastly, there is the oft occuring concept of partitioning a file into
+groups of objects, e.g. all the read pairs in a flow-cell lane, and for these the % designator indicates the
+maximum number of objects or total size of list objects within any given group.  The syntax for these lines is:  
+```
+    <size_header> = % <symbol:s> [#+] <symbol:S> <int>
+```
+where \<s\> is the group line designator (always a lower case letter by convention) and \<S\> is the line
+type in question.
+
+Another important header line type indicates that a given file should be included and has the following syntax
+```
+    <'<'-line> = '<' <string:file_name>
+```
+The effect is as if the data portion of the named file had been inserted at this point and any size information in its header
+had been appropriately factored into the header of the current file.  Note carefully, that the indexing/numbering of
+lines/objects is according to their order after inclusion as per principle 6.
+
+The final header line type are provenance or '!'-lines that record a processing step that was involved
+in producing the current file.  Each line contains 3 strings and 2 integers giving (a) the program name, (b) the major
+and minor version numbers separated by a '.', (c) the command line that was executed, and (d) the date and time it
+was run.  Each \<string\>, as per principle 2, is an integer followed, possibly after white space, by that number
+of characters given by the integer.
 ```
     <step>   = <string:name> <string:version> <string:command> <string:date>
-    <string> = <int:n> <char>n
+    <string> = <int:n> <char> ^n
 ```
-Provenance lines may be in the header section of any VGP-Format file and for brevity will not
-be explicitly described in each of the format descriptions.
+Since there can be multiple provenance lines in a header, one expects to see "<code># ! <int></code>" before any
+of these lines in order to know how many there are.
 
-Below we summarise proposed file types, dropping the generic header
-line types already introduced.  There are a few additional header
+Below we summarise the proposed file types, dropping the generic header
+line types already introduced above.  There are a few additional header
 line types that we will introduce as they become necessary.
 
 ## Illumina Read Pair files, .irp
 
+The data lines are as follows:
 ```
-   G <string:lane_header> <string:file> <int:r>  read group with r read pairs
-   P              a pair follows immediately
-   S <string>     forward and reverse sequence
-   Q <string>     QV scores in single character phred encoding (ASCII 33+q) 
+   g <int:r> <string:lane_header> <string:file>    read group with r read pairs
+
+   P                         a pair follows immediately
+   S <string>                forward and reverse sequence
+   Q <string>                QV scores in single character phred encoding (ASCII 33+q) 
 ```
-The G-line contains a header string for the group which is the standard Illumina read identifier through to the
-lane number, and there is a group for each lane.  The G-line also gives the file name or names the group
-was read in from (separated by a |) and the number of read pairs that follow.
-The P-line simply indicates the next two S-lines are a forward/reverse pair and is present
-primarily for human interpretability.
-The S strings are over the alphabet A, C, G, T, and N.  Each symbol of a Q string is the
+The data portion of a .irp file consists of a sequence of line bundles defining a read pair with group lines
+interspersed.  Each read pair is defined by a P-line followed by two S-lines given the forward and reverse
+sequences, and optionally two Q-lines giving the QV's for the sequences.  By convention the first S/Q-line is
+for the forward read and the second for the reverse read.  Between these bundles one may find interspersed
+g-lines that specify a user defined group of reads where the group consists off the next r-pairs of reads, where
+r is given by the first integer in the line.  This is followed by two strings, the first giving a user-selected
+name for the group, followed by a string giving the two source files separated by a '|'.
+In terms of a regular expression:
+```
+    (<g-line> | <P-line><S-line>[<Q-line>]<S-line>[<Q-line>]) *
+```
+
+The S strings are over the alphabet A, C, G, T.  Each symbol of a Q string is an
 ASCII character as in FASTQ.  So Q-strings are over the 94 printable ASCII
 characters [!-~] and correspond to the range 0 to 93.  IUPAC ambiguity codes, except for N,
 are not supported, any unsupported code is turned into an N by VGP tools.  DNA strings may be
 upper or lower case.
 
-In terms of a regular expression:
-```
-    (<G-line> (<P-line><S-line>[<Q-line>]<S-line>[<Q-line>]) ^r ) *
-```
+If group lines are present they do not need to form a partitioning of the data (i.e. every pair belongs
+to one and only one group), although this property is often true of the programs that produce groups
+in .irp's.
 
 **VGPpair** is a VGP tool that takes two .fastq files containing corresponding forward and reverse
 reads (the usual bioinformatic convention for such) and produces a .irp from the inputs.  Reads
-with the same header prefix are placed in a given group. 
+within the same lane are placed in a given group. 
 
 ## 10X Read Cloud files, .10x
 
+The data lines are as follows:
 ```
-   C <int:n> <string:bar>    the next n read (pairs) are in the cloud with the given barcode
+   c <int:n> <string:bar>    the next n read (pairs) are in the cloud with the given barcode
+
    P                         a pair follows immediately
    S <string>                forward and reverse sequence
    Q <string>                QV scores
 ```
-The P, S and Q lines are exactly as described for an .irp file previously.  The C-lines group read
+The P, S and Q lines are exactly as described for an .irp file previously.  The c-lines group read
 pair lines into clouds which are all the read pairs
 in which the forward read contained the indicated barcode sequence for the cloud (which is removed
-for the .10x file)
+for the .10x file).  In this case the c-lines are guaranteed to partition the read pairs (i.e. every
+read pair is guaranteed to be in one and only one cloud).
 
 In terms of a regular expression:
 ```
@@ -172,8 +212,10 @@ barcode sequence.
 
 ## PacBio Long Reads, .pbr
 
+The data lines are as follows:
 ```
-G <string:SMRT_header> <string:file_name> <int:r>	        SMRT cell with r reads
+g <int:r> <string:SMRT_header> <string:file_name>	        SMRT cell with r reads
+
 L <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	Read well and pulse range
 F <string>				                	sequence
 N <real:A> <real:C> <real:G> <real:T>                   	SNR in each base channel for read
@@ -191,7 +233,7 @@ length, therefore the S header information applies also to the A strings.
 
 In terms of a regular expression:
 ```
-(<+-line>|@=-line)+ (<C-line> (<L-line><F-line>[<N-line><A-line>])r)c
+   (<g-line> (<L-line><F-line>[<N-line><A-line>])r)c
 ```
 
 **VGPextract** is a VGP tool that takes one or more Pacbio subreads.bam or .sam files as input
@@ -205,6 +247,7 @@ currently see this in use.  As a consequence one should be particularly careful 
 *Richard: are we sure we really want to support this?  See below for an alternative**
 ```
 = <string>                     number of channels and their recognition sites
+
 M <read:len> <int:n>           molecule, length and number of sites
 D <real1> . . . realn>         site locations in digest
 N <real1> . . . realn>         SNR of each site in digest
@@ -291,7 +334,7 @@ of the file.
 # VGP Tool Manuals
 
 ```
-1. VGPpair [-vs] <forward:fastq> <reverse:fastq>
+1. VGPpair [-vsg] <forward:fastq> <reverse:fastq>
 ```
 
 VGPpair reads two correlated fastq files and outputs the pairs in .irp format to the
@@ -302,38 +345,33 @@ the suffix need not be given on the command line as VGPpair will automatically a
 appropriate suffix if it is not present.  That is, "<code>VGPpair foo1 foo2</code>" will
 operate on <code>foo1.fastq</code> and <code>foo2.fastq</code>.
 
-VGPpair requires that the files have been produced by standard Illumina software from
-their more basic .bcl files, and therefore the .fastq headers encode the instrument,
-flow cell, lane, etc. in fields between :'s where the data is in order of flow cell and
-lane.  VGPpair uses this imformation to group reads into lanes.
-
 The -v option asks VGPpair to output information on its progress to the standard error.
 The -s option asks VGPpair to *not* output the quality values or Q-lines, but just the
 forward and reverse sequences in F- and R-lines.
+The -g option asks VGPpair to group the data into lanes.  In this case the files must
+have been produced by standard Illumina software from their more basic .bcl files, and
+therefore the .fastq headers encode the instrument, flow cell, lane, etc. in fields
+between :'s where the data is in order of flow cell and lane.  VGPpair uses this
+information to group reads into lanes.
 
 VGPpair checks the syntax of the .fastq files but does not verify that the DNA and QV
 strings are over the appropriate symbols.
 
 ```
-2. VGPextract [-vaU] <data:subreads.[bam|sam]> ...
+2. VGPpacbio [-vaU] <data:subreads.[bam|sam]> ...
 ```
 
-VGPpair reads two correlated fastq files and outputs the pairs in .irp format to the
+VGPpacbio reads a sequence of Pacbio .bam or .sam files and outputs a .brp file to
 standard output.
 
-The input file names must have a .fastq suffix, e.g. somewhere/foo.fastq, however
-the suffix need not be given on the command line as VGPpair will automatically add the
-appropriate suffix if it is not present.  That is, "<code>VGPpair foo1 foo2</code>" will
-operate on <code>foo1.fastq</code> and <code>foo2.fastq</code>.
+The input file names must have a .bam or .sam suffix, e.g. somewhere/foo.bam, however
+the suffix need not be given on the command line as VGPpacbio will automatically add the
+appropriate suffix if it is not present.  That is, "<code>VGPpacbio foo1 foo2</code>" will
+operate on <code>foo1.bam</code> and <code>foo2.sam</code> if those are the files present.
 
-VGPpair requires that the files have been produced by standard Illumina software from
-their more basic .bcl files, and therefore the .fastq headers encode the instrument,
-flow cell, lane, etc. in fields between :'s where the data is in order of flow cell and
-lane.  VGPpair uses this imformation to group reads into lanes.
+The -v option asks VGPpacbio to output information on its progress to the standard error.
+The -a option asks VGPpacbio to  output the arrow information in N- and A-lines per bundle,
+the default is to not output this information.  The -U option requests that the DNA seuqences
+are in upper case (the default is lower case).
 
-The -v option asks VGPpair to output information on its progress to the standard error.
-The -s option asks VGPpair to *not* output the quality values or Q-lines, but just the
-forward and reverse sequences in F- and R-lines.
-
-VGPpair checks the syntax of the .fastq files but does not verify that the DNA and QV
-strings are over the appropriate symbols.
+Each file is forms a separate group in the output file.
