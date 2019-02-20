@@ -66,14 +66,14 @@ what kind of object the line encodes.  Consider as a working example,
 the following simple Illumina Read Pair (.irp) file:
 
 ```
-	. VGPirp 1  file type and version
-	# P 2       number of read pairs in file
-	# S 4       number of sequences in file
-	@ S 5       maximum number of bp’s in a read
-	+ S 17      total number of bp's in file
-	P           separator for read pairs - helps 
-	S 5 acgta   forward sequence of pair 1
-	S 3 gtt     reverse sequence of pair 1
+	. VGPirp 1 0 file type, major and minor version
+	# P 2        number of read pairs in file
+	# S 4        number of sequences in file
+	@ S 5        maximum number of bp’s in a read
+	+ S 17       total number of bp's in file
+	P            separator for read pairs - helps 
+	S 5 acgta    forward sequence of pair 1
+	S 3 gtt      reverse sequence of pair 1
 	P
 	S 4 gcta
 	S 5 ggtac 
