@@ -130,19 +130,17 @@ line types that we will introduce as they become necessary.
 The G-line contains a header string for the group which is the standard Illumina read identifier through to the
 lane number, and there is a group for each lane.  The G-line also gives the file name or names the group
 was read in from (separated by a |) and the number of read pairs that follow.
-The P string simply indicates the next two S-lines are a forward/reverse pair is present primarily
-for human interpretability.
+The P-line simply indicates the next two S-lines are a forward/reverse pair and is present
+primarily for human interpretability.
 The S strings are over the alphabet A, C, G, T, and N.  Each symbol of a Q string is the
 ASCII character as in FASTQ.  So Q-strings are over the 94 printable ASCII
 characters [!-~] and correspond to the range 0 to 93.  IUPAC ambiguity codes, except for N,
 are not supported, any unsupported code is turned into an N by VGP tools.  DNA strings may be
 upper or lower case.
 
-In terms of a regular
-expression:
-
+In terms of a regular expression:
 ```
-    (<G-line> (<P-line><S-line>[<Q-line>]<S-line>[<Q-line>])r)*
+    (<G-line> (<P-line><S-line>[<Q-line>]<S-line>[<Q-line>]) ^r ) *
 ```
 
 **VGPpair** is a VGP tool that takes two .fastq files containing corresponding forward and reverse
@@ -151,37 +149,21 @@ with the same header prefix are placed in a given group.
 
 ## 10X Read Cloud files, .10x
 
-The syntax and meaning of each line is as follows, where <string> denotes a length followed
-after white space by a sequence of characters of that length.
 ```
-   + S <int>		total bases of sequence data in file
-   + C <int:c>		total number of clouds in file
-   + P <int>		total number of read (pairs) in the file
-   @ P <int>		maximum number of read (pairs) in any cloud
-   @ S <int>		maximum number of read bases in any cloud
-   @ F <int>		maximum forward read length
-   @ R <int> 		maximum reverse read length
-
    C <int:n> <string:bar>    the next n read (pairs) are in the cloud with the given barcode
-   P                         boundary marker for read pair
-   S <string>                forward sequence
+   P                         a pair follows immediately
+   S <string>                forward and reverse sequence
    Q <string>                QV scores
-   S <string>	             reverse sequence
 ```
-The F, R and Q lines are exactly as described for an .irp file previously.  Provenance lines may
-occur in the header.  The C-lines group read pair lines into clouds which are all the read pairs
+The P, S and Q lines are exactly as described for an .irp file previously.  The C-lines group read
+pair lines into clouds which are all the read pairs
 in which the forward read contained the indicated barcode sequence for the cloud (which is removed
 for the .10x file)
 
-The + and @ lines are header lines and must proceed the data lines.  The data portion consists of
-a C-line declaring how many read pairs are in this cloud, followed by that many 
-F- and R-lines optionally followed by a corresponding pair of Q-lines.  In terms of a regular
-expression:
+In terms of a regular expression:
 ```
-(<+-line>|<@-line>)+ (<C-line> (<F-line><R-line>[<Q-line>2])n )c
+      (<C-line> (<S-line>[<Q-line>]<R-line>[<Q-line>]) ^n ) *
 ```
-Provenance lines beginning with ! as defined in the prolog are also expected to occur in the
-header section of the file.
 
 **VGPcloud** is a VGP tool that takes an .irp-file containing the bar-coded Illumina read pairs
 and re-organizes the data into clouds and removes the bar codes.  It understands how barcodes
@@ -190,15 +172,7 @@ barcode sequence.
 
 ## PacBio Long Reads, .pbr
 
-The syntax and meaning of each line is as follows, where <string> denotes a length followed
-after white space by a sequence of characters of that length.  One should be particularly
-careful to observe the subscripted meta-values.
-
 ```
-% C <int>					max. number of bases in a SMRT cell
-@ R <int>					max. number of reads in a SMRT cell
-@ S <int>					max. number of bases in a read
-
 G <string:SMRT_header> <string:file_name> <int:r>	        SMRT cell with r reads
 L <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	Read well and pulse range
 F <string>				                	sequence
@@ -215,39 +189,27 @@ Basically the very short pulses are indications of potential error but any pulse
 long is almost certainly a good call.  The A and S strings for a given read have the same
 length, therefore the S header information applies also to the A strings.
 
-The + and @ lines are header lines and must proceed the data lines.  The data portion consists of
-a C-line declaring how many read pairs are in the ensuing read group, followed by that many 
-l- and F-lines optionally followed by an N- and A-line.  In terms of a regular
-expression:
+In terms of a regular expression:
 ```
 (<+-line>|@=-line)+ (<C-line> (<L-line><F-line>[<N-line><A-line>])r)c
 ```
-Provenance lines beginning with ! as defined in the prolog are also expected to occur in the
-header section of the file.
+
 **VGPextract** is a VGP tool that takes one or more Pacbio subreads.bam or .sam files as input
 and extracts the information to make a .pbr file.
 
 # Bionano Restriction Maps, .brm
 
-This file encodes the primary Bionano data that is required for downstream map building or alignment to sequence. It refects the current BioNano .bnx format in supporting multiple enzymes used concurrently, although we don't currently see this in use.  As a consequence one should be particularly careful to observe the subscripted meta-values.  **Richard: are we sure we really want to support this?  See below for an alternative**
-
+This file encodes the primary Bionano data that is required for downstream map building or alignment to sequence.
+It refects the current BioNano .bnx format in supporting multiple enzymes used concurrently, although we don't
+currently see this in use.  As a consequence one should be particularly careful to observe the subscripted meta-values.
+*Richard: are we sure we really want to support this?  See below for an alternative**
 ```
-= <int:c> <string1> .. <stringc>     number of channels and their recognition sites
-+ D <int:t∈[1,c]> <int>	             total sites for channel t
-+ M <int:m>                          total number of molecules in file
-@ D <int:t∈[1,c]> <int>              max. number of sites for channel t in any molecule
-
-M <real:len> <int:n1> .. <int:nc>    molecule length, number of sites in each channel
-D <int:t∈[1,c]> <int:n> <real>n      length and locations for site n
-N <int:t∈[1,c]> <real1> .. <realnt>  signal:noise ratio of each site
-A <int:t∈[1,c]> <real1> .. <realnt>  average intensity of sites 
+= <string>                     number of channels and their recognition sites
+M <read:len> <int:n>           molecule, length and number of sites
+D <real1> . . . realn>         site locations in digest
+N <real1> . . . realn>         SNR of each site in digest
+A <real1> . . . realn>         Average intensity of sites in digest
 ```
-with regular expression structure
-
-```
-(<M-line> (<D-line><N-line><A-line>)c )m
-```
-
 The =-line declares how many distinct probes were used (typically only 1) and their recognition
 sequence.  The other header lines tell one how many molecules were mapped and for each
 probe/channel, the total number of sites in the file, and the maximum number of sites that
@@ -262,27 +224,23 @@ positions of the D-line should always be in increasing order ending with the len
 molecule.  Recognition sites are assumed to be simple sequences.  The D,N, and A lines can
 occur in any order within a molecule description.
 
+In terms of a regular expression:
+
+```
+(<M-line> (<D-line><N-line><A-line>)c )m
+```
+
 **VGPdigest** is a VGP tool that takes a Bionano .bnx-file as input and extracts the information to make a .brm-file.
-
-A simpler alternative proposal requiring just a single restriction site per file would be
-
-```
-= <string>                           site recognition sequence                         
-M <real:len> <int>                   molecule length, number of sites 
-D <int:n> <real1> .. <realn>         length and locations for site n
-N <int:n> <real1> .. <realn>         signal:noise ratio of each site
-A <int:n> <real1> .. <realn>         average intensity of sites 
-```
 
 ## Sequence match files, .sxs
 
 
 ```
++ G <int:c>					total number of SMRT cells in file
 + R <int>					total number of reads in file
-+ C <int:c>					total number of SMRT cells in file
 + S <int>					total bases of sequence in file
-@ C <int>					max. number of bases in a SMRT cell
-@ R <int>					max. number of reads in a SMRT cell
+% R <int>					max. number of reads in a SMRT cell
+% S <int>					max. number of bases in a SMRTcell
 @ S <int>					max. number of bases in a read
 
 G <string:SMRT_header> <string:file_name> <int:r>	        SMRT cell with r reads
@@ -291,7 +249,6 @@ F <string>				                	sequence
 N <real:A> <real:C> <real:G> <real:T>                   	SNR in each base channel for read
 A <string>				                	capped pulse widths
 ```
-
 
 ## Alignment/assembly files, .ala
 
@@ -344,6 +301,35 @@ The input file names must have a .fastq suffix, e.g. somewhere/foo.fastq, howeve
 the suffix need not be given on the command line as VGPpair will automatically add the
 appropriate suffix if it is not present.  That is, "<code>VGPpair foo1 foo2</code>" will
 operate on <code>foo1.fastq</code> and <code>foo2.fastq</code>.
+
+VGPpair requires that the files have been produced by standard Illumina software from
+their more basic .bcl files, and therefore the .fastq headers encode the instrument,
+flow cell, lane, etc. in fields between :'s where the data is in order of flow cell and
+lane.  VGPpair uses this imformation to group reads into lanes.
+
+The -v option asks VGPpair to output information on its progress to the standard error.
+The -s option asks VGPpair to *not* output the quality values or Q-lines, but just the
+forward and reverse sequences in F- and R-lines.
+
+VGPpair checks the syntax of the .fastq files but does not verify that the DNA and QV
+strings are over the appropriate symbols.
+
+```
+2. VGPextract [-vaU] <data:subreads.[bam|sam]> ...
+```
+
+VGPpair reads two correlated fastq files and outputs the pairs in .irp format to the
+standard output.
+
+The input file names must have a .fastq suffix, e.g. somewhere/foo.fastq, however
+the suffix need not be given on the command line as VGPpair will automatically add the
+appropriate suffix if it is not present.  That is, "<code>VGPpair foo1 foo2</code>" will
+operate on <code>foo1.fastq</code> and <code>foo2.fastq</code>.
+
+VGPpair requires that the files have been produced by standard Illumina software from
+their more basic .bcl files, and therefore the .fastq headers encode the instrument,
+flow cell, lane, etc. in fields between :'s where the data is in order of flow cell and
+lane.  VGPpair uses this imformation to group reads into lanes.
 
 The -v option asks VGPpair to output information on its progress to the standard error.
 The -s option asks VGPpair to *not* output the quality values or Q-lines, but just the
