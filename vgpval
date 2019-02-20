@@ -1,0 +1,296 @@
+#!/usr/bin/env python
+
+import gzip
+import argparse
+from enum import Enum
+
+class FileType(Enum):
+    NOTYPE = 0
+    IRP = 1
+    PBR = 2
+    BRM = 3
+    X10 = 4
+    SXS = 5
+    SML = 6
+    SEQ = 7
+    SCF = 8
+    SCL = 9
+
+filetype_name = { 
+    "irp" : FileType.IRP,
+    "pbr" : FileType.PBR,
+    "brm" : FileType.BRM,
+    "10x" : FileType.X10,
+    "sxs" : FileType.SXS,
+    "sml" : FileType.SML,
+    "seq" : FileType.SEQ,
+    "scf" : FileType.SCF,
+    "scl" : FileType.SCL
+}
+
+filetype = FileType.NOTYPE
+
+parser = argparse.ArgumentParser(
+    description="validate VGP formats with option to reheader if they do not contain a header")
+parser.add_argument("input", required=True, 
+    help="input VGP file. Supports irp, pbr, brm, 10x, others to come")
+parser.add_argument("-H", "--reheader", required=False, action='store_true',
+    help="reheader file and output new file to stdout")
+parser.add_argument("-t", "--filetype", required=False,
+    help="optionally tell the validator which filetype eg irp, sxs, etc")
+args = parser.parse_args()
+
+if args.filetype in filetype_name:
+    filetype = filetype_name[args.filetype]
+else: 
+    filetype = FileType.NOTYPE
+    
+reader = open_option_gz(args.input)
+
+in_header = True
+
+file_bases = None
+file_pairs = None
+file_sequences = None
+file_provenance = None
+
+header_linetypes = [
+    set([]),                                    #NOTYPE
+    set(['+', '#', '!', '@', '%']),             #IRP
+    set(['+', '#', '!', '@', '%']),             #PBR
+    set(['+', '#', '!', '@', '%', '=']),        #BRM
+    set(['+', '#', '!', '@', '%', '<']),        #10X
+    set(['+', '#', '!', '@', '%', '<']),        #SXS
+    set(['+', '#', '!', '@', '%', '<']),        #SML
+    set(['+', '#', '!', '@', '%', '<', '>']),   #SEQ
+    set(['+', '#', '!', '@', '%', '<']),        #SCF
+    set(['+', '#', '!', '@', '%', '<']),        #SCL
+]
+
+data_linetypes = [
+    {},                                                         #NOTYPE
+    {'g': False, 'P': False, 'S': True, 'Q': True]),            #IRP
+    {'g': False, 'L': False, 'S': True, 'N': True, 'A': True]), #PBR
+    {'M': False, 'D': True, 'N': True, 'A':True},               #BRM
+    {'c': True, 'P': False, 'S': True, 'Q': True},              #10X
+    {'A', 'I', 'M', 'D', 'C', 'T', 'Q'},   #SXS
+    {'A', 'H', 'L'},                       #SML
+    {'S'},                                 #SEQ
+    {'B', 'Q', 'J', 'G'},                  #SCF
+    {'L'},                                 #SCL
+]
+
+linecount_expected = {}
+linemax_expected = {}
+linetotal_expected = {}
+provenance_count = 0
+linecount = {}
+linemax = {}
+lintotal = {}
+
+line_number = 0
+while True:
+    try:        
+        line = reader.readline()
+        #tokens = line.strip().split(" |\t")
+    except StopIteration:
+        assert(line_number > 0, "File empty")
+        break
+    line_number += 1
+    line_offset = 0
+    (token, line_offset) = expect_symbol_delim(line, line_offset)
+    linetype = token
+    if ord(linetype) >= ord('a'): # header line
+        in_header = False
+    if line_number == 1 and in_header:
+        assert(linetype == '.', "First header line must be . filetype version1.version2")
+        (token, line_offset) = expect_string_delim(line, line_offset)
+        assert(token in filetype_name, "Filetype "+tokens[1]+" not supported")
+        filetype = filetype_name[token]
+        (token, line_offset) = expect_string_whitespace(line, line_offset) 
+        version = token.split(".")
+        assert(len(version) == 2, "version format is #.#")
+        major_version = try_number(version[0],"should have major version")
+        minor_version = try_number(version[1],"should have minor version")    
+    elif in_header:
+        assert(linetype in header_linetypes[filetype], 
+            "Header linetype not supported on line " + str(linenumber))
+        if linetype == '#':
+            #datatype = tokens[1]
+            (datatype, line_offset) = expect_symbol_delim(line, line_offset)
+            if datatype != '!':
+                assert(datatype in data_linetypes[filetype],
+                    "data type not supported at line "+str(linenumber))
+            
+            (linecount_expected[datatype], _) = expect_number_whitespace(line, line_offset) 
+        elif linetype == '@':
+            datatype = tokens[1]
+            assert(datatype in data_linetypes[filetype],
+                "data type not supported at line "+str(linenumber))
+            assert(data_linetypes[filetype][datatype], 
+                "datatype does not support linemax at line "+str(linenumber))
+            linemax_expected[datatype] = expect_number(tokens[2],
+                "expected number at 3rd token of line "+str(linenumber))
+        elif linetype == '+':
+            (datatype, line_offset) = expect_symbol_delim(line, line_offset)
+            assert(datatype in data_linetypes[filetype],
+                "data type not supported at line "+str(linenumber))
+            assert(data_linetypes[filetype][datatype], 
+                "datatype does not support linemax at line "+str(linenumber))
+            
+            (linetotal_expected[datatype] _) = expect_number_whitespace(line, line_offset)
+        elif linetype == '!':
+            provenance_count += 1
+            assert(provenance_count <= linecount['!'],
+                "more provenance lines than defined at line "+str(linenumber))
+            
+            
+    else:
+        assert(filetype != FileType.NOTYPE)
+                
+
+    tokens = expect_line(reader, "error: header present but not complete at line 2")
+    assert(tokens[0] == "+" and tokens[1] == "P" and is_positive_number(tokens[2]), 
+        "Line 2 of header not valid, must be in the form '+ P <uint>'")
+if tokens[0] == ".":
+    
+    PAIRS = int(tokens[2])
+    tokens = expect_line(reader, "error: header present but not complete at line 3")
+    assert(tokens[0] == "@" and tokens[1] == "F" and is_positive_number(tokens[3]),
+        "Line 3 of header not valid, must be in the form '@ F <uint>'")
+    LARGEST_F = int(tokens[2])
+    tokens = expect_line(reader, "error: header present but not complete at line 4")
+    assert(tokens[0] == "@" and tokens[1] == "R" and is_positive_number(tokens[4]),
+        "Line 4 of header not valid, must be in the form '@ R <uint>'")
+    LARGEST_R = int(tokens[2])
+elif not args.reheader:
+    print "warning: file does not contain header but --reheader not specified"
+
+total_bases = 0
+total_pairs = 0
+longest_f = 0
+longest_r = 0
+line = 5
+while True:
+    try:
+        line1 = reader.readline().strip().split()
+        line2 = reader.readline().strip().split()
+        assert(line1[0] == "F")
+        assert(line2[0] == "R")
+        l = expect_number(line1[1],"expected number at line "+str(line)+" found "+line1[1])
+        assert(l == len(line1[2]), "length indicator not equal to sequence length at line "+str(line))
+        assert(is_sequence(line1[2]))
+        total_bases += l
+        longest_f = max(longest_f,l)
+        l = expect_number(line2[1],"expected number at line "+str(line+1)+" found "+line2[1])
+        assert(l == len(line2[2]), "length indicator not equal to sequence length at line "+str(line+1))
+        assert(is_sequence(line2[2]))
+        total_bases += l
+        total_pairs += 1
+        longest_r = max(longest_r,l)
+        line += 2
+    except:
+        assert(False,"read pair not complete at line "+line)
+
+if has_header and not args.reheader:
+    assert(BASES == total_bases, "header incorrect, total bases = "+str(total_bases))
+    assert(PAIRS == total_pairs, "header incorrect, total pairs = "+str(total_pairs))
+    assert(longest_f <= LARGEST_F, "header incorrect, longest forward read = "+str(longest_f))
+    assert(longest_r <= LARGEST_R, "header incorrect, longest reverse read = "+str(longest_r))
+
+reader.close()
+
+if args.reaheader:
+    print "+ S "+str(total_bases)
+    print "+ P "+str(total_pairs)
+    print "@ F "+str(longest_f)
+    print "@ R "+str(longest_r)
+    if is_gz_file(args.input):
+        reader = gzip.open(args.input)
+    else:
+        reader = open(args.input)
+    for line in reader:
+        if line.startswith("+") or line.startswith("@"):
+            continue
+        else:
+            print line.strip()
+
+reader.close()
+
+import binascii
+
+def is_gz_file(filepath):
+    with open(filepath, 'rb') as test_f:
+        return binascii.hexlify(test_f.read(2)) == b'1f8b'
+
+def expect_line(reader, error):
+    try:
+        tokens = reader.readline().strip().split(" |\t")
+        return line
+    except:
+        print error
+        assert(False)
+
+def is_positive_number(s):
+    try:
+        val = int(s)
+        return val >= 0
+    except:
+        return False
+
+def try_number(s, error):
+    try:
+        val = int(s)
+    except:
+        assert(false, error)
+    return val
+
+alphabet = set(['a','c','g','t','A','C','G','T'])
+
+def is_sequence(dna):
+    for c in dna:
+        if not c in alphabet:
+            return False
+    return True
+
+def open_option_gz(fn)
+    if is_gz_file(fn):
+        reader = gzip.open(fn)
+    else:
+        reader = open(fn)
+    return reader
+
+def expect_string(line, index):
+    (size, index) = expect_int(line, index)
+    try:
+        size = int(size)
+    except:
+        assert(False, "expected number at "+str(index)+" of line "+line
+    index = expect_delim(index+1)
+    (token, index) = expect_slice(line, index)
+    index = expect_whitespace(line, index)
+    return (token, index)
+
+def expect_int(line, index):
+    start = index
+    while index < len(line) and line[index].isdigit():
+        index += 1
+    x = try_number(line[start:index+1], "expected number at "+str(index)+" at line "+line
+    expect_delim(line, index)
+    return (x, index+1)
+
+def expect_symbol_delim(line, index):
+    assert(len(line) >= index) 
+    return (line[index], expect_delim(line, index+1))
+
+def expect_symbol_whitespace(line, index):
+    assert(len(line) >= index)
+    return (line[index], expect_whitesapce(line, index+1))
+
+def expect_delim(line, index):
+    assert(len(line) >= index and (line[index] == ' ' or line[index] == '\t'))
+    return index + 1
+
+def expect_whitespace(line, index):
+    assert(len(line) >= index and (line[index] == ' ' or line[index] == '\t' or line[index] == '\n'))
+    return index + 1
