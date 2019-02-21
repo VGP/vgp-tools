@@ -30,16 +30,9 @@ further file types that allow one to encode assemblies, scaffolds, and important
 
 **.sxs** a collection of sequence to sequence matches.
 
-**.sxr** a collection of sequence to restriction map matches.
-
-**.sml** subsets of matches that define a coherent object, e.g. an assembly contig, a haplotype branch, etc.
-
-**.seq** a simple collection of sequences, used to represent contigs (effectively a basic type)
+**.rxr** a collection of restriction map to restriction map matches.
 
 **.scf** a collection of scaffolding suggestsions representing putative joins and breaks between contigs
-
-**.sfl** subsets of scaffold suggestions, which can be used for example to generate a new set of contigs,
-         or a set of putative chromosomes (two different files for the different haplotypes).
 
 The VGP format encoding of each file type is documented in a separate chapter of this document following the overview
 given here.  The formal definition of all currently valid specs is provided in the code for the utility **vgpvalidate**
@@ -110,7 +103,7 @@ We now introduce how we formally describe VGP formats, defining the header lines
 ```
     <version_header> = 1 <string:file_suffix> <major> <minor>
 ```
-where the initial ```1``` indicates that this is a a "1-code" file (as well as this being line 1) and ```<file_suffix>``` is one of the ten 3-letter file suffixes above.  In accordance with principle 3, strings are encoded with an initial integer giving their length, followed by the literal string of characters, which can contain whitespace other than newlines.
+where the initial ```1``` indicates that this is a a "1-code" file (as well as this being line 1) and ```<file_suffix>``` is one of the nine 3-letter file suffixes above.  In accordance with principle 3, strings are encoded with an initial integer giving their length, followed by the literal string of characters, which can contain whitespace other than newlines.
 
 ```
    <string> = <int:n> <char>n
