@@ -15,14 +15,18 @@ following file types:
 
 **.pbr**	A collection of PacBio long reads and relevant meta-data about each are encoded in such a file (e.g. myfish.pbr).
 
-**.rmd**	A restriction map digest file. This can be used both to support primary data from BioNano .bnx files, and more abstract restriction maps as in BioNano .cmap files.
-
 **.10x**	An encoding of 10X Genomics read clouds. 
 
+**.rmd**	A restriction map digest file. This can be used both to support primary data from BioNano .bnx files, and more abstract restriction maps as in BioNano .cmap files.
+
 The VGP tool library contains programs that takes the files produced by each instrument supplier
-and converts it into the relevant VGP format and file type above.  Then, more importantly, we support
-the following downstream file types that allow one to encode assemblies, scaffolds, and important
-intermediates therein:
+and converts it into the relevant VGP format and file type above.  
+Then, more importantly, we support
+further file types that allow one to encode assemblies, scaffolds, and important intermediates therein.  First there are two basic classes:
+
+**.seq** a sequence file from which the first three types above are derived, and 
+
+**.lis** a file that can be used to record arbitrary lists of objects in any of the VGP file types.
 
 **.sxs** a collection of sequence to sequence matches.
 
@@ -69,19 +73,19 @@ what kind of information the line encodes.  Consider as a working example,
 the following Illumina Read Pair (.irp) file:
 
 ```
-	1 3 irp 1 0            file type, major and minor version
-	# ! 1                  number of provenance lines in the file
-	# P 2                  number of read pairs in file
-	# S 4                  number of sequences in file
-	@ S 5                  maximum number of bp’s in a read
-	+ S 17                 total number of bp's in file
-	! 7 VGPpair 3 0.1 ...  provenance line saying how file arose
-	P                      separator for read pairs - helps human interpretability 
-	S 5 acgta              forward sequence of pair 1
-	S 3 gtt                reverse sequence of pair 1
-	P
-	S 4 gcta
-	S 5 ggtac 
+1 3 irp 1 0            file type, major and minor version
+# ! 1                  number of provenance lines in the file
+# P 2                  number of read pairs in file
+# S 4                  number of sequences in file
+@ S 5                  maximum number of bp’s in a read
++ S 17                 total number of bp's in file
+! 7 VGPpair 3 0.1 ...  provenance line saying how file arose
+P                      separator for read pairs - helps human interpretability 
+S 5 acgta              forward sequence of pair 1
+S 3 gtt                reverse sequence of pair 1
+P
+S 4 gcta
+S 5 ggtac 
 ```
 Like all VGP files, this starts with a set of header lines indicated by a non-alphabetic "1-code" symbol, followed by data lines that always begin with an alphabetic "1-code".  Tokens on a line are separated by a single whitespace character (space or tab).  Variable length lists, including strings, are preceded by their length in keeping with principle 2. The
 1-code and subsequent tokens determine when the encoding of expected information on a line is at an end. 
@@ -89,11 +93,15 @@ Therefore optional additional information to the end of the line provides an ext
 mechanism where one can add auxiliary information if desired.  In the example above, the whitespace and 
 comments following the encoded information on each line are ignored by a VGP parser.
 
+The reciprocal side of the 1-code philsophy of VGP lines is that once the initial symbol is read, all the other fields are required.  For this reason, when we want to allow optional information for an object, it must be encoded on separate lines with their own line types that follow the object definition line.
+
+Conceptually VGP files are *immutable*, meaning that we do not expect their contents to change. This means that subsequently in the same file, or more often in future files in a pipeline, we can refer to objects by their ordinal position in a file, 1...n, not requiring named identifiers. This simplifies many things.
+
 ### Header lines
 
 Considerable effort is invested on headers in VGP-formats in keeping with principles 3 and 8.
 The first header line must always be a version line confirming the file type and specifying the major and minor
-version numbers separated by a ```.```.  Additional header lines give information about the number of items
+version numbers separated by a whitespace.  Additional header lines give information about the number of items
 in the file (#-lines), the maximum length of lists (@-lines), and the total number of items in a given list class
 (+-lines).  In addition, provenance lines (!-lines) inform one about how the particular file came to be.
 
@@ -160,15 +168,40 @@ before the provenance lines in order to know how many there are.
 
 The types of data lines permitted depend on the file type.  We therefore specify here each file type in turn.  Where include header lines are required we indicate that here, together with what they signify. We remind the reader that while we aim to keep this README up to date, the formal versioned definition of each VGP file type is determined by the validator **VGPvalidate** and documented in its code.
 
-### Illumina Read Pair files, .irp
+We start with two basic file types, then give specific types to represent the primary data inputs we use in the VGP, and then derived file types used to hold various steps of the assembly pipeline.
 
-The data lines are as follows:
+### Sequence file, .seq
+
+A core file type containing sequences, with optional quality scores.
 
 ```
-   g <int:n> <string:group_name>    read group with n read pairs
-   P              a pair follows immediately
-   S <string>     forward or reverse sequence
-   Q <string>     QV scores in single character phred encoding (ASCII 33+q) 
+S <string>     forward or reverse sequence
+Q <string>     QV scores in single character phred encoding (ASCII 33+q) 
+```
+The S strings are over the alphabet A, C, G, T.  IUPAC ambiguity codes are not supported. Any unsupported code (including N) is turned into an arbitrary letter with by VGP tools, with quality set to 0 if qualities are present.  DNA strings may be upper or lower case.
+
+The Q lines are optional.  When present, each symbol of a Q string is an ASCII character as in FASTQ.  So Q strings are over the 94 printable ASCII characters [!-~] and correspond to the range 0 to 93.  
+
+### List file, .lis
+
+This file type just keeps lists of indexes into other VGP file types.  We use this to define subsets of objects in existing VGP files, without needing to create
+
+```
+< <string:file_name> X <int:nx>
+	
+L <int:n> <int>n
+```
+There must be one input header line, and can be an arbitrary number of L lines. Here ```X``` in the header line is a line type found nx times in the named included file, the n value on an L line determines the number of items in the list, and each item is a positive integer between 1 and nx.
+
+### Illumina Read Pair files, .irp
+
+Simple Illumina read data can be represented in .seq files with quality lines, but most Illumina data comes as paired reads.  We support this by adding P lines to designate that the next two sequences are paired, and also add a g line to The data lines are as follows:
+
+```
+g <int:n> <string:group_name>    read group with n read pairs
+P              a pair follows immediately
+S <string>     forward or reverse sequence
+Q <string>     QV scores in single character phred encoding (ASCII 33+q) 
 ```
 The data portion of a .irp file consists of a sequence of line bundles defining a read pair with group lines
 interspersed.  Each read pair is defined by a P-line followed by two S-lines given the forward and reverse
@@ -180,13 +213,8 @@ name for the group.
 In terms of a regular expression:
 
 ```
-    ( <g-line> | <P-line><S-line>[<Q-line>]<S-line>[<Q-line>] )*
+	( <g-line> | <P-line><S-line>[<Q-line>]<S-line>[<Q-line>] )*
 ```
-
-The S strings are over the alphabet A, C, G, T.  Each symbol of a Q string is an
-ASCII character as in FASTQ.  So Q-strings are over the 94 printable ASCII
-characters [!-~] and correspond to the range 0 to 93.  IUPAC ambiguity codes
-are not supported. Any unsupported code (including N) is turned into an arbitrary letter with by VGP tools, with quality set to 0 if qualities are present.  DNA strings may be upper or lower case.
 
 If group lines are present they do not need to form a partitioning of the data (i.e. every pair belongs
 to one and only one group), although this property is often true of the programs that produce groups
@@ -198,15 +226,15 @@ within the same lane are placed in a given group.
 
 ### 10X Read Cloud files, .10x
 
-This is a very similar file type, with the distinction being that read pairs are clustered by having the same barcode rather than coming from the same sequencing lane, and barcodes and linker sequence is removed so that all the sequence should be derived from the source genome. 
+This a similar file type to .irp derived from .seq, with the distinction being that read pairs are clustered by having the same barcode rather than coming from the same sequencing lane, and barcodes and linker sequence is removed so that all the sequence should be derived from the source genome. 
 
 ```
-   c <int:n> <string:bar>    the next n read pairs are in the cloud with the given barcode
-   P                         a pair follows immediately
-   S <string>                forward and reverse sequence, with the barcode and linker removed from the forward read
-   Q <string>                QV scores
+c <int:n> <string:bar>    the next n read pairs are in the cloud with the given barcode
+P                         a pair follows immediately
+S <string>                forward and reverse sequence, with the barcode and linker removed from the forward read
+Q <string>                QV scores
 ```
-The P, S and Q lines are exactly as described for an .irp file previously.  The c-lines group read
+The S, Q and P lines are exactly as described for an .irp file previously.  The c-lines group read
 pair lines into clouds which are all the read pairs
 in which the forward read contained the indicated barcode sequence for the cloud (which is removed
 for the .10x file).  In this case the c-lines are guaranteed to partition the read pairs (i.e. every
@@ -225,16 +253,15 @@ barcode sequence.
 ### PacBio Long Reads, .pbr
 
 ```
-g <int:n> <string:SMRT_header>				SMRT cell with n reads
-
-L <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	Read well and pulse range
-S <string>				                	sequence
-N <real:A> <real:C> <real:G> <real:T>   	SNR in each base channel for read
-A <string>				                	capped pulse widths
+g <int:n> <string:SMRT_header>          SMRT cell with n reads
+S <string>                              sequence
+W <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	read well and pulse range
+N <real:A> <real:C> <real:G> <real:T>   SNR in each base channel for read
+A <string>                              capped pulse widths
 ```
 The data is grouped into SMRT cells by g-lines that begin each group and declare how many reads
-were produced in that cell.  Each read is described by an L- and S-line and optionally an
-N- and A-line.  The L-line gives the well and pulse range from which the sequence in the S-line
+were produced in that cell.  Each read is described by an S and a W line and optionally an
+N- and A-line.  The W-line gives the well and pulse range from which the sequence in the S-line
 was extracted.  If present, the N-line give the average SNR in the channels for each base and
 the A-line gives the capped pulse width for each base as the character 1, 2, 3 or 4.  Pulse
 widths larger than 4 are clipped to 4 as Arrow does not treat widths larger than 4 differently.
@@ -274,56 +301,58 @@ In terms of a regular expression:
 ### Sequence match files, .sxs
 
 ```
-< <string:filename_a> S <int:na>
-< <string:filename_b> S <int:nb>
+< <string:filename_a> S <int:na>        source of A sequences
+< <string:filename_b> S <int:nb>        source of B sequences
 
-A <int:a> <int:b>			           	indexes of aligned sequences
-I <int:as> <int:ae> <int:bs> <int:be>	start and end in a and in b
-Q <int>									mapping quality in phred units
-C <string>								cigar string
-T <int:t> <int>t						list of trace points
-M <int>									number of matching aligned bases
-D <int>									number of differences = substitutions + indel bases
+A <int:a> <int:b>                       indexes of aligned sequences
+I <int:as> <int:ae> <int:bs> <int:be>   start and end in a and in b
+Q <int>                                 mapping quality in phred units
+C <string>                              cigar string
+T <int:t> <int>t                        list of trace points
+M <int>                                 number of matching aligned bases
+D <int>                                 number of differences = substitutions + indel bases
 ```
 There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, asin the first step of most assemblers.
+
+The value in the Q field is the phred-scaled mapping quality, which is defined as -10log<sub>10</sub> p(alignment in this location is incorrect).  This can be followed by other method-specific scoring information, which because it falls after the defined fields can be free form.  
+
+If there are ***a*** bases in sequence a and ***b*** bases in sequence b and ***m*** matches, ***s*** substitutions, ***d*** deletions and ***i*** insertions, then  M = ***m*** and D = ***s*** + ***i*** + ***d***. So if we have both M and D then we can calculate ***s*** and ***i*** and ***d***, using that 2***m*** + 2***s*** + ***i*** + ***d*** = ***a*** + ***b*** and ***m*** + ***s*** + ***d*** = ***a*** and ***m*** + ***s*** + ***i*** = ***b***.
 
 ### Restriction digest match file, .rxr
 
-This is a closely related format to .sxs, indicating alignments of sequences to restriction maps.
+This is a closely related format to .sxs, containing alignments of restriction maps rather than alignments between DNA sequences. There are subtle differences in some of the ancillary record types.
 
 ```
-< <string:filename_a> S <int:na>
-< <string:filename_b> M <int:nb>
+< <string:filename_a> M <int:na>        source of A molecules
+< <string:filename_b> M <int:nb>        source of B molecules
 
-A <int:a> <int:b>			           	indexes of aligned sequences
-I <int:as> <int:ae> <int:bs> <int:be>	start and end in a and in b
-Q <int>									mapping quality in phred units
-C <string>								cigar string
-T <int:t> <int>t						list of trace points
-M <int>									number of matching aligned bases
-D <int>									number of differences = substitutions + indel bases
+A <int:a> <int:b>                       indexes of aligned sequences
+I <int:as> <int:ae> <int:bs> <int:be>   start and end in a and in b
+Q <int>                                 mapping quality in phred units
+M <int:m>                               number of matched sites
+U <int:m> <int>m                        list of trace sites in a
+V <int:m> <int>m                        list of trace sites in b
+C <string>                              cigar string
+D <int>                                 number of unmatched sites
 ```
-There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, asin the first step of most assemblers.
-
-### Sequence Match List file, .sml
-
-
-### Sequence file, .seq
-
+There must be two included files, each containing some number of M lines designating molecules with restriction digests.  The U and V lines store lists of the indexes of pairs of matched sites, so both these records must be present if either of them is, and the list sizes on these two lines must be the same, and the same as the value of m on the M line if that is present.  The cigar string on the C line is essentially the same as for sequences, although there is no concept of aligned but mismatching sites (everything must match or be an insertion or deletion).
 
 ### Scaffolding information file, .scf
 
+This file encodes information about possible breaks and joins between sequences.  We expect that our assembly process will create a **.seq** file of contigs, and that various methods can be applied to use BioNano, HiC and 10X Genomics data to propose joins between these contigs, and possible breaks in them where they believe that there were missassemblies.
+
 ```
 < <string:contig_file_name> <int:nseqs>
-B <int:seq> <int:start> <int:end>
-Q <int:phred_confidence>	additional free information after phred score
-J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>  
-G <int:gap>
+B <int:seq> <int:start> <int:end>                       potential break in sequence somewhere between start and end
+Q <int:phred_confidence>                                confidence in the break
+J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>   potential 
+G <int:gap>                                             estimated gap size in base pairs
 ```
+The join operator specifies which end of each sequence is involved in the join, using single characters ***s*** or ***e*** to designate the start and end.  If the G line is missing then the sequences are presumed to abut.  If the gap is negative then they overlap by the specified number of bases.
 
-### Scaffolding List file, .slf
+## A possible assembly work flow
 
-### Alignment/assembly files, .ala
+**INCOMPLETE Here I want to illustrate a work flow through assembly.**
 
 We view the assembly task as choice of a subset of read alignments that
 result in a consistent layout.  These can then be used to generate
@@ -331,35 +360,8 @@ consensus contig sequences, which are the subject of the next file
 type, which represents contigs and scaffolding.
 
 We also support subsets of alignments which are believed to represent
-consistent groups of connections between .
+consistent groups of connections between reads that are derived from truly overlapping locations in the source genome.
 
-The syntax and meaning of each line is as follows, where <string> denotes a length followed
-after white space by a sequence of characters of that length.
-```
-   <  <string> <int>   filename of source reads for alignment, and number of reads in it
-   + L <int>      total number of alignments (links) in the file
-   + A <int>     total number of assembly components in the file
-   + H <int>     total number of homology groups
-   L <int:a> <int:b> <int:sa> <int:ea> <int:sb> <int:eb> link between  read a interval [sa,ea) and read b interval [sb,eb)
-   D <int>          number of differences
-   T <int:t> <int>t    trace points
-   C <string>     cigar string
-   A <int:n> <int>n  list of links in this assembly component
-```
-The F, R and Q lines are exactly as described for an .irp file previously.  Provenance lines may
-occur in the header.  The C-lines group read pair lines into clouds which are all the read pairs
-in which the forward read contained the indicated barcode sequence for the cloud (which is removed
-for the .10x file)
-
-The + and @ lines are header lines and must proceed the data lines.  The data portion consists of
-a C-line declaring how many read pairs are in this cloud, followed by that many 
-F- and R-lines optionally followed by a corresponding pair of Q-lines.  In terms of a regular
-expression:
-```
-(<+-line>|<@-line>)+ (<C-line> (<F-line><R-line>[<Q-line>2])n )c
-```
-Provenance lines beginning with ! as defined in the prolog may also occur in the header section
-of the file.
 
 # VGP Tool Manuals
 
