@@ -291,8 +291,8 @@ In terms of a regular expression:
 ## Sequence match files, .sxs
 
 ```
-< <string:filename_a> <S> <int:na>
-< <string:filename_b> <S> <int:nb>
+< <string:filename_a> S <int:na>
+< <string:filename_b> S <int:nb>
 
 A <int:a> <int:b>			           	indexes of aligned sequences
 I <int:as> <int:ae> <int:bs> <int:be>	start and end in a and in b
