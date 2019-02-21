@@ -11,12 +11,12 @@ within which a specific, very simple ASCII format is used to encode the data.  F
 VGP currently collects 4 core data sets for a given genome project which can be encoded in the
 following file types:
 
+**.irp**	An encoding of Illumina read pairs.  We generate such data using a Hi-C protocol, but this applies more generally to any read pair protocol.
+
 **.pbr**	A collection of PacBio long reads and relevant meta-data about each are
 encoded in such a file (e.g. myfish.pbr)
 
-**.brm**	An encoding of the Bionano restriction maps for a collection of molecules.
-
-**.irp**	An encoding of Illumina read pairs.  We generate such data using a Hi-C protocol, but this applies more generally to any read pair protocol.
+**.brm**	An encoding of the Bionano restriction digest primary data for a collection of molecules.
 
 **.10x**	An encoding of 10X Genomics read clouds. 
 
@@ -26,6 +26,8 @@ the following downstream file types that allow one to encode assemblies, scaffol
 intermediates therein:
 
 **.sxs** a collection of sequence to sequence matches.
+
+**.brd** 
 
 **.sxr** a collection of sequence to restriction map matches.
 
@@ -70,7 +72,7 @@ what kind of information the line encodes.  Consider as a working example,
 the following Illumina Read Pair (.irp) file:
 
 ```
-	1 irp 1.0          file type, major and minor version
+	1 3 irp 1 0            file type, major and minor version
 	# ! 1                  number of provenance lines in the file
 	# P 2                  number of read pairs in file
 	# S 4                  number of sequences in file
@@ -84,8 +86,7 @@ the following Illumina Read Pair (.irp) file:
 	S 4 gcta
 	S 5 ggtac 
 ```
-Non-alphabetic "1-code" symbols indicate header lines, which must precede data lines that always begin with an
-alphabetic "1-code".  Tokens on a line are separated by a single whitespace character (space or tab).  Variable length lists, including strings, are preceded by their length in keeping with principle 2. The
+Like all VGP files, this starts with a set of header lines indicated by a non-alphabetic "1-code" symbol, followed by data lines that always begin with an alphabetic "1-code".  Tokens on a line are separated by a single whitespace character (space or tab).  Variable length lists, including strings, are preceded by their length in keeping with principle 2. The
 1-code and subsequent tokens determine when the encoding of expected information on a line is at an end. 
 Therefore optional additional information to the end of the line provides an extensibility
 mechanism where one can add auxiliary information if desired.  In the example above, the whitespace and 
@@ -102,7 +103,7 @@ in the file (#-lines), the maximum length of lists (@-lines), and the total numb
 We now introduce how we formally describe VGP formats, defining the header lines to illustrate. Using a "casual" context free grammar rule the inital file type declaration has the syntax:
 
 ```
-    <version_header> = 1 <file_suffix> <major>.<minor>
+    <version_header> = 1 <string:file_suffix> <major> <minor>
 ```
 where the initial ```1``` indicates that this is a a "1-code" file (as well as this being line 1) and ```<file_suffix>``` is one of the ten 3-letter file suffixes above.
 
@@ -259,17 +260,13 @@ This file encodes the primary Bionano data that is required for downstream map b
 It only allows a single restriction enzyme per data set, consistent with current usage of the BioNano instrument, although the BioNano .bnx format in principle supports multiple enzymes.  
 
 ```
-= <string>                     number of channels and their recognition sites
-
-M <read:len> <int:n>           molecule, length and number of sites
-D <int:n> <real1> ... <realn>         site locations in digest
-N <int:n> <real1> ... <realn>         signal to oise R of each site in digest
-A <int:n> <real1> ... <realn>         Average intensity of sites in digest
+f <int> <string:site>			 flow cell: number of molecules, recognition site
+M <int:len> <int:n>          	 molecule: length and number of sites
+D <int:n> <real1> ... <realn>    list of site locations in digest
+N <int:n> <real1> ... <realn>    list of signal to noise ratio per site
+A <int:n> <real1> ... <realn>    average intensity of sites in digest
 ```
-The =-line declares how many distinct probes were used (typically only 1) and their recognition
-sequence.  The other header lines tell one how many molecules were mapped and for each
-probe/channel, the total number of sites in the file, and the maximum number of sites that
-occurred in any molecule.  The data portion of the file consists of a sequence of molecule
+The ```f```-lines are group definitions which say how many molecules to expect in this group and specify the restriction site used as a literal DNA string.  declares the recognition sequence of the enzyme used as a literal DNA string.  The data portion of the file consists of a sequence of molecule
 descriptions, where the first M-line tells one how many sites there are in that molecule for
 each probe.  The ensuing lines then give for each channel, the location of the sites and
 length of the molecule (D-line) to within the accuracy of the machine, the SNR at each site
@@ -302,7 +299,25 @@ T <int:t> <int>t						list of trace points
 M <int>									number of matching aligned bases
 D <int>									number of differences = substitutions + indel bases
 ```
-There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.
+There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, asin the first step of most assemblers.
+
+## Sequence to restriction digest match, .sxr
+
+This is a closely related format to .sxs.
+
+```
+< <string:filename_a> S <int:na>
+< <string:filename_b> S <int:nb>
+
+A <int:a> <int:b>			           	indexes of aligned sequences
+I <int:as> <int:ae> <int:bs> <int:be>	start and end in a and in b
+Q <int>									mapping quality in phred units
+C <string>								cigar string
+T <int:t> <int>t						list of trace points
+M <int>									number of matching aligned bases
+D <int>									number of differences = substitutions + indel bases
+```
+There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, asin the first step of most assemblers.
 
 ## Sequence Match List file, .sml
 
