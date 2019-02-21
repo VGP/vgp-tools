@@ -290,10 +290,9 @@ In terms of a regular expression:
 
 ## Sequence match files, .sxs
 
-
 ```
-< <string:filename_a> <int:na>
-< <string:filename_b> <int:nb>
+< <string:filename_a> <S> <int:na>
+< <string:filename_b> <S> <int:nb>
 
 A <int:a> <int:b>			           	indexes of aligned sequences
 I <int:as> <int:ae> <int:bs> <int:be>	start and end in a and in b
@@ -303,6 +302,7 @@ T <int:t> <int>t						list of trace points
 M <int>									number of matching aligned bases
 D <int>									number of differences = substitutions + indel bases
 ```
+There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.
 
 ## Sequence Match List file, .sml
 
