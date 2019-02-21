@@ -16,10 +16,9 @@ encoded in such a file (e.g. myfish.pbr)
 
 **.brm**	An encoding of the Bionano restriction maps for a collection of molecules.
 
-**.irp**	An encoding of Illumina read pairs (linked by a Hi-C protocol, but applies
-more generally to any read pair protocol.
+**.irp**	An encoding of Illumina read pairs.  We generate such data using a Hi-C protocol, but this applies more generally to any read pair protocol.
 
-**.10x**	An encoding of lllumina read 10X clouds. 
+**.10x**	An encoding of 10X Genomics read clouds. 
 
 The VGP tool library contains programs that takes the files produced by each instrument supplier
 and converts it into the relevant VGP format and file type above.  Then, more importantly, we support
@@ -30,17 +29,17 @@ intermediates therein:
 
 **.sxr** a collection of sequence to restriction map matches.
 
-**.sxl** subsets of matches that define a coherent object, e.g. an assembly contig, a haplotype branch, etc.
+**.sml** subsets of matches that define a coherent object, e.g. an assembly contig, a haplotype branch, etc.
 
 **.seq** a simple collection of sequences, used to represent contigs (effectively a basic type)
 
 **.scf** a collection of scaffolding suggestsions representing putative joins and breaks between contigs
 
-**.scl** subsets of scaffold suggestions, which can be used for example to generate a new set of contigs,
+**.sfl** subsets of scaffold suggestions, which can be used for example to generate a new set of contigs,
          or a set of putative chromosomes (two different files for the different haplotypes).
 
 The VGP format encoding of each file type is documented in a separate chapter of this document following the overview
-given here.  The formal definition of all currently valid specs is provided in the code for the utility **VGPformatCheck**
+given here.  The formal definition of all currently valid specs is provided in the code for the utility **vgpvalidate**
 which also provides utilities to reconstruct headers.  The design of VGP formats is based on the following principles:
 
 1.	The format should be trivial to parse as input.  All the burden of encoding is placed on the software that produces the formatted file.
@@ -71,13 +70,13 @@ what kind of information the line encodes.  Consider as a working example,
 the following Illumina Read Pair (.irp) file:
 
 ```
-	. irp 1.0              file type, major and minor version
+	1 irp 1.0          file type, major and minor version
 	# ! 1                  number of provenance lines in the file
 	# P 2                  number of read pairs in file
 	# S 4                  number of sequences in file
 	@ S 5                  maximum number of bp’s in a read
 	+ S 17                 total number of bp's in file
-	! VGPpair 1.0 ...      provenance line saying how file arose
+	! 7 VGPpair 3 0.1 ...  provenance line saying how file arose
 	P                      separator for read pairs - helps human interpretability 
 	S 5 acgta              forward sequence of pair 1
 	S 3 gtt                reverse sequence of pair 1
@@ -86,53 +85,62 @@ the following Illumina Read Pair (.irp) file:
 	S 5 ggtac 
 ```
 Non-alphabetic "1-code" symbols indicate header lines, which must precede data lines that always begin with an
-alphabetic "1-code".  In this file P data lines indicate read pairs, and S lines sequence
-objects.  Tokens on a line are separated by a single whitespace character (space or tab).  The
-1-code and subsequent tokens determine when the encoding of information on a line is at an end,
-therefore optional additional information to the end of the line provides an extensibility
-mechanism where one can add auxiliary information if desired.  In the example above, the
-comments following the information on each line are ignored by a VGP parser.
+alphabetic "1-code".  Tokens on a line are separated by a single whitespace character (space or tab).  Variable length lists, including strings, are preceded by their length in keeping with principle 2. The
+1-code and subsequent tokens determine when the encoding of expected information on a line is at an end. 
+Therefore optional additional information to the end of the line provides an extensibility
+mechanism where one can add auxiliary information if desired.  In the example above, the whitespace and 
+comments following the encoded information on each line are ignored by a VGP parser.
+
+### Header lines
 
 Considerable effort is invested on headers in VGP-formats in keeping with principles 3 and 8.
-The first header line must always be a '.' line confirming the file type and specifying the major and minor
-version numbers separated by a '.'.  Additional header lines give information about the number of items
+The first header line must always be a version line confirming the file type and specifying the major and minor
+version numbers separated by a ```.```.  Additional header lines give information about the number of items
 in the file (#-lines), the maximum length of lists (@-lines), and the total number of items in a given list class
 (+-lines).  In addition, provenance lines (!-lines) inform one about how the particular file came to be.
 
-We now introduce how we formally describe VGP formats using the ubiguitous header lines as an example.
-Using a "casual" context free grammar rule the inital file type declaration or '.'-line has the syntax:
-```
-    <.-line> = . <file_suffix> <int:major>.<int:minor>
-```
-where \<file_suffix\> is one of the 10 3-letter file suffixes above.
+We now introduce how we formally describe VGP formats, defining the header lines to illustrate. Using a "casual" context free grammar rule the inital file type declaration has the syntax:
 
-There are 4 header line types -- #, +, @, and % -- that allow one to specify the number, total size,
-max size, across a file, and also across a group, respectively.  The 3 base types all have the syntax:
+```
+    <version_header> = 1 <file_suffix> <major>.<minor>
+```
+where the initial ```1``` indicates that this is a a "1-code" file (as well as this being line 1) and ```<file_suffix>``` is one of the ten 3-letter file suffixes above.
+
+There are three header line types -- #, +, and @ -- that allow one to specify the number, total size, and maximum size of objects across a file.  These all have the syntax:
+
 ```
     <size_header> = [#+@] <symbol:S> <int>
 ```
-\#-lines tell you the number of \<S\>-lines in the file.  For line types that encode a list of items, such as
-string (a list of characters) or say a list of digest sites, a +-line tells you the total number of items
+```#```-lines tell you the number of lines in the file of type S.  For line types that encode a list of items, such as
+string (a list of characters) or say a list of digest sites, a ```+```-line tells you the total number of items
 in all the lists in the file, e.g. "<code>+ S 17</code>" in the example above indicates that altogether the
-sequences in the file total 17 bases.  Similarly, an @-line indicates the length of the largest list that
-occurs in any given line of the specified type.  Lastly, there is the oft occuring concept of partitioning a file into
-groups of objects, e.g. all the read pairs in a flow-cell lane, and for these the % designator indicates the
-maximum number of objects or total size of list objects within any given group.  The syntax for these lines is:  
+sequences in the file total 17 bases.  Similarly, an ```@```-line indicates the length of the largest list that
+occurs in any given line of the specified type.  
+
+Often the objects in a file are naturally partitioned into groups, e.g. all the read pairs in a flow-cell lane, and the VGP formats support this with lower case symbols as data line indicators.  For these the ```%``` designator indicates the maximum number of objects or total size of list objects within any given group type.  The syntax for these lines is:  
+
 ```
-    <size_header> = % <symbol:s> [#+] <symbol:S> <int>
+    <group_header> = % <symbol:g> [#+] <symbol:S> <int>
 ```
-where \<s\> is the group line designator (always a lower case letter by convention) and \<S\> is the line
-type in question.
+where ```<g>``` is the group line designator (always a lower case letter by convention) and ```<S>``` is the line type in question.
 
 Another important header line type indicates that a given file should be included and has the following syntax
+
 ```
-    <'<'-line> = '<' <string:file_name>
+    <include_header> = '<' <string:file_name> <symbol:S> <int:nS>
 ```
 The effect is as if the data portion of the named file had been inserted at this point and any size information in its header
 had been appropriately factored into the header of the current file.  Note carefully, that the indexing/numbering of
-lines/objects is according to their order after inclusion as per principle 6.
+lines/objects is according to their order after inclusion as per principle 6. In this example the S-objects from the included file are the ones that are to be referred to subsequently, and the number of them is given here, so that actual inclusion is not required.
 
-The final header line type are provenance or '!'-lines that record a processing step that was involved
+In some cases there is an another file type that is closely associated with the current file, and which depends on objects defined in the current file.  It is possible to indicate such files with a forward reference which looks similar to the include line, but with a '>' symbol rather than a '<' symbol.
+
+```
+	<forward_header> = '>' <string:file_name>
+```
+The semantics of this can be taken to be that the file referred to will be included *after* the end of the current file, rather than at the current location, i.e. deferred inclusion.  In this case there is no need to indicate the primary objects in the file and their number, since the current file will not refer to them.
+
+The final header line type is provenance or '!'-lines that record a processing step that was involved
 in producing the current file.  Each line contains 3 strings and 2 integers giving (a) the program name, (b) the major
 and minor version numbers separated by a '.', (c) the command line that was executed, and (d) the date and time it
 was run.  Each \<string\>, as per principle 2, is an integer followed, possibly after white space, by that number
@@ -148,23 +156,27 @@ Below we summarise the proposed file types, dropping the generic header
 line types already introduced above.  There are a few additional header
 line types that we will introduce as they become necessary.
 
-## Illumina Read Pair files, .irp
+## Data lines defined according to file type
+
+The types of data lines permitted depend on the file type.  We therefore specify here each file type in turn.  We remind the reader that while we aim to keep this README up to date, the formal versioned definition of each VGP file type is determined by the validator **vgpvalidate** and documented in its code.
+
+### Illumina Read Pair files, .irp
 
 The data lines are as follows:
-```
-   g <int:r> <string:lane_header> <string:file>    read group with r read pairs
 
-   P                         a pair follows immediately
-   S <string>                forward and reverse sequence
-   Q <string>                QV scores in single character phred encoding (ASCII 33+q) 
+```
+   g <int:r> <string:group_name>    read group with r read pairs
+   P              a pair follows immediately
+   S <string>     forward or reverse sequence
+   Q <string>     QV scores in single character phred encoding (ASCII 33+q) 
 ```
 The data portion of a .irp file consists of a sequence of line bundles defining a read pair with group lines
 interspersed.  Each read pair is defined by a P-line followed by two S-lines given the forward and reverse
 sequences, and optionally two Q-lines giving the QV's for the sequences.  By convention the first S/Q-line is
 for the forward read and the second for the reverse read.  Between these bundles one may find interspersed
 g-lines that specify a user defined group of reads where the group consists off the next r-pairs of reads, where
-r is given by the first integer in the line.  This is followed by two strings, the first giving a user-selected
-name for the group, followed by a string giving the two source files separated by a '|'.
+r is given by the first integer in the line.  This is followed by a string giving a user-selected
+name for the group.
 In terms of a regular expression:
 ```
     (<g-line> | <P-line><S-line>[<Q-line>]<S-line>[<Q-line>]) *
@@ -187,6 +199,7 @@ within the same lane are placed in a given group.
 ## 10X Read Cloud files, .10x
 
 The data lines are as follows:
+
 ```
    c <int:n> <string:bar>    the next n read (pairs) are in the cloud with the given barcode
 
@@ -213,17 +226,18 @@ barcode sequence.
 ## PacBio Long Reads, .pbr
 
 The data lines are as follows:
+
 ```
-g <int:r> <string:SMRT_header> <string:file_name>	        SMRT cell with r reads
+g <int:r> <string:SMRT_header>				SMRT cell with r reads
 
 L <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	Read well and pulse range
-F <string>				                	sequence
-N <real:A> <real:C> <real:G> <real:T>                   	SNR in each base channel for read
+S <string>				                	sequence
+N <real:A> <real:C> <real:G> <real:T>   	SNR in each base channel for read
 A <string>				                	capped pulse widths
 ```
-The data is grouped into SMRT cells by G-lines that begin each group and declare how many reads
+The data is grouped into SMRT cells by g-lines that begin each group and declare how many reads
 were produced in that cell.  Each read is described by an L- and S-line and optionally an
-N- and A-line.  The L-line gives the well and pulse range from which the sequence in the F-line
+N- and A-line.  The L-line gives the well and pulse range from which the sequence in the S-line
 was extracted.  If present, the N-line give the average SNR in the channels for each base and
 the A-line gives the capped pulse width for each base as the character 1, 2, 3 or 4.  Pulse
 widths larger than 4 are clipped to 4 as Arrow does not treat widths larger than 4 differently.
@@ -242,16 +256,15 @@ and extracts the information to make a .pbr file.
 # Bionano Restriction Maps, .brm
 
 This file encodes the primary Bionano data that is required for downstream map building or alignment to sequence.
-It refects the current BioNano .bnx format in supporting multiple enzymes used concurrently, although we don't
-currently see this in use.  As a consequence one should be particularly careful to observe the subscripted meta-values.
-*Richard: are we sure we really want to support this?  See below for an alternative**
+It only allows a single restriction enzyme per data set, consistent with current usage of the BioNano instrument, although the BioNano .bnx format in principle supports multiple enzymes.  
+
 ```
 = <string>                     number of channels and their recognition sites
 
 M <read:len> <int:n>           molecule, length and number of sites
-D <real1> . . . realn>         site locations in digest
-N <real1> . . . realn>         SNR of each site in digest
-A <real1> . . . realn>         Average intensity of sites in digest
+D <int:n> <real1> ... <realn>         site locations in digest
+N <int:n> <real1> ... <realn>         signal to oise R of each site in digest
+A <int:n> <real1> ... <realn>         Average intensity of sites in digest
 ```
 The =-line declares how many distinct probes were used (typically only 1) and their recognition
 sequence.  The other header lines tell one how many molecules were mapped and for each
@@ -279,18 +292,16 @@ In terms of a regular expression:
 
 
 ```
-+ G <int:c>					total number of SMRT cells in file
-+ R <int>					total number of reads in file
-+ S <int>					total bases of sequence in file
-% R <int>					max. number of reads in a SMRT cell
-% S <int>					max. number of bases in a SMRTcell
-@ S <int>					max. number of bases in a read
+< <string:filename_a> <int:na>
+< <string:filename_b> <int:nb>
 
-G <string:SMRT_header> <string:file_name> <int:r>	        SMRT cell with r reads
-L <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	Read well and pulse range
-F <string>				                	sequence
-N <real:A> <real:C> <real:G> <real:T>                   	SNR in each base channel for read
-A <string>				                	capped pulse widths
+A <int:a> <int:b>			           	indexes of aligned sequences
+I <int:as> <int:ae> <int:bs> <int:be>	start and end in a and in b
+Q <int>									mapping quality in phred units
+C <string>								cigar string
+T <int:t> <int>t						list of trace points
+M <int>									number of matching aligned bases
+D <int>									number of differences = substitutions + indel bases
 ```
 
 ## Sequence Match List file, .sml
@@ -307,7 +318,6 @@ B <int:seq> <int:start> <int:end>
 Q <int:phred_confidence>	additional free information after phred score
 J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>  
 G <int:gap>
-Q <int:phred_confidence>
 ```
 
 ## Scaffolding List file, .slf
