@@ -83,16 +83,4 @@ char *Numbered_Suffix(char *left, int num, char *right);
 void Print_Number(int64 num, int width, FILE *out);   //  Print readable big integer
 int  Number_Digits(int64 num);                        //  Return # of digits in printed number
 
-// Sequence related routines
-
-#define COMPRESSED_LEN(len)  (((len)+3) >> 2)
-
-void   Compress_Read(int len, char *s);   //  Compress read in-place into 2-bit form
-void Uncompress_Read(int len, char *s);   //  Uncompress read in-place into numeric form
-void      Print_Read(char *s, int width);
-
-void Lower_Read(char *s);     //  Convert read from numbers to lowercase letters (0-3 to acgt)
-void Upper_Read(char *s);     //  Convert read from numbers to uppercase letters (0-3 to ACGT)
-void Number_Read(char *s);    //  Convert read from letters to numbers
-
 #endif // _CORE

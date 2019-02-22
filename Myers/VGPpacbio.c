@@ -59,6 +59,30 @@ int main(int argc, char* argv[])
 
   Filter *EXPR;
 
+  { int    i, len;
+    char   date[26];
+    time_t seconds;
+
+    printf("1 3 seq 1 0\n");
+    printf("2 3 pbr\n");
+    printf("# ! 1\n");
+    len = -1;
+    for (i = 1; i < argc; i++)
+      len += strlen(argv[i]);
+    printf("+ ! %d\n",len+34);
+    if (len > 24)
+      printf("@ ! %d\n",len);
+    else
+      printf("@ ! 24\n");
+    printf("! 9 VGPpacbio 3 1.0 %d",len);
+    for (i = 1; i < argc; i++)
+      printf(" %s",argv[i]);
+    seconds = time(NULL);
+    ctime_r(&seconds,date);
+    date[24] = '\0';
+    printf(" 24 %s\n",date);
+  }
+
   //  Process command line arguments
 
   { int   i, j, k;
@@ -112,12 +136,12 @@ int main(int argc, char* argv[])
       }
   }
 
-  //  Process each input file
+  //  Scan each file for size statistics
 
   { int      i;
     samFile *in;
-    int      nread, rg_nread;
-    int64    totbp, rg_totbp;
+    int      nread, rg_nread, gmaxc;
+    int64    totbp, rg_totbp, gtotc;
     int      maxbp;
     int      gsize[argc];
 
@@ -126,6 +150,8 @@ int main(int argc, char* argv[])
     maxbp    = 0;
     rg_nread = 0;
     rg_totbp = 0;
+    gtotc    = 0;
+    gmaxc    = 0;
     for (i = 1; i < argc; i++)
       { FILE *file;
         int   status, intype;
@@ -179,7 +205,9 @@ int main(int argc, char* argv[])
           }
 
         { samRecord *rec;
+          int        first, hlen;
 
+          first = 1;
           nr = 0;
           bp = 0;
           while (1)
@@ -191,12 +219,18 @@ int main(int argc, char* argv[])
 
               if ( ! evaluate_bam_filter(EXPR,rec))
                 continue;
+
+              if (first)
+                { first = 0;
+                  hlen  = strlen(rec->header);
+                }
  
               nr += 1;
               bp += rec->len;
               if (rec->len > maxbp)
                 maxbp = rec->len;
             }
+
           if (bp > rg_totbp)
             rg_totbp = bp;
           if (nr > rg_nread)
@@ -204,6 +238,11 @@ int main(int argc, char* argv[])
           totbp += bp;
           nread += nr;
           gsize[i] = nr;
+          if (!first)
+            { gtotc += hlen;
+              if (hlen > gmaxc)
+                gmaxc = hlen;
+            }
         }
 
         if (sam_close(in))
@@ -215,44 +254,16 @@ int main(int argc, char* argv[])
         free(core);
       }
 
-    { int    clen;
-      char   date[26];
-      time_t seconds;
-
-      printf("1 3 bpr 1 0\n");
-      printf("# ! 1\n");
-      printf("! 9 VGPpacbio 1 0");
-
-      clen = 0;
-      for (i = 1; i < argc; i++)
-        clen += strlen(argv[i]) + 1;
-      if (UPPERCASE + VERBOSE + ARROW)
-        { printf(" %d -",clen+1+VERBOSE+UPPERCASE+ARROW);
-          if (VERBOSE)
-            printf("v");
-          if (ARROW)
-            printf("a");
-          if (UPPERCASE)
-            printf("U");
-          printf(" %s",argv[1]);
-        }
-      else
-        printf(" %d %s",clen-1,argv[1]);
-      for (i = 2; i < argc; i++)
-        printf(" %s",argv[i]);
-      printf("\n");
-
-      seconds = time(NULL);
-      ctime_r(&seconds,date);
-      date[24] = '\0';
-      printf(" 24 %s\n",date);
-    }
+    //  Output size headers
 
     printf("# g %d\n",argc-1);
     printf("# L %d\n",nread);
     printf("# S %d\n",nread);
     printf("@ S %d\n",maxbp);
     printf("+ S %lld\n",totbp);
+    printf("# g %d\n",argc-1);
+    printf("+ g %lld\n",gtotc);
+    printf("@ g %d\n",gmaxc);
     printf("%% g # L %d\n",rg_nread);
     printf("%% g # S %d\n",rg_nread);
     printf("%% g + S %lld\n",rg_totbp);
@@ -265,6 +276,8 @@ int main(int argc, char* argv[])
         printf("%% g # A %d\n",rg_nread);
         printf("%% g + A %lld\n",rg_totbp);
       }
+
+    //  Scan files and output .pbr
 
     for (i = 1; i < argc; i++)
       { FILE *file;

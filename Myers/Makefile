@@ -10,7 +10,7 @@ ALL = VGPpair VGPpacbio VGPcloud
 all: $(ALL) README.html
 
 VGPpair: VGPpair.c gene_core.c gene_core.h
-	gcc $(CFLAGS) -o VGPpair VGPpair.c gene_core.c -lm
+	gcc $(CFLAGS) -o VGPpair VGPpair.c compression.c gene_core.c -lm -lz
 
 VGPpacbio: VGPpacbio.c pb_sam.c pb_sam.h pb_expr.c pb_expr.h gene_core.c gene_core.h
 	gcc $(CFLAGS) -I$(PATH_HDF5)/include -L$(PATH_HDF5)/lib -o VGPpacbio VGPpacbio.c pb_sam.c pb_expr.c gene_core.c -lhdf5 -lz
