@@ -202,91 +202,41 @@ If group lines are present then they should correspond to sequencing lanes or th
 This subtype of .seq requires that P lines exist, and that there are no E lines as for .ipr.  It also requires that g lines exist and correspond to subsets of reads with the same barcode.  The literal barcode sequence is by convention given in the group_name field.
 The barcodes and linker sequences should be removed from the reads (removing 23bp = 16bp barcode and 7bp linker at the start of read 1 for 10X Genomics).
 
-#### 10X Genomics read clouds, .10x
-
-
- 
-#### Representing multiple alignments
-We do this with two files: a sequence file of the consensus sequences, and a sequence match file (.sxs) with the alignments of the input sequences to the consensus sequences. 
-```
-< <string:input_sequence_file> S <int:nS>
-> <string:sxs_file>                        this file must have cigars
-
-S <string:sequence>
-```
-The consensus sequence file must refer to the input sequence file. 
-
-### List file, .lis
-
-This file type just keeps lists of indexes into other VGP file types.  We use this to define subsets of objects in existing VGP files, without needing to create
-
-```
-< <string:file_name> X <int:nx>
-	
-L <int:n> <int>n
-```
-There must be one input header line, and can be an arbitrary number of L lines. Here ```X``` in the header line is a line type found nx times in the named included file, the n value on an L line determines the number of items in the list, and each item is a positive integer between 1 and nx.
-
-### 10X Read Cloud files, .10x
-
-This a similar file type to .irp derived from .seq, with the distinction being that read pairs are clustered by having the same barcode rather than coming from the same sequencing lane, and barcodes and linker sequence is removed so that all the sequence should be derived from the source genome. 
-
-```
-c <int:n> <string:bar>    the next n read pairs are in the cloud with the given barcode
-P                         a pair follows immediately
-S <string>                forward and reverse sequence, with the barcode and linker removed from the forward read
-Q <string>                QV scores
-```
-The S, Q and P lines are exactly as described for an .irp file previously.  The c-lines group read
-pair lines into clouds which are all the read pairs
-in which the forward read contained the indicated barcode sequence for the cloud (which is removed
-for the .10x file).  In this case the c-lines are guaranteed to partition the read pairs (i.e. every
-read pair is guaranteed to be in one and only one cloud).
-
-In terms of a regular expression:
-```
-      (<c-line> (<S-line>[<Q-line>]<S-line>[<Q-line>])n )*
-```
-
 **VGPcloud** is a VGP tool that takes an .irp-file containing the bar-coded Illumina read pairs
 and re-organizes the data into clouds and removes the bar codes.  It understands how barcodes
 are encoded in the forward read of each pair, and takes into account potential errors in the
 barcode sequence.
 
-### PacBio Long Reads, .pbr
+#### PacBio Long Reads, .pbr
+
+The final raw data .seq subtype for the time being encode long reads from Pacific Biosciences.  P and E are not permitted, the g group_name should be set to the SMRT_cell header, and a W line must be provided to give well information for the read.  We also allow two extra optional record types to encode signal information that can be used in consensus callers.
 
 ```
-g <int:n> <string:SMRT_header>          SMRT cell with n reads
-S <string>                              sequence
 W <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	read well and pulse range
 N <real:A> <real:C> <real:G> <real:T>   SNR in each base channel for read
 A <string>                              capped pulse widths
 ```
-The data is grouped into SMRT cells by g-lines that begin each group and declare how many reads
-were produced in that cell.  Each read is described by an S and a W line and optionally an
-N- and A-line.  The W-line gives the well and pulse range from which the sequence in the S-line
-was extracted.  If present, the N-line give the average SNR in the channels for each base and
+The W line is necessary to identify when multiple subreads come from the same well. If present, the N-line give the average SNR in the channels for each base and
 the A-line gives the capped pulse width for each base as the character 1, 2, 3 or 4.  Pulse
 widths larger than 4 are clipped to 4 as Arrow does not treat widths larger than 4 differently.
 Basically short pulses are indications of potential error but any pulse over 4 units
-long is almost certainly a good call.  The A and S strings for a given read have the same
-length, therefore the S header information applies also to the A strings.
+long is almost certainly a good call.  The A string must have the same length as the S string for a given read .
 
 In terms of a regular expression:
 
 ```
-   (<g-line> (<L-line><F-line>[<N-line><A-line>])n )*
+   (<g-line> (<S-line><W-line>[<N-line><A-line>])n )*
 ```
 
 **VGPpacbio** is a VGP tool that takes one or more Pacbio subreads.bam or .sam files as input
 and extracts the information to make a .pbr file.
-
+ 
 ### Restriction Map Digest, .rmd
 
-This file type encodes a general restriction digest, potentially with multiple enzymes with distinct recognition sites.  It can be used both to represent primary data from a BioNano .bmx file, or other source of primary data, or a virtual map derived either by assembly of primary data or by *in silico* digestion of a sequence given a restriction enzyme recognition site, corresponding to the .cmap file type in the BioNano world.  These can be used for consistency checks with proposed assemblies, and to make inferences about scaffolding breaks and joins. 
+This primary file type encodes a general restriction digest, potentially with multiple enzymes with distinct recognition sites.  It can be used both to represent primary data from a BioNano .bnx file, or other source of primary data, or a virtual map derived either by assembly of primary data or by *in silico* digestion of a sequence given a restriction enzyme recognition site, corresponding to the .cmap file type in the BioNano world.  These can be used for consistency checks with proposed assemblies, and to make inferences about scaffolding breaks and joins. 
 
 ```
-r <int:m> <int:s> <string:site>s	set of m molecules cut with s enzymes, giving the literal recognition sequences of the enzymes
+r <int:r> <int:s> <string:site>s	set of r molecules cut with s enzymes, giving the literal recognition sequences of the enzymes
 M <int:len> <int:n> <int>n       	molecule: length and list of site locations
 R <int:n> <int>n					list of enzyme type per site (from 1..s)
 I <int:n> <real>n    				list of n intensities of sites in digest
@@ -297,32 +247,38 @@ The R line is only required if there are multiple enzymes specified (s > 1).  Th
 In terms of a regular expression:
 
 ```
-( <r-line> (<M-line> [<R-line>][<I-line>][<N-line>])m )*
+( <r-line> (<M-line> [<R-line>][<I-line>][<N-line>])r )*
 ```
 
 **VGPbionano** is a VGP tool that takes a Bionano .bnx-file as input and extracts the information to make a .rmd-file.
 
 ### Sequence match files, .sxs
 
+This is the primary file type for sequence matches.
+
 ```
-< <string:filename_a> S <int:na>        source of A sequences
-< <string:filename_b> S <int:nb>        source of B sequences
+< <string:filename_a> <char:T> <int:na>        source of A sequences
+< <string:filename_b> <char:T> <int:nb>        source of B sequences
 
 A <int:a> <int:b>                       indexes of aligned sequences
 I <int:as> <int:ae> <int:bs> <int:be>   start and end in a and in b
-Q <int>                                 mapping quality in phred units
+Q <int>                                 alignment confidence in phred units
 C <string>                              cigar string
 T <int:t> <int>t                        list of trace points
+U <int:m> <int>m                        list of trace sites in a
+V <int:m> <int>m                        list of trace sites in b
 M <int>                                 number of matching aligned bases
 D <int>                                 number of differences = substitutions + indel bases
 ```
-There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, asin the first step of most assemblers.
+There must be two included files, each containing some number of lines of named type *T*.  For sequences *T* will be S.  We allow an arbitrary type here so as to also allow restriction map lines from **.rmd** files. It is these objects that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, as in the first step of most assemblers.
 
-The value in the Q field is the phred-scaled confidence in the alignment being true, which is defined as -10log<sub>10</sub> p(alignment is true) - this is the mapping quality for programs that generate that.  This can be followed by other method-specific scoring information, which because it falls after the defined fields can be free form.
+The value in the Q field is the phred-scaled confidence that the alignment is true, which is defined as -10log<sub>10</sub> p(alignment is true). This is the mapping quality for programs that generate that quantity.  This can be followed by other method-specific scoring information, which because it falls after the defined fields can be free form.
+
+There are mutliple ways to give more detailed information about the alignment.  A C line supports CIGAR, which gives the complete alignment but can be verbose if the divergence is high.  The T line support evenly spaced trace points as in Gene Myers' [DAZZLER](https://dazzlerblog.wordpress.com/2015/11/05/trace-points/) system
 
 All line types following A are optional.  Typically I will be present and only one of C and T will be used downstream by any one application.
 
-If there are ***a*** bases in sequence a and ***b*** bases in sequence b and ***m*** matches, ***s*** substitutions, ***d*** deletions and ***i*** insertions, then  M = ***m*** and D = ***s*** + ***i*** + ***d***. So if we have both M and D then we can calculate ***s*** and ***i*** and ***d***, using that 2***m*** + 2***s*** + ***i*** + ***d*** = ***a*** + ***b*** and ***m*** + ***s*** + ***d*** = ***a*** and ***m*** + ***s*** + ***i*** = ***b***.
+If there are *a* bases in sequence a and *b* bases in sequence b and *m* matches, *s* substitutions, *d* deletions and *i* insertions, then  M = *m* and D = *s* + *i* + *d*. So if we have both M and D then we can calculate *s* and *i* and *d*, using that 2*m* + 2*s* + *i* + *d* = *a* + *b* and *m* + *s* + *d* = *a* and *m* + *s* + *i* = *b*.
 
 ### Restriction digest match file, .rxr
 
@@ -336,8 +292,6 @@ A <int:a> <int:b>                       indexes of aligned sequences
 I <int:as> <int:ae> <int:bs> <int:be>   start and end in a and in b
 Q <int>                                 mapping quality in phred units
 M <int:m>                               number of matched sites
-U <int:m> <int>m                        list of trace sites in a
-V <int:m> <int>m                        list of trace sites in b
 C <string>                              cigar string
 D <int>                                 number of unmatched sites
 ```
@@ -365,6 +319,17 @@ The Q line can be present for either J or B lines.  Further score information ca
 
 The X and Y lines point to evidence for these assertions.
 
+### List file, .lis
+
+This file type just keeps lists of indexes into other VGP file types.  We use this to define subsets of objects in existing VGP files, without needing to create
+
+```
+< <string:file_name> X <int:nx>
+	
+L <int:n> <int>n
+```
+There must be one input header line, and can be an arbitrary number of L lines. Here ```X``` in the header line is a line type found nx times in the named included file, the n value on an L line determines the number of items in the list, and each item is a positive integer between 1 and nx.
+
 ## A possible assembly work flow
 
 **INCOMPLETE Here I want to illustrate a work flow through assembly.**
@@ -376,6 +341,16 @@ type, which represents contigs and scaffolding.
 
 We also support subsets of alignments which are believed to represent
 consistent groups of connections between reads that are derived from truly overlapping locations in the source genome.
+
+#### Representing multiple alignments
+We do this with two files: a sequence file of the consensus sequences, and a sequence match file (.sxs) with the alignments of the input sequences to the consensus sequences. 
+```
+< <string:input_sequence_file> S <int:nS>
+> <string:sxs_file>                        this file must have cigars
+
+S <string:sequence>
+```
+The consensus sequence file must refer to the input sequence file. 
 
 
 # VGP Tool Manuals
