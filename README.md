@@ -66,7 +66,7 @@ what kind of information the line encodes.  Consider as a working example,
 the following Illumina Read Pair (.irp) file:
 
 ```
-1 3 irp 1 0            file type, major and minor version
+1 3 seq 1 0            file type, major and minor version
 # ! 1                  number of provenance lines in the file
 # P 2                  number of read pairs in file
 # S 4                  number of sequences in file
@@ -163,17 +163,26 @@ The types of data lines permitted depend on the file type.  We therefore specify
 
 We start with two basic file types, then give specific types to represent the primary data inputs we use in the VGP, and then derived file types used to hold various steps of the assembly pipeline.
 
-### Sequence file, .seq
+### Sequence files, .seq or .irp or .10x or .ctg 
 
 A core file type containing sequences, with optional quality scores.
 
 ```
+g <int:n> <string:group_name>    group with n sequences
+P              a pair follows immediately
 S <string>     forward or reverse sequence
+E <string>     optional external name
 Q <string>     QV scores in single character phred encoding (ASCII 33+q) 
 ```
+The core lines are the S lines, and this is the only line type which is required.  If P lines are present for pairing, then the number of S lines must be twice the number of P lines.  If Q lines are present then the number of Q lines must be the same as the number of S lines.
+
 The S strings are over the alphabet A, C, G, T.  IUPAC ambiguity codes are not supported. Any unsupported code (including N) is turned into an arbitrary letter with by VGP tools, with quality set to 0 if qualities are present.  DNA strings may be upper or lower case.
 
-The Q lines are optional.  When present, each symbol of a Q string is an ASCII character as in FASTQ.  So Q strings are over the 94 printable ASCII characters [!-~] and correspond to the range 0 to 93.  
+The E line is optional, and will not be used within VGP files to refer to sequences.  All references are to the index in the file.  The reason to have an E line is so as to be able to provide a known sequence name when exporting to FASTA or other formats.  We do not intend to keep names for reads, or assembly contigs.
+
+The Q lines are optional.  When present, each symbol of a Q string is an ASCII character as in FASTQ.  So Q strings are over the 94 printable ASCII characters [!-~] and correspond to the range 0 to 93.
+
+The g lines, if present, must form a partition over the sequences.  Both the reads in a pair must be in the same partition.  We use the g lines both for read groups in primary Illumina data, and for read clouds in 10X Genomics data, where we place the barcode in the group_name field.
 
 ### List file, .lis
 
@@ -263,6 +272,7 @@ long is almost certainly a good call.  The A and S strings for a given read have
 length, therefore the S header information applies also to the A strings.
 
 In terms of a regular expression:
+
 ```
    (<g-line> (<L-line><F-line>[<N-line><A-line>])n )*
 ```
@@ -286,7 +296,7 @@ The R line is only required if there are multiple enzymes specified (s > 1).  Th
 In terms of a regular expression:
 
 ```
-( <f-line> (<M-line> [<R-line>][<I-line>][<N-line>])m )*
+( <r-line> (<M-line> [<R-line>][<I-line>][<N-line>])m )*
 ```
 
 **VGPbionano** is a VGP tool that takes a Bionano .bnx-file as input and extracts the information to make a .rmd-file.
@@ -307,7 +317,9 @@ D <int>                                 number of differences = substitutions + 
 ```
 There must be two included files, each containing some number of S lines designating sequences.  It is these sequences that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, asin the first step of most assemblers.
 
-The value in the Q field is the phred-scaled mapping quality, which is defined as -10log<sub>10</sub> p(alignment in this location is incorrect).  This can be followed by other method-specific scoring information, which because it falls after the defined fields can be free form.  
+The value in the Q field is the phred-scaled confidence in the alignment being true, which is defined as -10log<sub>10</sub> p(alignment is true) - this is the mapping quality for programs that generate that.  This can be followed by other method-specific scoring information, which because it falls after the defined fields can be free form.
+
+All line types following A are optional.  Typically I will be present and only one of C and T will be used downstream by any one application.
 
 If there are ***a*** bases in sequence a and ***b*** bases in sequence b and ***m*** matches, ***s*** substitutions, ***d*** deletions and ***i*** insertions, then  M = ***m*** and D = ***s*** + ***i*** + ***d***. So if we have both M and D then we can calculate ***s*** and ***i*** and ***d***, using that 2***m*** + 2***s*** + ***i*** + ***d*** = ***a*** + ***b*** and ***m*** + ***s*** + ***d*** = ***a*** and ***m*** + ***s*** + ***i*** = ***b***.
 
@@ -335,13 +347,22 @@ There must be two included files, each containing some number of M lines designa
 This file encodes information about possible breaks and joins between sequences.  We expect that our assembly process will create a **.seq** file of contigs, and that various methods can be applied to use BioNano, HiC and 10X Genomics data to propose joins between these contigs, and possible breaks in them where they believe that there were missassemblies.
 
 ```
-< <string:contig_file_name> <int:nseqs>
+< <string:contig_file_name> S <int:nseqs>
+< <string:sxs_list_file_name> L <int:nlists>
+< <string:rxr_list_file_name> L <int:nlists>
+
 B <int:seq> <int:start> <int:end>                       potential break in sequence somewhere between start and end
-Q <int:phred_confidence>                                confidence in the break
 J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>   potential 
+Q <int:phred_confidence>                                confidence in the break
 G <int:gap>                                             estimated gap size in base pairs
+X <int:list_id>
+y <int:list_id>
 ```
 The join operator specifies which end of each sequence is involved in the join, using single characters ***s*** or ***e*** to designate the start and end.  If the G line is missing then the sequences are presumed to abut.  If the gap is negative then they overlap by the specified number of bases.
+
+The Q line can be present for either J or B lines.  Further score information can be given after the phred score.
+
+The X and Y lines point to evidence for these assertions.
 
 ## A possible assembly work flow
 
