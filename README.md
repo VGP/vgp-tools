@@ -159,9 +159,9 @@ was run.
 
 The types of data lines permitted depend on the file type.  We therefore specify here each file type in turn.  Where reference header lines are required we indicate that here, together with what they signify. We remind the reader that while we aim to keep this README up to date, the formal versioned definition of each VGP file type is determined by the validator **VGPvalidate** and documented in its code.
 
-### Sequence files, .seq
+### Sequence, .seq
 
-A core file type containing sequences, with optional quality scores.
+A core file type containing sequences, with optional additional information, in particular quality scores as in FASTQ. Further legal additional lines are described in the subtypes listed below.
 
 ```
 g <int:n> <string:group_name>    group with n sequences
@@ -169,19 +169,17 @@ P              indicates that the next two sequences are paired
 S <string>     the sequence
 Q <string>     QV scores in single character phred encoding (ASCII 33+q) 
 ```
-The core lines are the S lines, and this is the only line type which is required.  If P lines are present for pairing, then the number of S lines must be twice the number of P lines.  If Q lines are present then the number of Q lines must be the same as the number of S lines.
+The core lines are the S lines, and this is the only line type which is required. If Q lines are present then the number of Q lines must be the same as the number of S lines. If P lines are present for pairing, then the number of S lines must be twice the number of P lines.  
 
 The S strings are over the alphabet A, C, G, T.  IUPAC ambiguity codes are not supported. Any unsupported code (including N) is turned into an arbitrary letter with by VGP tools, with quality set to 0 if qualities are present.  DNA strings may be upper or lower case.
 
-The E line is optional, and will not be used within VGP files to refer to sequences.  All references are to the index in the file.  The reason to have an E line is so as to be able to provide a known sequence name when exporting to FASTA or other formats.  We do not intend to keep names for reads, or assembly contigs.
+The Q lines are optional.  When present, each symbol of a Q string is an ASCII character as encoded in FASTQ.  So Q strings are over the 94 printable ASCII characters [!-~] and correspond to the range 0 to 93.
 
-The Q lines are optional.  When present, each symbol of a Q string is an ASCII character as in FASTQ.  So Q strings are over the 94 printable ASCII characters [!-~] and correspond to the range 0 to 93.
-
-The g lines, if present, must form a partition over the sequences.  Both the reads in a pair must be in the same partition.  We use the g lines both for read groups in primary Illumina data, and for read clouds in 10X Genomics data, where we place the barcode in the group_name field.
+The g lines are also optional. If present they must form a partition over the sequences, that is every S line must be contained in one and only one group. If pairs are present then both the reads in a pair must be in the same group.  We use the g lines both for read groups in primary Illumina data, and for read clouds in 10X Genomics data, where we place the barcode in the group_name field.
 
 #### Illumina paired reads, .ipr
 
-This subtype of .seq requires that P lines exist, and that there are no E lines.  We explicitly force you to remove primary read names - if you are determined to encode them you can have them as extensions at the end of the P record, but these will not be visible to the parser.
+This subtype of .seq requires that P lines exist.
 
 If group lines are present then they should correspond to sequencing lanes or the equivalent, as in SAM read groups.
 
@@ -189,17 +187,16 @@ If group lines are present then they should correspond to sequencing lanes or th
 
 #### 10X Genomics read clouds, .10x
 
-This subtype of .seq requires that P lines exist, and that there are no E lines as for .ipr.  It also requires that g lines exist and correspond to subsets of reads with the same barcode.  The literal barcode sequence is by convention given in the group_name field.
-The barcodes and linker sequences should be removed from the reads (removing 23bp = 16bp barcode and 7bp linker at the start of read 1 for 10X Genomics).
+This subtype is for processed 10x sequencing data. It requires paired reads as for .ipr and that barcodes and linker sequences have been removed from the sequences (the first 23bp = 16bp barcode and 7bp linker from the start of the first read). It also requires that g lines exist and correspond to subsets of reads with the same barcode.  The literal barcode sequence is by convention given in the group_name field.
 
 **VGPcloud** is a VGP tool that takes an .irp-file containing the bar-coded Illumina read pairs
 and re-organizes the data into clouds and removes the bar codes.  It understands how barcodes
 are encoded in the forward read of each pair, and takes into account potential errors in the
 barcode sequence.
 
-#### PacBio Long Reads, .pbr
+#### PacBio long reads, .pbr
 
-The final raw data .seq subtype for the time being encode long reads from Pacific Biosciences.  P and E are not permitted, the g group_name should be set to the SMRT_cell header, and a W line must be provided to give well information for the read.  We also allow two extra optional record types to encode signal information that can be used in consensus callers.
+The final raw data .seq subtype for the time being encodes long reads from Pacific Biosciences.  P is not permitted, and the g group_name should be set to the SMRT_cell header.  In addition a W line must be provided for each sequence as below in order to give well information for the read.  We also allow two extra optional record types to encode signal information that can be used in consensus calling and polishing.
 
 ```
 W <int:well> <int:1st.pulse> <int:last.pulse> <real:score>	read well and pulse range
@@ -212,102 +209,145 @@ widths larger than 4 are clipped to 4 as Arrow does not treat widths larger than
 Basically short pulses are indications of potential error but any pulse over 4 units
 long is almost certainly a good call.  The A string must have the same length as the S string for a given read .
 
-In terms of a regular expression:
-
-```
-   (<g-line> (<S-line><W-line>[<N-line><A-line>])n )*
-```
-
 **VGPpacbio** is a VGP tool that takes one or more Pacbio subreads.bam or .sam files as input
 and extracts the information to make a .pbr file.
- 
+
+#### Contig files from assemblies, .ctg
+
+This sequence type is the product of an assembler.  If at all possible there should be an associated **.map** file, which records the alignments of reads that generated the contig, and **.scf** file which records the potential joins between contigs at branch points in the assembly graph. In the header notation described above these would be
+
+```
+> <string:map_file_name>
+> <string:scaffold_information_name>
+```
+
 ### Restriction Map Digest, .rmd
 
-This primary file type encodes a general restriction digest, potentially with multiple enzymes with distinct recognition sites.  It can be used both to represent primary data from a BioNano .bnx file, or other source of primary data, or a virtual map derived either by assembly of primary data or by *in silico* digestion of a sequence given a restriction enzyme recognition site, corresponding to the .cmap file type in the BioNano world.  These can be used for consistency checks with proposed assemblies, and to make inferences about scaffolding breaks and joins. 
+This file type encodes a general restriction digest, potentially with multiple enzymes with distinct recognition sites. 
 
 ```
-r <int:r> <int:s> <string:site>s	set of r molecules cut with s enzymes, giving the literal recognition sequences of the enzymes
-M <int:len> <int:n> <int>n       	molecule: length and list of site locations
-R <int:n> <int>n					list of enzyme type per site (from 1..s)
+r <int:r> <int:s> <string:site>s	set of r map objects cut with s enzymes, giving the literal recognition sequences of the enzymes
+R <int:len> <int:n> <int>n       	restriction map: length and list of site locations in bases
+E <int:n> <int>n					list of enzyme type per site (from 1..s)
+```
+The required lines are at least one r group line giving the restriction recognition sequence, or set of sequences, for the data in the following group, then a set of R lines that give the actual map objects with the site locations in each map in ascending order.  When multiple enzymes are used then there must be a corresponding E line for each R line, which specifies which enzyme/recognition sequence applies to each site in the map object.
+
+We envision three subtypes
+
+#### Restriction Map from Sequence, .rms
+
+When the file is used to represent *in silico* digestions of sequences,  then there must be a reference header giving the source of the sequence, and for each R line an O line referring back to the relevant sequence object.
+
+```
+< <string:ref_sequence_filename> S <int:ns>
+
+O <int>
+```
+
+#### BioNano raw data, .rmb
+
+This subtype supports raw BioNano data from a .bnx file by adding two additional required lines for each R line:
+
+```
 I <int:n> <real>n    				list of n intensities of sites in digest
 N <int:n> <real>n    		 		list of n signal to noise ratios per site
-```
-The R line is only required if there are multiple enzymes specified (s > 1).  The I and N lines are only needed to represent primary data.
-
-In terms of a regular expression:
-
-```
-( <r-line> (<M-line> [<R-line>][<I-line>][<N-line>])r )*
 ```
 
 **VGPbionano** is a VGP tool that takes a Bionano .bnx-file as input and extracts the information to make a .rmd-file.
 
-### Sequence match files, .sxs
+#### BioNano assembled map, .rmc
 
-This is the primary file type for sequence matches.
+This is a subtype with the potential to record additional information from map assembly.
+
+BioNano Solve generates cmap files with many additional attributes per site, including a standard deviation, coverage depth, occurrence depth (how many of input map molecules that cover this site contain this site) and scores for the chance of this site being adjacent to a chimeric join or a fragile site.  We could additional line types analogous to E to support any of these that we feel is important to be recorded for downstream analysis.
+
+It can be used both to represent primary data from a BioNano .bnx file, or other source of primary data, or a virtual map derived either by assembly of primary data or by *in silico* digestion of a sequence given a restriction enzyme recognition site, corresponding to the .cmap file type in the BioNano world.  These can be used for consistency checks with proposed assemblies, and to make inferences about scaffolding breaks and joins. 
+The R line is only required if there are multiple enzymes specified (s > 1).  
+
+In terms of a regular expression:
 
 ```
-< <string:filename_a> <char:T> <int:na>        source of A sequences
-< <string:filename_b> <char:T> <int:nb>        source of B sequences
+( <r-line> (<R-line> [<E-line>][<I-line>][<N-line>])r )*
+```
+
+### Sequence match files, .sxs
+
+This is the primary file type for sequence matches, with "sxs" standing for Sequence Cross Sequence, pronounced like "success".
+
+```
+< <string:filename_a> <char:X> <int:na>        source of A sequences
+< <string:filename_b> <char:Y> <int:nb>        source of B sequences
 
 A <int:a> <int:b>                       indexes of aligned sequences
 I <int:as> <int:ae> <int:bs> <int:be>   start and end in a and in b
 Q <int>                                 alignment confidence in phred units
 C <string>                              cigar string
 T <int:t> <int>t                        list of trace points
-U <int:m> <int>m                        list of trace sites in a
-V <int:m> <int>m                        list of trace sites in b
+U <int:u> <int>u                        list of trace sites in a
+V <int:u> <int>u                        list of trace sites in b
 M <int>                                 number of matching aligned bases
 D <int>                                 number of differences = substitutions + indel bases
 ```
-There must be two included files, each containing some number of lines of named type *T*.  For sequences *T* will be S.  We allow an arbitrary type here so as to also allow restriction map lines from **.rmd** files. It is these objects that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  These can be the same file in the case that an all-versus all alignment process has been run, as in the first step of most assemblers.
+There must be two included files, each containing some number of lines of their respective named type, here *X* and *Y*.  For standard sequence matches both *X* and *Y* will be S.  We allow an arbitrary type here so as to also allow restriction map lines from **.rmd** files (see subtype .rxr below). It is these objects that the ```a``` and ```b``` index fields on the ```A``` alignment lines refer to.  The two files can be the same in the case that an all-versus-all alignment process has been run, as in the first step of most assemblers.
 
-The value in the Q field is the phred-scaled confidence that the alignment is true, which is defined as -10log<sub>10</sub> p(alignment is true). This is the mapping quality for programs that generate that quantity.  This can be followed by other method-specific scoring information, which because it falls after the defined fields can be free form.
+The integers in the I line give the start and end coordinates in a and b in semi-open format [*as,ae*), so *as* = 0 corresponds to the first base, and *ae* = len means to finish at the last base (bases numbered 0..len-1).  If the sequences align in opposite directions then *ae* > *as* and *be* < *bs*, with the aligned b sequence being the reverse complement of [*be*,*bs*).
 
-There are mutliple ways to give more detailed information about the alignment.  A C line supports CIGAR, which gives the complete alignment but can be verbose if the divergence is high.  The T line support evenly spaced trace points as in Gene Myers' [DAZZLER](https://dazzlerblog.wordpress.com/2015/11/05/trace-points/) system
+The value in the Q field is the phred-scaled confidence that the alignment is true, which is defined as -10log<sub>10</sub> p(alignment is false). This is the mapping quality for programs that generate it. Otherwise programs that want to give score information should provide an estimate. This can be followed by other method-specific scoring information, which because it falls after the defined fields can be free form.
 
-All line types following A are optional.  Typically I will be present and only one of C and T will be used downstream by any one application.
+There are mutliple ways to give more detailed information about the alignment.  A C line supports CIGAR, which gives the complete alignment but can be verbose if the divergence is high.  The T line gives trace points corresponding mapping evenly spaced positions in the a sequences, as in Gene Myers' [DAZZLER](https://dazzlerblog.wordpress.com/2015/11/05/trace-points/) system. A variant of this is to provide paired trace coordinates in both sequences, encoded in U and V lines.  In particular these are used during restriction map alignment (see below).
+
+All line types following A are optional.  Typically I will be present and only one of C or T or (U and V) will be used downstream by any one application.
 
 If there are *a* bases in sequence a and *b* bases in sequence b and *m* matches, *s* substitutions, *d* deletions and *i* insertions, then  M = *m* and D = *s* + *i* + *d*. So if we have both M and D then we can calculate *s* and *i* and *d*, using that 2*m* + 2*s* + *i* + *d* = *a* + *b* and *m* + *s* + *d* = *a* and *m* + *s* + *i* = *b*.
 
-### Restriction digest match file, .rxr
+#### Restriction digest match file, .rxr
 
-This is a closely related format to .sxs, containing alignments of restriction maps rather than alignments between DNA sequences. There are subtle differences in some of the ancillary record types.
+This is a subtype to represent restriction map comparisons, as in the .xmap files produced by the BioNano Hybrid Scaffold process.  In this case the reference files will be .rmd files containing R lines, and the coordinates are restriction sites, not bases. It should in principle be possible to create .rxs files that compare restriction maps to sequences without an intermediate in silico digest file, but we are not currently aware of software to do this.
 
-```
-< <string:filename_a> M <int:na>        source of A molecules
-< <string:filename_b> M <int:nb>        source of B molecules
+#### Sequence map file, .map
 
-A <int:a> <int:b>                       indexes of aligned sequences
-I <int:as> <int:ae> <int:bs> <int:be>   start and end in a and in b
-Q <int>                                 mapping quality in phred units
-M <int:m>                               number of matched sites
-C <string>                              cigar string
-D <int>                                 number of unmatched sites
-```
-There must be two included files, each containing some number of M lines designating molecules with restriction digests.  The U and V lines store lists of the indexes of pairs of matched sites, so both these records must be present if either of them is, and the list sizes on these two lines must be the same, and the same as the value of m on the M line if that is present.  The cigar string on the C line is essentially the same as for sequences, although there is no concept of aligned but mismatching sites (everything must match or be an insertion or deletion).
+A different special case of a .sxs file is when a sequence is derived from one or more previous sequences, for example following an edit process during assembly polishing, or as the golden path consensus of a multiple alignment of read subsequences.  In this case each sequence in file A must be completely covered by an alignment, so that every base can be traced back.  In this case C lines are necessary to specify the alignment exactly.
+
+It is possible in principle to compose .map files so as to support tracing back coordinates in a current set of sequences to those in previous sets.
 
 ### Scaffolding information file, .scf
 
-This file encodes information about possible breaks and joins between sequences.  We expect that our assembly process will create a **.seq** file of contigs, and that various methods can be applied to use BioNano, HiC and 10X Genomics data to propose joins between these contigs, and possible breaks in them where they believe that there were missassemblies.
+This file encodes information about possible joins and breaks between sequences.  We expect that our assembly process will create a **.seq** file of contigs, and that various methods can be applied to use BioNano, HiC and 10X Genomics data to propose joins between these contigs, and possible breaks in them where they believe that there were missassemblies.
 
 ```
 < <string:contig_file_name> S <int:nseqs>
 < <string:sxs_list_file_name> L <int:nlists>
-< <string:rxr_list_file_name> L <int:nlists>
 
+J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>   potential join
 B <int:seq> <int:start> <int:end>                       potential break in sequence somewhere between start and end
-J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>   potential 
 Q <int:phred_confidence>                                confidence in the break
 G <int:gap>                                             estimated gap size in base pairs
 X <int:list_id>
-y <int:list_id>
+Y <int:list_id>
 ```
-The join operator specifies which end of each sequence is involved in the join, using single characters ***s*** or ***e*** to designate the start and end.  If the G line is missing then the sequences are presumed to abut.  If the gap is negative then they overlap by the specified number of bases.
+This file type is unusual in containing two object types.  ***RICHARD: Is this a bad idea?***
 
-The Q line can be present for either J or B lines.  Further score information can be given after the phred score.
+A J line specifies which end of each sequence is involved in the join, using single characters ***s*** or ***e*** to designate the start and end.  If the G line is missing then the sequences are presumed to abut.  If the gap is negative then they overlap by the specified number of bases.
 
-The X and Y lines point to evidence for these assertions.
+A B line indicates a potential break.  The meaning is that the break is to the right of position *seq_a* and to the left of position *seq_b*, so if the breakpoint is known exactly then *seq_b* = *seq_a* + 1. In practice scaffolding programs typically can only localise possible breaks to a wider interval. 
+
+A Q line can be present for either J or B lines. As in .sxs files, this is encoded in phred-scaled units *q* = -10log<sub>10</sub> p(break or join is false).  Further score information can be given after the phred score.
+
+An optional X line points to evidence for the respective break or join assertion, in the form of an index into a list file that specifies subsets of alignments used to derive the current file.  If this is present then the The model for this is that the scaffolding program will start with a .sxs file, and produce together a .scf file and a .lis file with the supporting evidence.
+
+### Export Scaffold file, .exs
+We need a final format to be able to define scaffold objects for export.  At this point we support sequence names, so as, for example, to be able to name chromosomes or other well-known sequences.
+
+```
+< <string:seq_filename> S <int:ns>
+< <string:sxf_filename> J <int:nj>
+
+F <int:s> <int:k> <int:j>k
+N <string:name>
+```
+Each scaffold is defined by a starting sequence and a (possibly empty) list of join objects.  There is an optional name.
+
+This structure supports generation of fasta with gaps filled with N's (remember that we don't support N bases in our native sequence format).  Also there is a natural conversion from .exs to the Assembly Golden Path (agp) format.
 
 ### List file, .lis
 
@@ -322,26 +362,59 @@ There must be one input header line, and can be an arbitrary number of L lines. 
 
 ## A possible assembly work flow
 
-**INCOMPLETE Here I want to illustrate a work flow through assembly.**
-
 We view the assembly task as choice of a subset of read alignments that
 result in a consistent layout.  These can then be used to generate
-consensus contig sequences, which are the subject of the next file
-type, which represents contigs and scaffolding.
+consensus contig sequences, with possible joins at branch points.  While a read may overlap multiple contigs, our convention is that contigs do not overlap, but rather abut at junctions.  Explicitly representing the subset of alignments to be used allows different tools to be used to generate alignments, select the spanning subset, then generate the graph and consensus contig sequences.
 
-We also support subsets of alignments which are believed to represent
-consistent groups of connections between reads that are derived from truly overlapping locations in the source genome.
+Following this different scaffolding programs may generate lists of possible breaks and joins, which can be applied in some order to generate longer contigs
 
-#### Representing multiple alignments
-We do this with two files: a sequence file of the consensus sequences, and a sequence match file (.sxs) with the alignments of the input sequences to the consensus sequences. 
+Below is pseudocode for a somewhat fanciful standard assembly pipeline. In practice we do not envision working the whole time with VGP formats.  Certain series of operations will naturally be carried out on data in a native binary format.  However, we propose to require that all of our tools can convert back and forth into VGP formats to permit interchange of information.
+
 ```
-< <string:input_sequence_file> S <int:nS>
-> <string:sxs_file>                        this file must have cigars
+// edit and assemble PacBio data
+VGPpacbio pb1.bam pb2.bam pb3.bam > pb-raw.pbr
+long_read_compare pb-raw.pbr pb-raw.pbr > pb-raw.sxs
+pb_edit pb-raw.sxs > (pb-clean.seq, pb-clean.map)
+long_read_compare pb-clean.pbr pb-clean.pbr > pb-clean.sxs
+transitive_reduction pb-clean.sxs > pb-clean.lis
+build_consensus pb-clean.lis > (contigs1.ctg, contigs1.map, contigs1.sxf)
 
-S <string:sequence>
+// short range scaffold with 10x data
+VGPpair tenx.R1.fastq.gz tenx.R2.fastq.gz > tenx.ipr
+VGPcloud tenx.ipr > tenx.10x
+read_map contigs1.ctg tenx.10x > tenx.sxs
+scaff_10x contigs1.ctg tenx.sxs > tenx.scf
+apply_scf contigs1.ctg tenx.scf > (contigs2.ctg, contigs2.map, contigs2.sxf)
+
+// long range scaffold with BioNano data
+bnx2rmb bionan.bnx > bionan.rmb
+rmd_assemble bionan.rmd > (bionan.rmc, bionan.map)
+digest_compare contigs2.ctg bionan.rmc > bionan.sxr
+scaff_rmc contigs2.ctg bionan.sxr > bionan.scf
+apply_scf contigs2.ctg bionan.scf > (contigs3.ctg, contigs3.map, contigs3.sxf)
+
+// scaffold to chromosomes with HiC data
+VGPpair hic.R1.fastq.gz hic2.R2.fastq.gz > hic.ipr
+read_map contigs3.ctg hic.ipr > hic.sxs
+scaff_hic contigs3.ctg hic.sxs > hic.scf
+apply_scf contigs3.ctg bionan.scf > (contigs4.ctg, contigs4.map, contigs4.sxf)
+
+// build scaffold objects
+select_scaffolds contigs4.ctg contigs4.sxf > scaffolds4.exs
+
+// and polish, first with PacBio data
+compose_maps contigs4.map contigs3.map contigs2.map contigs1.map pb-clean.map > contigs4-pbraw.map
+pb_polish contigs4.ctg scaffolds4.exs contigs4-pbraw.map pb-raw.pbr > (contigs5.ctg, scaffolds5.exs contigs5.map)
+
+// and then with 10x Illumina data
+read_map contigs5.ctg tenx.10x > contigs5-tenx.sxs
+illumina_polish contigs5.ctg scaffolds5.exs contigs5-tenx.sxs > (contigs6.ctg, scaffolds6.exs contigs6.map)
+
+// finally export the scaffolds into fasta for everyone to use
+export_fasta contigs6.ctg scaffolds6.exs > assembly.fa
+export_agp scaffold6.exs > assembly.agp
 ```
-The consensus sequence file must refer to the input sequence file. 
-
+An alternative enabled by having proposed scaffolding operations in VGP formats would be to first make all the .scf files then select a consensus of them, and apply this to generate the final contig and scaffold sets.  This process could perhaps be repeated once, to allow joining ends of contigs that had been broken.
 
 # VGP Tool Manuals
 
