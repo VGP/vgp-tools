@@ -310,44 +310,64 @@ A different special case of a .sxs file is when a sequence is derived from one o
 
 It is possible in principle to compose .map files so as to support tracing back coordinates in a current set of sequences to those in previous sets.
 
-### Scaffolding information file, .scf
+### Joins file, .jns
 
-This file encodes information about possible joins and breaks between sequences.  We expect that our assembly process will create a **.seq** file of contigs, and that various methods can be applied to use BioNano, HiC and 10X Genomics data to propose joins between these contigs, and possible breaks in them where they believe that there were missassemblies.
+This file type encodes possible joins between sequences.  We use this both for possible scaffolding joins, and to indicate edges between sequence nodes in an assembly graph. 
+
+For assemblies, we expect that our assembly process will create a **.seq** file of contigs, and that various methods will be applied to use 10X Genomics, BioNano, HiC and/or other data to propose joins between these contigs, and possible breaks in them where they believe that there were missassemblies. This file type encodes the possible joins, and the following file type encodes possible breaks. We envision that there will be a program that can act on contig file together with lists of breaks and joins to create new contig files, or scaffolds (see .scf file type below).
 
 ```
 < <string:contig_file_name> S <int:nseqs>
-< <string:sxs_list_file_name> L <int:nlists>
+< <string:sxs_file_name> A <int:nalignments>
 
 J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>   potential join
-B <int:seq> <int:start> <int:end>                       potential break in sequence somewhere between start and end
-Q <int:phred_confidence>                                confidence in the break
-G <int:gap>                                             estimated gap size in base pairs
-X <int:list_id>
-Y <int:list_id>
+Q <int:phred_confidence>                                optional score of confidence in the join
+X <int:list_id>                                         optional list of alignment objects providing evidence for the break
 ```
-This file type is unusual in containing two object types.  ***RICHARD: Is this a bad idea?***
 
-A J line specifies which end of each sequence is involved in the join, using single characters ***s*** or ***e*** to designate the start and end.  If the G line is missing then the sequences are presumed to abut.  If the gap is negative then they overlap by the specified number of bases.
+The J line specifies which end of each sequence is involved in the join, using single characters ***s*** or ***e*** to designate the start and end.  
 
-A B line indicates a potential break.  The meaning is that the break is to the right of position *seq_a* and to the left of position *seq_b*, so if the breakpoint is known exactly then *seq_b* = *seq_a* + 1. In practice scaffolding programs typically can only localise possible breaks to a wider interval. 
+The G line indicates the expected gap size.  If the G line is missing then the sequences are presumed to abut. If the gap is negative then they overlap by the specified number of bases.
 
-A Q line can be present for either J or B lines. As in .sxs files, this is encoded in phred-scaled units *q* = -10log<sub>10</sub> p(break or join is false).  Further score information can be given after the phred score.
+An optional Q line encodes confidence in the assertion of the break. As in .sxs files, this is encoded in phred-scaled units *q* = -10log<sub>10</sub> p(break or join is false).  Further score information from the specific method that proposed the join can be given after the phred score.
 
-An optional X line points to evidence for the respective break or join assertion, in the form of an index into a list file that specifies subsets of alignments used to derive the current file.  If this is present then the The model for this is that the scaffolding program will start with a .sxs file, and produce together a .scf file and a .lis file with the supporting evidence.
+An optional X line points to evidence for the join assertion, in the form of a list of alignments.  If this is present then the there must be a reference to a .sxs file in the header.
 
-### Export Scaffold file, .exs
-We need a final format to be able to define scaffold objects for export.  At this point we support sequence names, so as, for example, to be able to name chromosomes or other well-known sequences.
+### Breaks file, .brk
+
+This file encodes information about possible breaks in sequences. See the description of the .jns file type explains how we envision that these will be used.
+
+```
+< <string:contig_file_name> S <int:nseqs>
+< <string:sxs_file_name> A <int:nalignments>
+
+B <int:seq> <int:start> <int:end>    potential break in sequence somewhere between start and end
+Q <int:phred_confidence>             optional score of confidence in the break
+X <int:na> <int:a>n                  optional list of alignment objects providing evidence for the break
+```
+
+The B line indicates a potential break.  The meaning is that the break is to the right of position *seq_a* and to the left of position *seq_b*, so if the breakpoint is known exactly then *seq_b* = *seq_a* + 1. In practice scaffolding programs typically can only localise possible breaks to a wider interval. 
+
+The Q and X lines have the same interpretation as in .jns files. For completeness we repeat this information here again.
+
+A Q line can be present to indicate confidence in the assertion of the break. As in .sxs files, this is encoded in phred-scaled units *q* = -10log<sub>10</sub> p(break or join is false).  Further score information specific to the method used to infer the break can be given after the phred score.
+
+An optional X line points to evidence for the break assertion, in the form of list of alignments.  If this is present then the there must be a reference to a .sxs file in the header.
+
+### Scaffold file, .scf
+
+Because our basic sequence objects do not allow gaps, we need a separate file type to represent scaffolds.  Since this will also be used for export of the final product of assemblies at this point we also support object names, so as, for example, to be able to name chromosomes or other well-known sequences.
 
 ```
 < <string:seq_filename> S <int:ns>
 < <string:sxf_filename> J <int:nj>
 
-F <int:s> <int:k> <int:j>k
+F <int:s> <char:+|-> <int:k> <int:j>k  starting sequence, orientation, list of joins
 N <string:name>
 ```
-Each scaffold is defined by a starting sequence and a (possibly empty) list of join objects.  There is an optional name.
+Each scaffold is defined by a starting sequence with its orientation and a (possibly empty) list of join objects.  There is an optional name.
 
-This structure supports generation of fasta with gaps filled with N's (remember that we don't support N bases in our native sequence format).  Also there is a natural conversion from .exs to the Assembly Golden Path (agp) format.
+This structure supports generation of fasta with gaps filled with N's, and generation of the Assembly Golden Path (agp) format.
 
 ### List file, .lis
 
