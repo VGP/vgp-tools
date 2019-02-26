@@ -22,7 +22,7 @@
 
 static int VERBOSE;
 static int ARROW;
-static int UPPERCASE;
+static int UPPER;
 
 static char *Usage = "[-vaU] [-e<expr(ln>=500 && rq>=750)> <input:pacbio> ...";
 
@@ -33,7 +33,7 @@ static void writeSamRecord(samRecord *rec)
 
   printf("L %d %d %d 0.%0d\n",rec->well,rec->beg,rec->end,(int) (rec->qual*1000.));
 
-  if (UPPERCASE)
+  if (UPPER)
     { if (islower(rec->seq[0]))
       for (i = 0; i < rec->len; i++)
         rec->seq[i] -= LOWER_OFFSET;
@@ -55,33 +55,8 @@ static void writeSamRecord(samRecord *rec)
   //  Main
 
 int main(int argc, char* argv[])
-{ char *path, *core;
-
+{ char   *path, *core;
   Filter *EXPR;
-
-  { int    i, len;
-    char   date[26];
-    time_t seconds;
-
-    printf("1 3 seq 1 0\n");
-    printf("2 3 pbr\n");
-    printf("# ! 1\n");
-    len = -1;
-    for (i = 1; i < argc; i++)
-      len += strlen(argv[i]);
-    printf("+ ! %d\n",len+34);
-    if (len > 24)
-      printf("@ ! %d\n",len);
-    else
-      printf("@ ! 24\n");
-    printf("! 9 VGPpacbio 3 1.0 %d",len);
-    for (i = 1; i < argc; i++)
-      printf(" %s",argv[i]);
-    seconds = time(NULL);
-    ctime_r(&seconds,date);
-    date[24] = '\0';
-    printf(" 24 %s\n",date);
-  }
 
   //  Process command line arguments
 
@@ -111,6 +86,7 @@ int main(int argc, char* argv[])
 
     VERBOSE = flags['v'];
     ARROW   = flags['a'];
+    UPPER   = flags['U'];
 
     if (EXPR == NULL)
       EXPR = parse_filter("ln>=500 && rq>=750");
@@ -256,26 +232,62 @@ int main(int argc, char* argv[])
 
     //  Output size headers
 
-    printf("# g %d\n",argc-1);
-    printf("# L %d\n",nread);
-    printf("# S %d\n",nread);
-    printf("@ S %d\n",maxbp);
-    printf("+ S %lld\n",totbp);
-    printf("# g %d\n",argc-1);
-    printf("+ g %lld\n",gtotc);
-    printf("@ g %d\n",gmaxc);
-    printf("%% g # L %d\n",rg_nread);
-    printf("%% g # S %d\n",rg_nread);
-    printf("%% g + S %lld\n",rg_totbp);
-    if (ARROW)
-      { printf("# N %d\n",nread);
-        printf("# A %d\n",nread);
-        printf("@ A %d\n",maxbp);
+    { int    i, clen, optl;
+      char   date[26];
+      time_t seconds;
+
+      optl = ARROW+UPPER+VERBOSE;
+      if (optl > 0)
+        clen = optl+1;
+      else
+        clen = -1;
+      for (i = 1; i < argc; i++)
+        clen += strlen(argv[i])+1;
+
+      printf("1 3 seq 1 0\n");
+      printf("2 3 pbr\n");
+      printf("# ! 1\n");
+      printf("# g %d\n",argc-1);
+      printf("# L %d\n",nread);
+      printf("# S %d\n",nread);
+      if (ARROW)
+        { printf("# N %d\n",nread);
+          printf("# A %d\n",nread);
+        }
+      printf("+ ! %d\n",clen+36);
+      printf("+ g %lld\n",gtotc);
+      printf("+ S %lld\n",totbp);
+      if (ARROW)
         printf("+ A %lld\n",totbp);
-        printf("%% g # N %d\n",rg_nread);
-        printf("%% g # A %d\n",rg_nread);
+
+      if (clen > 24)
+        printf("@ ! %d\n",clen);
+      else
+        printf("@ ! 24\n");
+      printf("@ g %d\n",gmaxc);
+      printf("@ S %d\n",maxbp);
+      if (ARROW)
+        printf("@ A %d\n",maxbp);
+
+      printf("%% g # L %d\n",rg_nread);
+      printf("%% g # S %d\n",rg_nread);
+      if (ARROW)
+        { printf("%% g # N %d\n",rg_nread);
+          printf("%% g # A %d\n",rg_nread);
+        }
+
+      printf("%% g + S %lld\n",rg_totbp);
+      if (ARROW)
         printf("%% g + A %lld\n",rg_totbp);
-      }
+
+      printf("\n! 9 VGPpacbio 3 1.0 %d",clen);
+      for (i = 1; i < argc; i++)
+        printf(" %s",argv[i]);
+      seconds = time(NULL);
+      ctime_r(&seconds,date);
+      date[24] = '\0';
+      printf(" 24 %s\n",date);
+    }
 
     //  Scan files and output .pbr
 
@@ -321,7 +333,7 @@ int main(int argc, char* argv[])
 
               if (first)
                 { first = 0;
-                  printf("g %d %ld %s\n",gsize[i],strlen(rec->header),rec->header);
+                  printf("\ng %d %ld %s\n",gsize[i],strlen(rec->header),rec->header);
                 }
 
               writeSamRecord(rec);

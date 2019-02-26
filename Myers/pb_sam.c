@@ -761,12 +761,19 @@ static int bam_record_scan(samFile *sf)
       flip_auxilliary(data+aux, data+ldata);
   }
   
-  { if (lseq <= 0)
+  { char *eoh;
+
+    if (lseq <= 0)
       { fprintf(stderr,"%s: no sequence for subread !?\n",Prog_Name);
         return (-1);
       }
 
-    theR.len = lseq;
+    theR.header = (char *) data;;
+    theR.len    = lseq;
+
+    eoh = index(theR.header,'/');
+    if (eoh != NULL)
+      *eoh = 0;
   }
 
   { int      size, len;    //  Get zm, qs, qe, rq, sn, and pw from auxilliary tags
@@ -997,6 +1004,12 @@ static int sam_record_scan(samFile *sf)
     int   i;
 
     NEXT_ITEM(q,p)
+
+    theR.header = q;
+    q = index(q,'/');         // Truncate pacbio well & pulse numbers
+    if (q != NULL && q < p)
+      *q = 0;
+
     for (i = 0; i < 8; i++)   // Skip next 8 required fields
       { p = index(p+1,'\t');
         CHECK( p == NULL, "Too few required fields in SAM record, file corrupted?")
