@@ -70,9 +70,17 @@ void *Malloc(int64 size, char *mesg);                    //  Guarded versions of
 void *Realloc(void *object, int64 size, char *mesg);     //  and strdup, that output "mesg" to
 char *Strdup(char *string, char *mesg);                  //  stderr if out of memory
 
-FILE *Fopen(char *path, char *mode);     // Open file path for "mode"
+FILE *Fzopen(char *path, char *mode);    // Open file path for "mode", will directly read .gz
 char *PathTo(char *path);                // Return path portion of file name "path"
 char *Root(char *path, char *suffix);    // Return the root name, excluding suffix, of "path"
+
+#define OPEN(arg,pwd,root,input,suffix,nsuf)                    \
+  for (i = 0; i < nsuf; i++)                                    \
+    { root  = Root(arg,suffix[i]);                              \
+      input = Fzopen(Catenate(pwd,"/",root,suffix[i]),"r");     \
+      if (input != NULL) break;                                 \
+      free(root);                                               \
+    }
 
 // Catenate returns concatenation of path.sep.root.suffix in a *temporary* buffer
 // Numbered_Suffix returns concatenation of left.<num>.right in a *temporary* buffer
@@ -82,5 +90,19 @@ char *Numbered_Suffix(char *left, int num, char *right);
 
 void Print_Number(int64 num, int width, FILE *out);   //  Print readable big integer
 int  Number_Digits(int64 num);                        //  Return # of digits in printed number
+
+#define COMPRESSED_LEN(len)  (((len)+3) >> 2)
+
+void   Compress_Read(int len, char *s);   //  Compress read in-place into 2-bit form
+void Uncompress_Read(int len, char *s);   //  Uncompress read in-place into numeric form
+void      Print_Read(char *s, int width);
+
+void Lower_Read(char *s);     //  Convert read from numbers to lowercase letters (0-3 to acgt)
+void Upper_Read(char *s);     //  Convert read from numbers to uppercase letters (0-3 to ACGT)
+void Number_Read(char *s);    //  Convert read from letters to numbers
+void Change_Read(char *s);    //  Convert read from one case to the other
+
+void Letter_Arrow(char *s);   //  Convert arrow pw's from numbers to uppercase letters (0-3 to 1234)
+void Number_Arrow(char *s);   //  Convert arrow pw string from letters to numbers
 
 #endif // _CORE
