@@ -181,8 +181,10 @@ static int Open_DB(char* path, DAZZ_DB *db)
   if (isdam < 0)
     isdam = 0;
 
-  if ((index = Fopen(Catenate(pwd,PATHSEP,root,".idx"),"r")) == NULL)
-    exit (1);
+  if ((index = fopen(Catenate(pwd,PATHSEP,root,".idx"),"r")) == NULL)
+    { fprintf(stderr,"%s: Cannot open %s for reading\n",Prog_Name,Catenate(".",root,".idx",""));
+      exit (1);
+    }
   if (fread(db,sizeof(DAZZ_DB),1,index) != 1)
     { fprintf(stderr,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
       exit (1);
@@ -297,9 +299,11 @@ static int Open_DB(char* path, DAZZ_DB *db)
   db->path   = Strdup(Catenate(pwd,PATHSEP,root,""),"Allocating Open_DB path");
   if (db->path == NULL)
     exit (1);
-  bases = Fopen(Catenate(db->path,"","",".bps"),"r");
+  bases = fopen(Catenate(db->path,"","",".bps"),"r");
   if (bases == NULL)
-    exit (1);
+    { fprintf(stderr,"%s: Cannot open %s for reading\n",Prog_Name,Catenate(db->path,".bps","",""));
+      exit (1);
+    }
   db->bases = (void *) bases;
   db->loaded = 0;
 
@@ -498,7 +502,7 @@ static void Load_Read(DAZZ_DB *db, int i, char *read, int ascii)
     read[-1] = 4;
 } 
 
-static int Open_Arrow(DAZZ_DB *db)
+static void Open_Arrow(DAZZ_DB *db)
 { int64      *avector;
   DAZZ_ARROW *atrack;
   FILE       *afile;
@@ -506,7 +510,7 @@ static int Open_Arrow(DAZZ_DB *db)
   int         i, nreads;
 
   if (db->tracks != NULL && db->tracks->name == atrack_name)
-    return (0);
+    return;
 
   if ((db->allarr & DB_ARROW) == 0)
     { fprintf(stderr,"%s: The DB is not an Arrow database (Open_Arrow)\n",Prog_Name);
@@ -518,9 +522,11 @@ static int Open_Arrow(DAZZ_DB *db)
       exit (1);
     }
 
-  afile = Fopen(Catenate(db->path,"","",".arw"),"r");
+  afile = fopen(Catenate(db->path,"","",".arw"),"r");
   if (afile == NULL)
-    return (-1);
+    { fprintf(stderr,"%s: Cannot open %s for reading\n",Prog_Name,Catenate(db->path,".arw","",""));
+      exit (1);
+    }
 
   nreads  = db->nreads;
   avector = (int64 *) Malloc(sizeof(int64)*nreads,"Allocating Arrow index");
@@ -542,7 +548,6 @@ static int Open_Arrow(DAZZ_DB *db)
   reads = db->reads;
   for (i = 0; i < nreads; i++)
     avector[i] = reads[i].boff;
-  return (0);
 }
 
 static int Load_Arrow(DAZZ_DB *db, int i, char *arrow, int ascii)
@@ -671,11 +676,7 @@ int main(int argc, char *argv[])
   //  Load QVs if requested
 
   if (DOARW)
-    { if (Open_Arrow(db) < 0)
-        { fprintf(stderr,"%s: Arrow requested, but no .arr for data base\n",Prog_Name);
-          exit (1);
-	}
-    }
+    Open_Arrow(db);
 
   //  If get prolog and file names and index ranges from the .db or .dam file 
 
@@ -689,9 +690,13 @@ int main(int argc, char *argv[])
     if (db->part > 0)
       *rindex(root,'.') = '\0';
     dstub_name = Strdup(Catenate(pwd,"/",root,".db"),"Allocating db file name");
-    dstub = Fopen(dstub_name,"r");
-    if (dstub_name == NULL || dstub == NULL)
+    if (dstub_name == NULL)
       exit (1);
+    dstub = fopen(dstub_name,"r");
+    if (dstub == NULL)
+      { fprintf(stderr,"%s: Cannot open %s for reading\n",Prog_Name,dstub_name);
+        exit (1);
+      }
     free(pwd);
     free(root);
 
@@ -885,7 +890,7 @@ int main(int argc, char *argv[])
             printf("%% g + A %lld\n",gmxtot);
         }
 
-      printf("! 8 DBexport 3 1.0 %d",clen);
+      printf("! 8 Dazz2pbr 3 1.0 %d",clen);
       if (optl > 0)
         { printf(" -");
           if (DOARW)

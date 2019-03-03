@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <zlib.h>
 
 #include "gene_core.h"
 
@@ -53,14 +54,21 @@ char *Strdup(char *name, char *mesg)
   return (s);
 }
 
-FILE *Fopen(char *name, char *mode)
-{ FILE *f;
+FILE *Fzopen(char *name, char *mode)
+{ gzFile zfp;
 
   if (name == NULL || mode == NULL)
     return (NULL);
-  if ((f = fopen(name,mode)) == NULL)
-    fprintf(stderr,"%s: Cannot open %s for '%s'\n",Prog_Name,name,mode);
-  return (f);
+
+  zfp = gzopen(name,mode);
+  if (zfp == NULL)
+    return fopen(name,mode);
+
+  return funopen(zfp,
+                 (int(*)(void*,char*,int))gzread,
+                 (int(*)(void*,const char*,int))gzwrite,
+                 (fpos_t(*)(void*,fpos_t,int))gzseek,
+                 (int(*)(void*))gzclose);
 }
 
 char *PathTo(char *name)
@@ -202,12 +210,19 @@ void Print_Number(int64 num, int width, FILE *out)
     }
 }
 
-//  Return the number of digits, base 10, of num
+//  Return the number of symbols to print num, base 10 (without commas as above)
 
 int  Number_Digits(int64 num)
 { int digit;
 
-  digit = 0;
+  if (num == 0)
+    return (1);
+  if (num < 0)
+    { num = -num;
+      digit = 1;
+    }
+  else
+    digit = 0;
   while (num >= 1)
     { num /= 10;
       digit += 1;

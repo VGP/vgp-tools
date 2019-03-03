@@ -17,7 +17,7 @@ static char *Usage = "[-vsg] <forward:fast[aq][.gz]> [<reverse:fast[aq][.gz]>";
 //  Read next line into a buffer and return a pointer to the buffer and set *plen
 //    the length of the line.  NB: replaces '\n' with '\0'.
 
-static char *read_line(gzFile input, int *plen)
+static char *read_line(FILE *input, int *plen)
 { static char *buffer;
   static int   bmax = 0;
   int len;
@@ -29,7 +29,7 @@ static char *read_line(gzFile input, int *plen)
         exit (1);
     }
 
-  if (gzgets(input,buffer,bmax) == NULL)
+  if (fgets(buffer,bmax,input) == NULL)
     return (NULL);
 
   len = strlen(buffer);
@@ -38,7 +38,7 @@ static char *read_line(gzFile input, int *plen)
       buffer = (char *) Realloc(buffer,bmax,"Reallocating read buffer");
       if (buffer == NULL)
         exit (1);
-      if (gzgets(input,buffer+len,bmax-len) == NULL)
+      if (fgets(buffer+len,bmax-len,input) == NULL)
         { fprintf(stdout,"%s: Last line of file does not end with new-line\n",Prog_Name);
           exit (1);
         }
@@ -66,7 +66,7 @@ typedef struct
     int64  gtotc;
   } Header_Info;
 
-static void Check_FastQ(gzFile input, int fastq, char *file_name, Header_Info *info)
+static void Check_FastQ(FILE *input, int fastq, char *file_name, Header_Info *info)
 { char   *line, hsymbol;
   int64   lineno;
   int     len, qlen;
@@ -239,7 +239,7 @@ static void Check_FastQ(gzFile input, int fastq, char *file_name, Header_Info *i
 
   //  In a second pass, output .irp format for each pair
 
-static void Output_Sequence(int ispair, gzFile forward, gzFile reverse, Header_Info *info)
+static void Output_Sequence(int ispair, FILE *forward, FILE *reverse, Header_Info *info)
 { char  *line;
   int    len;
   int    DO_QV;
@@ -276,7 +276,7 @@ static void Output_Sequence(int ispair, gzFile forward, gzFile reverse, Header_I
       if (ispair)
         printf("P\n");
 
-      gzgets(forward,seq,rmax);
+      fgets(seq,rmax,forward);
       len = strlen(seq);
       seq[--len] = '\0';
       printf("S %d %s\n",len,seq);
@@ -289,7 +289,7 @@ static void Output_Sequence(int ispair, gzFile forward, gzFile reverse, Header_I
       if (ispair)
         { line = read_line(reverse,NULL);
 
-          gzgets(reverse,seq,rmax);
+          fgets(seq,rmax,reverse);
           len = strlen(seq);
           seq[--len] = '\0';
           printf("S %d %s\n",len,seq);
@@ -303,7 +303,7 @@ static void Output_Sequence(int ispair, gzFile forward, gzFile reverse, Header_I
 }
 
 int main(int argc, char *argv[])
-{ gzFile      input1, input2;
+{ FILE       *input1, *input2;
   char       *fname1, *fname2;
   Header_Info stats1, stats2;
   int         ispair, isfastq;
@@ -345,30 +345,38 @@ int main(int argc, char *argv[])
 
   //  Open input files
 
-  { char *suffix[4] = { ".fastq.gz", ".fasta.gz", ".fastq", ".fasta" };
+  { char *suffix[5] = { ".fastq.gz", ".fasta.gz", ".fastq", ".fasta", ".gz" };
     char *pwd1, *pwd2;
-    int   i;
+    int   i, this;
 
-#define OPEN(arg,fname,input,pwd)				\
-  fname = NULL;							\
-  input = NULL;							\
-  pwd   = PathTo(arg);						\
-  for (i = 0; i < 4 && input == NULL; i++)			\
-    { free(fname);						\
-      fname = Root(arg,suffix[i]);				\
-      input = gzopen(Catenate(pwd,"/",fname,suffix[i]),"r");	\
-    }
-
-    OPEN(argv[1],fname1,input1,pwd1)
-    isfastq = (i%2);
+    pwd1 = PathTo(argv[1]);
+    OPEN(argv[1],pwd1,fname1,input1,suffix,5)
+    if (input1 == NULL)
+      { fprintf(stderr,"%s: Cannot open %s as an .fast[aq] file\n",Prog_Name,argv[1]);
+        exit (1);
+      }
+    if (i == 4)
+      isfastq = (strcmp(".fastq",fname1+(strlen(fname1)-6)) == 0);
+    else
+      isfastq = (i%2 == 0);
+printf(" fastq 1? %d\n",isfastq);
 
     if (ispair)
-      { OPEN(argv[2],fname2,input2,pwd2)
-        if (i%2 != isfastq)
+      { pwd2 = PathTo(argv[2]);
+        OPEN(argv[2],pwd2,fname2,input2,suffix,5)
+        if (input2 == NULL)
+          { fprintf(stderr,"%s: Cannot open %s as an .fast[aq] file\n",Prog_Name,argv[2]);
+            exit (1);
+          }
+        if (i == 4)
+          this = (strcmp(".fastq",fname2+(strlen(fname2)-6)) == 0);
+        else
+          this = (i%2 == 0);
+printf(" fastq 2? %d %s\n",this,fname2);
+        if (this != isfastq)
           { fprintf(stderr,"%s: Pair is not both .fastq or both .fasta\n",Prog_Name);
             exit (1);
           }
-     
 
         if (strcmp(fname1,fname2) == 0)
           { char *aname1, *aname2;
@@ -445,7 +453,7 @@ int main(int argc, char *argv[])
 
     printf("1 3 seq 1 0\n");
     if (ispair)
-      printf("2 3 ipr\n");
+      printf("2 3 irp\n");
     printf("# ! 1\n");
     if (GROUP)
       printf("# g %d\n",stats1.ngroup);
@@ -505,15 +513,15 @@ int main(int argc, char *argv[])
       fflush(stderr);
     }
 
-  gzrewind(input1);
+  rewind(input1);
   if (ispair)
-    gzrewind(input2);
+    rewind(input2);
   Output_Sequence(ispair,input1,input2,&stats1);
 
   //  Tidy up just for good form
 
-  gzclose(input2);
-  gzclose(input1);
+  fclose(input2);
+  fclose(input1);
   free(fname2);
   free(fname1);
   exit (0);

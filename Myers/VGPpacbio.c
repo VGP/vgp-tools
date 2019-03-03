@@ -141,7 +141,8 @@ int main(int argc, char* argv[])
         path  = PathTo(argv[i]);
         core  = Root(argv[i],".subreads.bam");
         if ((file = fopen(Catenate(path,"/",core,".subreads.bam"),"r")) == NULL)
-          { core  = Root(argv[i],".subreads.sam");
+          { free(core);
+            core = Root(argv[i],".subreads.sam");
             if ((file = fopen(Catenate(path,"/",core,".subreads.sam"),"r")) == NULL)
               { fprintf(stderr,"%s: Cannot find %s/%s with a Pacbio extension\n",
                                Prog_Name,path,core);
@@ -300,7 +301,8 @@ int main(int argc, char* argv[])
         path  = PathTo(argv[i]);
         core  = Root(argv[i],".subreads.bam");
         if ((file = fopen(Catenate(path,"/",core,".subreads.bam"),"r")) == NULL)
-          { core  = Root(argv[i],".subreads.sam");
+          { free(core);
+            core   = Root(argv[i],".subreads.sam");
             intype = IS_SAM;
           }
         else

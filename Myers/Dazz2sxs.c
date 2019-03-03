@@ -201,21 +201,6 @@ static void Free_Block_Arg(Block_Looper *parse)
 *                                                                                        *
 \****************************************************************************************/
 
-
-FILE *fzopen(const char *path, const char *mode)
-{ gzFile zfp;
-
-  zfp = gzopen(path,mode);
-  if (zfp == NULL)
-    return (fopen(path,mode));
-
-  return (funopen(zfp,
-                  (int(*)(void*,char*,int))gzread,
-                  (int(*)(void*,const char*,int))gzwrite,
-                  (fpos_t(*)(void*,fpos_t,int))gzseek,
-                  (int(*)(void*))gzclose) );
-}
-
 static int Header[128] =
   { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -291,7 +276,7 @@ int main(int argc, char *argv[])
   { int    i, j, k;
     int    flags[128];
 
-    ARG_INIT("LA2sxs")
+    ARG_INIT("Dazz2sxs")
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -332,58 +317,46 @@ int main(int argc, char *argv[])
   //  Get read lengths and # of reads from sequence files
 
   { char *pwd, *root;
-    FILE *input1, *input2;
+    int   i;
+    FILE *input;
+    char *suffix[3] = { ".pbr.gz", ".pbr", ".gz" };
 
     pwd    = PathTo(argv[1]);
-    root   = Root(argv[1],".pbr.gz");
-    fname1 = Catenate(pwd,"/",root,".pbr.gz");
-    if ((input1 = fzopen(fname1,"r")) == NULL)
-      { free(root);
-        root   = Root(argv[1],".pbr");
-        fname1 = Catenate(pwd,"/",root,".pbr");
-        if ((input1 = fzopen(fname1,"r")) == NULL)
-          { fprintf(stderr,"%s: Cannot open 1-code file %s\n",Prog_Name,argv[1]);
-            exit (1);
-          }
+    OPEN(argv[1],pwd,root,input,suffix,3)
+    if (input == NULL)
+      { fprintf(stderr,"%s: Cannot open %s\n",Prog_Name,argv[1]);
+        exit (1);
       }
-    free(pwd);
+    fname1 = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating first sequence file");
     free(root);
+    free(pwd);
 
     if (VERBOSE)
-      { fprintf(stderr,"  Scanning first sequence file\n");
+      { fprintf(stderr,"  Scanning sequence file %s\n",fname1);
         fflush(stderr);
       }
 
-    fname1 = Strdup(fname1,"Allocating first sequence file");
-    rlen1  = Fetch_Length_Vector(input1,&nread1,argv[1]);
-    fclose(input1);
+    rlen1 = Fetch_Length_Vector(input,&nread1,fname1);
+    fclose(input);
 
-    pwd    = PathTo(argv[2]);
-    root   = Root(argv[2],".pbr.gz");
-    fname2 = Catenate(pwd,"/",root,".pbr.gz");
-    if ((input2 = fzopen(fname2,"r")) == NULL)
-      { free(root);
-        root   = Root(argv[2],".pbr");
-        fname2 = Catenate(pwd,"/",root,".pbr");
-        if ((input2 = fzopen(fname2,"r")) == NULL)
-          ISTWO = 0;
-        else
-          ISTWO = 1;
-      }
+    pwd = PathTo(argv[2]);
+    OPEN(argv[2],pwd,root,input,suffix,3)
+    if (input == NULL)
+      ISTWO = 0;
     else
-      ISTWO = 1;
+      { ISTWO = 1;
+        fname2 = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating second sequence file");
+        free(root);
+      }
     free(pwd);
-    free(root);
 
     if (ISTWO)
       { if (VERBOSE)
-          { fprintf(stderr,"  Scanning second sequence file\n");
+          { fprintf(stderr,"  Scanning sequence file %s\n",fname2);
             fflush(stderr);
           }
-
-        fname2 = Strdup(fname2,"Allocating second sequence file");
-        rlen2  = Fetch_Length_Vector(input1,&nread2,argv[2]);
-        fclose(input2);
+        rlen2 = Fetch_Length_Vector(input,&nread2,fname2);
+        fclose(input);
       }
     else
       { rlen2  = rlen1;
@@ -522,7 +495,7 @@ int main(int argc, char *argv[])
       if (DOTRACE)
         printf("# T %lld\n# Z %lld\n",novls,novls);
 
-      printf("+ ! %d\n",clen+33);
+      printf("+ ! %d\n",clen+35);
       if (DOGROUP)
         printf("+ g %d\n",ngroup);
       if (DOTRACE)
@@ -549,7 +522,7 @@ int main(int argc, char *argv[])
             }
         }
 
-      printf("\n! 6 LA2sxs 3 1.0 %d",clen);
+      printf("\n! 8 Dazzsxs 3 1.0 %d",clen);
       if (optl > 0)
         { printf(" -");
           if (VERBOSE)
@@ -622,7 +595,7 @@ int main(int argc, char *argv[])
                 ar = ovl->aread;
                 if (ar != al)
                   { if (DOGROUP)
-                      printf("g %d 1 *\n",gcount[ng++]);
+                      printf("g %d %d %d\n",gcount[ng++],Number_Digits((int64) ar),ar);
                     al = ar;
                   }
 
@@ -639,7 +612,7 @@ int main(int argc, char *argv[])
                     else
                       printf("I %d %d %d %d %d %d\n",
                              ovl->path.abpos,ovl->path.aepos,rlen1[ar],
-                             ovl->path.bbpos,ovl->path.bepos,rlen2[ovl->bread]);
+                             ovl->path.bbpos,ovl->path.bepos,blen);
                   }
         
                 if (DODIFF)
@@ -647,25 +620,15 @@ int main(int argc, char *argv[])
         
                 if (DOTRACE)
                   { int tlen  = ovl->path.tlen;
-                    int at, bt;
         
                     if (small)
                       Decompress_TraceTo16(ovl);
         
-                    at = (ovl->path.abpos / tspace) * tspace;
-                    printf("U %d %d",(tlen>>1)+1,ovl->path.abpos);
-                    for (k = 0; k < tlen-2; k += 2)
-                      { at += tspace;
-                        printf(" %d",at);
-                      }
-                    printf(" %d\n",ovl->path.aepos);
+                    printf("U %% %d\n",tspace);
                  
-                    bt = ovl->path.bbpos;
-                    printf("V %d %d",(tlen>>1)+1,ovl->path.bbpos);
+                    printf("V - %d ",tlen>>1);
                     for (k = 0; k < tlen; k += 2)
-                      { bt += trace[k+1];
-                        printf(" %d",bt);
-                      }
+                      printf(" %d",trace[k+1]);
                     printf("\n");
         
                     printf("Z %d",tlen>>1);
