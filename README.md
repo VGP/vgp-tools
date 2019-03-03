@@ -25,9 +25,11 @@ Below are the file types currently supported by VGP-Formats. By convention file 
 	- **.rxr** for restriction map comparisons, and 
 	- **.map** for representing the relationship between a set of consensus sequences and the reads or other sequences from which they were derived.
 
-- **.scf** a collection of scaffolding suggestions representing putative joins and breaks between sequences in some .seq file.
+- **.jns** a collection of scaffolding suggestions representing putative joins between sequences in some .seq file.  This can also be used to represent possible links between sequence contigs in an assembly graph.
 
-- **.exs** this supports export of a set of scaffolds or sequences from a VGP-Format file collection as fasta and/or agp with gaps.
+- **.brk** a collection of scaffolding suggestions representing putative breaks in sequences in some .seq file.
+
+- **.scf** this supports export of a set of scaffolds or sequences from a VGP-Format file collection as fasta and/or agp with gaps.
 
 - **.lis** this is a utility file type can be used to record arbitrary lists of objects in any of the other types.
 
@@ -321,8 +323,9 @@ For assemblies, we expect that our assembly process will create a **.seq** file 
 < <string:sxs_file_name> A <int:nalignments>
 
 J <int:seq_a> <int:seq_b> <[s|e]:end_a> <[s|e]:end_b>   potential join
+G <int:gap_size>
 Q <int:phred_confidence>                                optional score of confidence in the join
-X <int:list_id>                                         optional list of alignment objects providing evidence for the break
+X <int:na> <int:a>n                                     optional list of alignment objects providing evidence for the break
 ```
 
 The J line specifies which end of each sequence is involved in the join, using single characters ***s*** or ***e*** to designate the start and end.  
@@ -346,7 +349,7 @@ Q <int:phred_confidence>             optional score of confidence in the break
 X <int:na> <int:a>n                  optional list of alignment objects providing evidence for the break
 ```
 
-The B line indicates a potential break.  The meaning is that the break is to the right of position *seq_a* and to the left of position *seq_b*, so if the breakpoint is known exactly then *seq_b* = *seq_a* + 1. In practice scaffolding programs typically can only localise possible breaks to a wider interval. 
+The B line indicates a potential break.  The meaning is that the break is to the right of position *seq_a* and to the left of position *seq_b*, so if the breakpoint is known exactly then *seq_b* = *seq_a* + 1. In practice most scaffolding programs typically can only localise possible breaks to a wider interval. 
 
 The Q and X lines have the same interpretation as in .jns files. For completeness we repeat this information here again.
 
