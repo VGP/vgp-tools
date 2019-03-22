@@ -28,26 +28,22 @@ or dataset2.pbr.
 	- **.pbr** for PacBio long reads and relevant meta-data.
 	- **.10x** for 10X Genomics read clouds with their extracted barcodes.
 	- **.ctg** for contigs from an assembly.
-<br>
-<br>
+
 - **.rmp**   primary type for restriction map (RM) objects.
 	- **.rmm** for RMs for individual molecules produced by e.g. Bionano.
 	- **.rms** for RMs produced *in slico* from sequence.
 	- **.rma** for RMs produced by assembly of molecule RMs.
-<br>
-<br>
+
 - **.aln**   primary type for alignments between sequences and restriction maps.
 	- **.sxs** for alignments between sequences (pronounced "success").
 	- **.rxr** for alignments between restriction maps .
 	- **.sxr** for alignments between sequences and restriction maps .
 	- **.map** for alignments between sequences and restriction maps.
-<br>
-<br>
+
 - **.lnk**   primary type for linkages or breaks amongst (contig) sequences.
 	- **.jns** for join information between (contig) sequences.
 	- **.brk** for break or mis-join information within (contig) sequences.
-<br>
-<br>
+
 - **.lis**  a utility file type recording lists of objects of any of the other types.
 	- **.lyo** lists of sequence alignments defining an assembly layout.
 	- **.scf** lists of scaffolding links defining sets of linear scaffolds.
