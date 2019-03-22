@@ -12,11 +12,24 @@
 #include "gene_core.h"
 #include "exsort.h"
 
+#undef CHECK
+
 #define SHELL 24
 #define SMAX  20
 #define MOVE(A,B) memcpy(A,B,rsize)
 
 static int64 Shell;
+
+#ifdef CHECK
+
+static inline void sorted(uint8 *array, int asize, int rsize, int ksize)
+{ int p;
+  for (p = rsize; p < asize; p += rsize)
+    if (memcmp(array+(p-rsize),array+p,ksize) > 0)
+      printf("Not sorted\n");
+}
+
+#endif
 
 static inline void gap_sort(uint8 *array, int asize, int rsize, int ksize, int gap)
 { int    i, j, step;
@@ -41,15 +54,22 @@ static inline void gap_sort(uint8 *array, int asize, int rsize, int ksize, int g
 }
 
 static inline void shell_sort(uint8 *array, int asize, int rsize, int ksize)
-{ gap_sort(array,asize,rsize,ksize,10);
+{ if (memcmp(array,array+(asize-rsize),ksize) == 0)
+    return;
+  gap_sort(array,asize,rsize,ksize,10);
   gap_sort(array,asize,rsize,ksize,4);
   gap_sort(array,asize,rsize,ksize,1);
+
+#ifdef CHECK
+  sorted(array,asize,rsize,ksize);
+#endif
 }
 
 typedef struct
   { uint8 *array;
     int    rsize;
     int    ksize;
+    int64  offset;
     int    npart;
     int64 *parts;
   } Arg;
@@ -71,7 +91,7 @@ static void *sort_thread(void *arg)
   int64  off;
   int    x;
 
-  off = 0;
+  off = param->offset;
   for (x = 0; x < npart; x++)
     { if (parts[x] > Shell)
         radix_sort(array + off, parts[x], rsize, ksize, 1);
@@ -86,92 +106,96 @@ static void *sort_thread(void *arg)
 static void radix_sort(uint8 *array, int64 asize, int rsize, int ksize, int digit)
 { int64  len[256];
   int64  beg[256];
-  int64  end[256];
-  uint8 *darray = array + digit;
+  int    x;
 
-  int64  off[256];
-  uint8  temp[rsize];
-  int64  stack[SMAX];
+  { int64  end[256];
+    uint8 *darray = array + digit;
 
-  int x;
+    int64  off[256];
+    uint8  temp[rsize];
+    int64  stack[SMAX];
 
-  if (digit == 0)
-    fprintf(stderr, "radixify(asize=%lldd, digit=%d, rsize=%d, ksize=%d)\n",
-                   asize,digit,rsize,ksize);
+    // fprintf(stderr,"digit: %d asize=%lld, digit=%d, rsize=%d, ksize=%d)\n",
+                 // digit,asize,digit,rsize,ksize);
 
-  { int64 o;
+    { int64 o;
 
-    for (x = 0; x < 256; x++)
-      len[x] = 0;
-    for (o = 0; o < asize; o += rsize)
-      len[darray[o]] += rsize;
+      for (x = 0; x < 256; x++)
+        len[x] = 0;
+      for (o = 0; o < asize; o += rsize)
+        len[darray[o]] += rsize;
 
-    o = 0;
-    for (x = 0; x < 256; x++)
-      { beg[x] = off[x] = o;
-        end[x] = o += len[x];
-      }
-  }
-
-  for (x = 0; x < 256; x++)
-    { uint8 *o, *p;
-      int    t, s;
-      int64  u;
-
-      while (off[x] < end[x])
-        { t = darray[off[x]];
-          if (t == x)
-            off[x] += rsize;
-          else
-            { s = 0;
-              stack[s++] = off[x];
-              while (s < SMAX)
-                { u = off[t];
-                  off[t] = u + rsize;
-                  if (t == x)
-                    break;
-                  stack[s++] = u;
-                  t = darray[u];
-                }
-
-              o = array + stack[--s];
-              MOVE(temp,o);
-	      while (s > 0)
-                { p = array + stack[--s];
-                  MOVE(o,p);
-                  o = p;
-                }
-              MOVE(o,temp);
-            }
+      o = 0;
+      for (x = 0; x < 256; x++)
+        { beg[x] = off[x] = o;
+          end[x] = o += len[x];
         }
     }
+
+    for (x = 0; x < 256; x++)
+      { uint8 *o, *p;
+        int    t, s;
+        int64  u;
+
+        while (off[x] < end[x])
+          { t = darray[off[x]];
+            if (t == x)
+              off[x] += rsize;
+            else
+              { s = 0;
+                stack[s++] = off[x];
+                while (s < SMAX)
+                  { u = off[t];
+                    off[t] = u + rsize;
+                    if (t == x)
+                      break;
+                    stack[s++] = u;
+                    t = darray[u];
+                  }
+  
+                o = array + stack[--s];
+                MOVE(temp,o);
+	        while (s > 0)
+                  { p = array + stack[--s];
+                    MOVE(o,p);
+                    o = p;
+                  }
+                MOVE(o,temp);
+              }
+          }
+      }
+  }
   
   digit += 1;
   if (digit >= ksize)
     return;
 
   if (digit == 1)
-    { int   n, beg;
-      int64 sum, thr;
+    { { int   n, beg;
+        int64 sum, thr, off;
 
-      n   = 0;
-      thr = asize / Nthreads;
-      sum = 0;
-      beg = 0;
-      for (x = 0; x < 256; x++)
-        { Parts[x] = len[x];
-          sum += len[x];
-          if (sum >= thr)
-            { Parms[n].array = array;
-              Parms[n].rsize = rsize;
-              Parms[n].ksize = ksize;
-              Parms[n].npart = (x+1) - beg;
-              Parms[n].parts = Parts + beg;
-              n  += 1;
-              thr = (asize * (n+1))/Nthreads;
-              beg = x+1;
-            }
-        }
+        n   = 0;
+        thr = asize / Nthreads;
+        off = 0;
+        sum = 0;
+        beg = 0;
+        for (x = 0; x < 256; x++)
+          { Parts[x] = len[x];
+            sum += len[x];
+            if (sum >= thr)
+              { Parms[n].array  = array;
+                Parms[n].rsize  = rsize;
+                Parms[n].ksize  = ksize;
+                Parms[n].offset = off;
+                Parms[n].npart  = (x+1) - beg;
+                Parms[n].parts  = Parts + beg;
+                n  += 1;
+                thr = (asize * (n+1))/Nthreads;
+                beg = x+1;
+                off = sum;
+	      }
+          }
+      }
 
       for (x = 0; x < Nthreads; x++)
         pthread_create(Threads+x,NULL,sort_thread,Parms+x);
@@ -187,7 +211,6 @@ static void radix_sort(uint8 *array, int64 asize, int rsize, int ksize, int digi
           shell_sort(array + beg[x], len[x], rsize, ksize);
     }
 }
-
 
 void Ex_sort(char *path, int rsize, int ksize, int nthreads)
 { pthread_t   threads[nthreads];
@@ -226,6 +249,10 @@ void Ex_sort(char *path, int rsize, int ksize, int nthreads)
   Parms    = parms;
 
   radix_sort(array, asize, rsize, ksize, 0);
+
+#ifdef CHECK
+  sorted(array,asize,rsize,ksize);
+#endif
 
   munmap(array,asize);
   close(fd);

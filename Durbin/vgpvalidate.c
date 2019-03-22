@@ -163,13 +163,9 @@ int main (int argc, char **argv)
 static inline char readChar (FILE *f)
 { char x = getc (f) ; char y = getc (f) ; if (y == '\n') ungetc (y, f) ; return x ; }
 
-static inline U64 readInt (FILE *f) ;
-static inline double readReal (FILE *f) ;
-
-static inline char* readString (FILE *f)
-{ 
-}
+static inline U64 readInt (FILE *f) { return (0); }
+static inline double readReal (FILE *f) { return (0.); }
+static inline char* readString (FILE *f) { return (NULL); }
 
 static inline void readFlush (FILE *f) /* reads to the end of the line */
 { char x ; while ((x = getc (f)) && x != '\n') if (x == EOF) die ("premature end of file") ; }
-

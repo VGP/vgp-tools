@@ -638,7 +638,7 @@ int main(int argc, char *argv[])
     DOGRP = flags['g'];
 
     if (argc <= 1)
-      { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+      { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
         fprintf(stderr,"          W # # # #    - well, pulse start, end, and qv\n");
         fprintf(stderr,"          S #          - quality of read (#/1000)\n");
