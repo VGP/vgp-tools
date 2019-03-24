@@ -63,8 +63,9 @@ on the software that produces the formatted file.
 2.	The length of a list should always precede the list (e.g. 3 xxx).  Bracket (.eg [xxx]) or
 terminator (e.g. xxx0) constructions are not permitted.
 
-within.	The maximum size or total size of items to follow should be specified at the start of a
-file so that any desired memory allocation can be performed once at the start by the reader.
+3.	The number of items, and the maximum size or total size of variable-length items to follow
+should be specified at the start of a file so that any desired memory allocation can be performed
+once at the start by the reader.
 
 4.	For every format file type, there should be a VGP tool that translates the ASCII format
 to a terse, indexable binary form and another that inverts this conversion, as well as a
