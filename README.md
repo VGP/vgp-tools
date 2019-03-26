@@ -213,7 +213,7 @@ in another file. This has the syntax:
 ```
 The symbol ```X``` in this line denotes the line type in the referenced file of the objects
 to be referred to, and ```nx``` indicates the number of these items in the file (hence
-the range of reference indices is ```[1,nx]```).  For example a ```.sxs``` alignment file may refer
+the range of reference indices is ```[1,nx]```).  For example a ```.sxs``` alignment file refers
 to sequence objects designated by S-lines in another file.
 
 A related concept is to refer to another file upon which the objects in the current file depend.
@@ -375,7 +375,7 @@ distinct recognition sites.
 The figure below gives an example of an encoding where there are two recognition sites, the first
 colored red and the second colored green to provide emphasis.  
 
-![](RM.ex.png)
+![](figures/RM.ex.png)
 
 The file is always partitioned by group r-lines, although it would be typical for there to be
 only 1.  Each R-line is followed by an E-line if and only if s > 1, i.e. there artse multiple
@@ -464,7 +464,7 @@ If two objects align in opposite orientation to each other then the b-segment is
 which is encoded by having *bs > be* in which case *b[bs,be]* denotes
 the Watson-Crick complement of *b[be,bs]*.
 
-![](Coord.ex.png)
+![](figures/Coord.ex.png)
 
 The details of an alignment can be specified with a SAM-style CIGAR string restricted to the
 symbols I (insertion in A), D (deletion in A), = (match), and X (mismatch).
@@ -519,7 +519,7 @@ if the alignment is divided at *n/&delta;* trace points with a spacing of *&delt
 then reconstructing the alignment takes only *O(&epsilon;&delta;n)* time at the expense
 of having to store the *n/&delta;* trace point divisions in U and V lines.
 
-![](UV.ex.png)
+![](figures/UV.ex.png)
 
 The UV-lines give one a general mechanism for splitting an alignment into a collection of panels
 at a specified set of trace points.  Even more efficient encoding is possible by choosing the
@@ -539,7 +539,7 @@ each panel of the alignment partition.  The Dazzler
 [Dazzler](https://dazzlerblog.wordpress.com).
 assembly framework uses this value to assess the overall accuracy of panel-sized segments of reads.
 
-![](TW.ex.png)
+![](figures/TW.ex.png)
 
 All line types following the A-line are optional.  Typically an I-line will be present and only
 one of C- or UV[TWX]-lines will be used downstream by any one application.
@@ -616,7 +616,7 @@ However, the specification of an internal position allows one to express interna
 links, and links that may actually suggest breaks (at the internal point), or that simply
 reflect the underlying alignments.
 
-![](Link.ex.png)
+![](figures/Link.ex.png)
 
 A B-line explicitly indicates a potential breaks.  The meaning is that there is evidence that
 the given sequenc should be broken somewhere between positions ```start``` and ```end```.

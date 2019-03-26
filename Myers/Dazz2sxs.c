@@ -486,6 +486,7 @@ int main(int argc, char *argv[])
       printf("1 3 aln 1 0\n");
       printf("2 3 sxs\n");
       printf("# ! 1\n");
+      printf("# > 1\n");
       if (DOGROUP)
         printf("# g %d\n",ngroup);
       printf("# A %lld\n",novls);
