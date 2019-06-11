@@ -313,7 +313,7 @@ int main(int argc, char *argv[])
   { int    i, j, k;
     int    flags[128];
 
-    ARG_INIT("VGPpair")
+    ARG_INIT("VGPseq")
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -359,7 +359,6 @@ int main(int argc, char *argv[])
       isfastq = (strcmp(".fastq",fname1+(strlen(fname1)-6)) == 0);
     else
       isfastq = (i%2 == 0);
-printf(" fastq 1? %d\n",isfastq);
 
     if (ispair)
       { pwd2 = PathTo(argv[2]);
@@ -372,7 +371,6 @@ printf(" fastq 1? %d\n",isfastq);
           this = (strcmp(".fastq",fname2+(strlen(fname2)-6)) == 0);
         else
           this = (i%2 == 0);
-printf(" fastq 2? %d %s\n",this,fname2);
         if (this != isfastq)
           { fprintf(stderr,"%s: Pair is not both .fastq or both .fasta\n",Prog_Name);
             exit (1);

@@ -1,13 +1,21 @@
-# makefile for modimizer, developed on Richard's Mac.
+# makefile for vgp validator, developed on Richard's Mac.
+
+DEST_DIR = ../bin
 
 #CFLAGS= -O3
 CFLAGS= -g				# for debugging
 #CFLAGS= -03 -DOMP -fopenmp		# for OMP parallelisation - doesn't compile on Mac
 
-all: vgpvalidate
+ALL = vgpvalidate
+
+all: $(ALL)
 
 clean:
-	$(RM) *.o *~ vgpvalidate
+	$(RM) *.o vgpvalidate
+	$(RM) -r *.dSYM
+
+install:
+	cp $(ALL) $(DEST_DIR)
 
 vgprd.o: vgprd.h
 

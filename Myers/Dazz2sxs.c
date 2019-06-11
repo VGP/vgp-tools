@@ -23,7 +23,7 @@
 #include "gene_core.h"
 
 static char *Usage =
-    " [-vidtg] <src1:.pbr[.gz]> [<src2:.pbr[.gz]] <align:las> ...";
+    " [-vidtg] <src1:.pbr[.gz]> [<src2:.pbr[.gz]>] <align:las> ...";
 
 
 /****************************************************************************************\
@@ -297,7 +297,7 @@ int main(int argc, char *argv[])
     DOTRACE = flags['t'];
 
     if (argc <= 2)
-      { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+      { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
         fprintf(stderr,"      A #a #b  - (#a,#b) have an LA between them\n");
         fprintf(stderr,"\n");
@@ -483,8 +483,10 @@ int main(int argc, char *argv[])
       for (i = 1; i < argc; i++)
         clen += strlen(argv[i])+1;
 
-      printf("1 3 sxs 1 0\n");
+      printf("1 3 aln 1 0\n");
+      printf("2 3 sxs\n");
       printf("# ! 1\n");
+      printf("# > 1\n");
       if (DOGROUP)
         printf("# g %d\n",ngroup);
       printf("# A %lld\n",novls);
@@ -493,22 +495,22 @@ int main(int argc, char *argv[])
       if (DODIFF)
         printf("# D %lld\n",novls);
       if (DOTRACE)
-        printf("# T %lld\n# Z %lld\n",novls,novls);
+        printf("# W %lld\n# X %lld\n",novls,novls);
 
       printf("+ ! %d\n",clen+35);
       if (DOGROUP)
-        printf("+ g %d\n",ngroup);
+        printf("+ g 0\n");
       if (DOTRACE)
-        printf("+ T %lld\n+ Z %lld\n",ttot,ttot);
+        printf("+ W %lld\n+ X %lld\n",ttot,ttot);
 
       if (clen > 24)
         printf("@ ! %d\n",clen);
       else
         printf("@ ! 24\n");
       if (DOGROUP)
-        printf("@ g 1\n");
+        printf("@ g 0\n");
       if (DOTRACE)
-        printf("@ T %lld\n@ Z %lld\n",tmax,tmax);
+        printf("@ W %lld\n@ X %lld\n",tmax,tmax);
 
       if (DOGROUP)
         { printf("%% g # A %lld\n",omax);
@@ -517,8 +519,8 @@ int main(int argc, char *argv[])
           if (DODIFF)
             printf("%% g # D %lld\n",omax);
           if (DOTRACE)
-            { printf("%% g # T %lld\n%% g # Z %lld\n",omax,omax);
-              printf("%% g + T %lld\n%% g + Z %lld\n",smax,smax);
+            { printf("%% g # W %lld\n%% g # X %lld\n",omax,omax);
+              printf("%% g + W %lld\n%% g + X %lld\n",smax,smax);
             }
         }
 
@@ -558,6 +560,8 @@ int main(int argc, char *argv[])
     trace = (uint16 *) Malloc(sizeof(uint16)*trmax,"Allocating trace vector");
     if (trace == NULL)
       exit (1);
+        
+    printf("T %d\n",tspace);
 
     al = -1;
     ng = 0;
@@ -595,7 +599,7 @@ int main(int argc, char *argv[])
                 ar = ovl->aread;
                 if (ar != al)
                   { if (DOGROUP)
-                      printf("g %d %d %d\n",gcount[ng++],Number_Digits((int64) ar),ar);
+                      printf("g %d 0\n",gcount[ng++]);
                     al = ar;
                   }
 
@@ -623,15 +627,13 @@ int main(int argc, char *argv[])
         
                     if (small)
                       Decompress_TraceTo16(ovl);
-        
-                    printf("U %% %d\n",tspace);
                  
-                    printf("V - %d ",tlen>>1);
+                    printf("W %d ",tlen>>1);
                     for (k = 0; k < tlen; k += 2)
                       printf(" %d",trace[k+1]);
                     printf("\n");
         
-                    printf("Z %d",tlen>>1);
+                    printf("X %d",tlen>>1);
                     for (k = 0; k < tlen; k += 2)
                       printf(" %3d",trace[k]);
                     printf("\n");

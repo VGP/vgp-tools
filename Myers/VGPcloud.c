@@ -11,7 +11,8 @@
 #include "exsort.h"
 
 int    VERBOSE;    //  Verbose mode?
-char  *SORT_PATH;  //  Director to do external sort in
+char  *SORT_PATH;  //  Directory to do external sort in
+int    NTHREADS;   //  # of threads to use for parallized sorts
 
 #define VALID_THRESH 100
 
@@ -39,6 +40,17 @@ static int Value[256] =
     0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
   };
 
+static int IsDNA[256] =
+  { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1,  0, -1,  1, -1, -1, -1,  2, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1,  3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1,  0, -1,  1, -1, -1, -1,  2, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1,  3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+  };
+
 static int IsN[256] =
   { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -51,22 +63,22 @@ static int IsN[256] =
   };
 
 static uint32 zero[16] =
-  { 0xfffffffcu, 0xffffff3u, 0xffffffcfu, 0xffffff3fu,
-    0xfffffcffu, 0xffff3ffu, 0xffffcfffu, 0xffff3fffu,
-    0xfffcffffu, 0xff3ffffu, 0xffcfffffu, 0xff3fffffu,
-    0xfcffffffu, 0x3ffffffu, 0xcfffffffu, 0x3fffffffu
+  { 0xfffffffcu, 0xfffffff3u, 0xffffffcfu, 0xffffff3fu,
+    0xfffffcffu, 0xfffff3ffu, 0xffffcfffu, 0xffff3fffu,
+    0xfffcffffu, 0xfff3ffffu, 0xffcfffffu, 0xff3fffffu,
+    0xfcffffffu, 0x3fffffffu, 0xcfffffffu, 0x3fffffffu
   };
 
 static uint32 one[16] =
-  { 0x00000001u, 0x0000004u, 0x00000010u, 0x00000040u,
-    0x00000100u, 0x0000400u, 0x00001000u, 0x00004000u,
-    0x00010000u, 0x0040000u, 0x00100000u, 0x00400000u,
-    0x01000000u, 0x4000000u, 0x10000000u, 0x40000000u
+  { 0x00000001u, 0x00000004u, 0x00000010u, 0x00000040u,
+    0x00000100u, 0x00000400u, 0x00001000u, 0x00004000u,
+    0x00010000u, 0x00040000u, 0x00100000u, 0x00400000u,
+    0x01000000u, 0x04000000u, 0x10000000u, 0x40000000u
   };
 
 static uint8 bit[8] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
 
-static char DNA[4] = { 'a', 'c', 'g', 't' };
+static char DNA[4] = { 'A', 'C', 'G', 'T' };
 
 static inline void Check_Entry(int hasfs, int hasrs, int hasfq, int hasrq)
 { if (! hasfs)
@@ -95,7 +107,7 @@ static int find(uint32 code, int l, int h, uint32 *count)
 { int m;
 
   while (h-l > 10)
-    { m = (h-l)/2;
+    { m = (l+h)/2;
       if (m & 0x1)
         m -= 1;
       if (count[m] > code)
@@ -105,8 +117,9 @@ static int find(uint32 code, int l, int h, uint32 *count)
     }
   for (m = l; m < h; m += 2)
     if (count[m] == code)
-      break;
-  return (m+1);
+      return (m+1);
+printf("FAIL\n");
+  return (0);
 }
 
 static int Correction(uint8 *forw, uint8 *fqvs, uint8 *valid, uint32 *count, int *lookup)
@@ -119,15 +132,19 @@ static int Correction(uint8 *forw, uint8 *fqvs, uint8 *valid, uint32 *count, int
   bar  = 0;
   for (i = 0; i < 16; i++)
     { if (IsN[forw[i]] || fqvs[i] < '+')
-        stack[nbad++] = 2*i;
-      bar = (bar << 2) | Value[forw[i]];
+        { stack[nbad++] = 15-i;
+          bar <<= 2;
+        }
+      else
+        bar = (bar << 2) | Value[forw[i]];
     }
   if (nbad > 0)
     { int    j;
       uint32 val;
 
       yes = 0;
-      while (1)
+      j = 0;
+      while (j < nbad)
         { for (j = 0; j < nbad; j++)
             { pos = stack[j];
               val = (bar >> 2*pos) & 0x3;
@@ -138,10 +155,8 @@ static int Correction(uint8 *forw, uint8 *fqvs, uint8 *valid, uint32 *count, int
                   break;
                 }
             }
-          if (j >= nbad)
-            break;
           v3h = bar>>3;
-          v3b = bit[bar&0x3];
+          v3b = bit[bar&0x7];
           if (valid[v3h] & v3b)
             { if (yes)
                 return (0);
@@ -149,12 +164,15 @@ static int Correction(uint8 *forw, uint8 *fqvs, uint8 *valid, uint32 *count, int
               var = bar;
             }
         }
+      if (!yes)
+        return (0);
       cor = var;
+
       for (i = 15; i >= 0; i--)
         { val = var & 0x3;
-          if (Value[forw[i]] != (int) val)
+          if (IsDNA[forw[i]] != (int) val)
             { forw[i] = DNA[val];
-              fqvs[i] = 0;
+              // fqvs[i] = '!';
             }
           var >>= 2;
         }
@@ -170,20 +188,23 @@ static int Correction(uint8 *forw, uint8 *fqvs, uint8 *valid, uint32 *count, int
           for (i = 0; i < 16; i++)
             { var = (bar & zero[i]) | chg;
               v3h = var>>3;
-              v3b = bit[var&0x3];
+              v3b = bit[var&0x7];
               if (valid[v3h] & v3b)
                 { if (yes)
                     return (0);
                   yes = 1;
-                  pos = i;
+                  pos = 15-i;
                   chr = k;
                   cor = var;
                 }
               chg <<= 2;
             }
         }
+      if (!yes)
+        return (0);
+
       forw[pos] = DNA[chr];
-      fqvs[pos] = 0;
+      // fqvs[pos] = '!';
     }
   else
     return (1);
@@ -196,9 +217,13 @@ static void Compress_QV(int len, uint8 *qvec, int qbits, uint8 *map)
 { uint8 *buf, x;
   int    i, rem;
 
+  if (qbits == 8)
+    return;
+
   buf = qvec;
-  rem = 0;
-  for (i = 0; i < len; i++)
+  *buf = map[qvec[0]];
+  rem = qbits;
+  for (i = 1; i < len; i++)
     { x = map[qvec[i]];
       *buf |= (x << rem);
       rem += qbits;
@@ -221,21 +246,24 @@ static void Uncompress_QV(int len, uint8 *qvec, int qbits, uint8 qmask, uint8 *i
   rem = (len*qbits-1) % 8 + 1;
   x   = *buf--;
   for (i = len-1; i >= 0; i--)
-    { if (qbits > rem)
-        { v = (x << (qbits-rem));
-          rem += 8-qbits;
+    { rem -= qbits;
+      if (rem < 0)
+        { v = (x << (-rem)) & qmask;
+          rem += 8;
           x = *buf--;
-          qvec[i] = v | (x >> rem);
+          v |= (x >> rem);
+          qvec[i] = inv[v];
         }
       else
-        qvec[i] = inv[(x >> (rem-qbits)) & qmask];
+        { v = (x >> rem) & qmask;
+          qvec[i] = inv[v];
+        }
     }
 }
 
 int main(int argc, char *argv[])
 { FILE *input;
   char *fname;        // Input file and name
-  int   NTHREADS;
 
   char *provenance;     // All previous provenance lines
   int   nprov, mprov;   // # of provenance lines and width of maximum line (excluding !)
@@ -248,6 +276,7 @@ int main(int argc, char *argv[])
   uint32 *count;        // Barcode list and eventually valid barcode list & their counts
   int    *lookup;       // Index base on high-order 2 bytes into list of valid barcodes
   int     npair;        // # of read pairs in file
+  int     nhqbc;        // # of HQ bar codes in file
 
   uint8   map[256];     // Map from QV char to bit code
   uint8   inv[256];     // Map from bit code to QV char
@@ -358,6 +387,8 @@ int main(int argc, char *argv[])
                 fscanf(input," %c",&which);
                 if (which == 'P')
                   fscanf(input," %d",&npair);
+                else if (which == '!')
+                  fscanf(input," %d",&nprov);
                 break;
               case '+':
                 fscanf(input," %c",&which);
@@ -399,9 +430,9 @@ int main(int argc, char *argv[])
 
                   p = pptr;
                   for (i = 0; i < 4; i++)
-                    { fscanf(input," %d",&d);
+                    { fscanf(input," %d ",&d);
                       p += sprintf(p," %d ",d);
-                      fscanf(input," %s",p);
+                      fread(p,1,d,input);
                       p += d;
                       sprov += d;
                       if (d > aprov)
@@ -424,12 +455,12 @@ int main(int argc, char *argv[])
 
     //  Allocate sequence buffers and barcode sorting array
 
-    forw = (uint8 *) Malloc(sizeof(uint8)*4*(maxlen+1),"Allocating sequence buffers");
-    revr = forw + (maxlen+1);
-    fqvs = revr + (maxlen+1);
-    rqvs = fqvs + (maxlen+1);
+    forw = (uint8 *) Malloc(sizeof(uint8)*4*(maxlen+2),"Allocating sequence buffers");
+    revr = forw + (maxlen+2);
+    fqvs = revr + (maxlen+2);
+    rqvs = fqvs + (maxlen+2);
 
-    count = (uint32 *) Malloc(sizeof(uint32)*npair,"Allocating barcode array");
+    count = (uint32 *) Malloc(sizeof(uint32)*2*npair,"Allocating barcode array");
 
 
     //  Data segment: build list of all barcodes & determine QV-value bit compression mapping
@@ -442,13 +473,13 @@ int main(int argc, char *argv[])
 
       bzero(usedqvs,sizeof(int)*256);
 
-      npair = 0;
+      nhqbc = 0;
       flen  = rlen = -1;
       dobar = 0;
       while (fscanf(input," %c",&code) == 1)       //  For each data line do
         { switch (code)
           { case 'P':
-              if (npair != 0)
+              if (nhqbc != 0)
                 Check_Entry(hasfs,hasrs,hasfq,hasrq);
               hasfs = hasrs = hasfq = hasrq = 0;
               dobar = 1;
@@ -465,7 +496,7 @@ int main(int argc, char *argv[])
                       { fprintf(stderr,"%s: Forward reads are not all the same length\n",Prog_Name);
                         exit (1);
                       }
-                    fscanf(input," %16c",forw);
+                    fscanf(input,"%16c",forw);
                   }
                 else if (!hasrs)
                   { hasrs = 1;
@@ -537,7 +568,7 @@ int main(int argc, char *argv[])
                 }
 
               if (good)
-                count[npair++] = bar;
+                count[nhqbc++] = bar;
             }
         }
       Check_Entry(hasfs,hasrs,hasfq,hasrq);
@@ -549,6 +580,7 @@ int main(int argc, char *argv[])
             inv[n] = i;
             n += 1;
           }
+      n -= 1;
       for (qbits = 0; n > 0; qbits++)
         n >>= 1;
       qmask  = (1 << qbits) - 1;
@@ -562,7 +594,11 @@ int main(int argc, char *argv[])
   //    build bit vector 'valid' of good codes
 
   if (VERBOSE)
-    { fprintf(stderr,"  About to sort %d barcodes\n",npair);
+    { fprintf(stderr,"  About to sort ");
+      Print_Number((int64) nhqbc,0,stderr);
+      fprintf(stderr," HQ barcodes out of ");
+      Print_Number((int64) npair,0,stderr);
+      fprintf(stderr," (%.1f%%)\n",(100.*nhqbc)/npair);
       fflush(stderr);
     }
 
@@ -578,21 +614,21 @@ int main(int argc, char *argv[])
 #endif
     barsort[4] = -1;
 
-    Set_Radix_Params(6,VERBOSE);
+    Set_Radix_Params(NTHREADS,VERBOSE);
 
-    Radix_Sort(npair,count,count+npair,barsort);
+    Radix_Sort(nhqbc,count,count+nhqbc,barsort);
 
-    count[npair] = count[npair] - 1;
+    count[nhqbc] = count[nhqbc-1] + 1;
 
     gmax  = 0;
     ngood = 0;
     ndiff = 0;
     g = 0;
-    for (i = 1; i <= npair; i++)
+    for (i = 1; i <= nhqbc; i++)
       if (count[i] != count[g])
         { g = i-g;
           if (g > VALID_THRESH)
-            { count[ndiff++] = count[g];
+            { count[ndiff++] = count[i-1];
               count[ndiff++] = g;
               ngood += g;
               if (g > gmax)
@@ -609,12 +645,12 @@ int main(int argc, char *argv[])
 
     bzero(valid,0x20000000ll);
 
-    lst = (count[0] >> 16)-1;
+    lst = -1;
     for (i = 0; i < ndiff; i += 2)
       { bar = count[i];
         valid[bar>>3] |= bit[bar&0x7];
         bar >>= 16;
-        while (lst < bar)
+        while (lst != bar)
           { lst += 1;
             lookup[lst] = i;
           }
@@ -625,7 +661,11 @@ int main(int argc, char *argv[])
       }
 
     if (VERBOSE)
-      { fprintf(stderr,"  There are %d valid codes with %d distinct values.\n",ngood,ndiff>>1);
+      { fprintf(stderr,"  There are ");
+        Print_Number((int64) ngood,0,stderr);
+        fprintf(stderr," (%.1f%%) valid codes with ",(100.*ngood)/npair);
+        Print_Number((int64) (ndiff>>1),0,stderr);
+        fprintf(stderr," distinct values.\n");
         fflush(stderr);
       }
   }
@@ -639,9 +679,12 @@ int main(int argc, char *argv[])
     FILE *sfile;
 
     if (VERBOSE)
-      { fprintf(stderr,"  Scan to compressing pairs and repair barcodes when possible.\n");
+      { fprintf(stderr,"  Scan to compressing data for external sort\n");
+        fprintf(stderr,"         and repair barcodes where possible.\n");
         fflush(stderr);
       }
+
+    rewind(input);
 
     while (fscanf(input," %c",&code) == 1)       //  Skip over header lines
       if (Header[(int) code])
@@ -670,7 +713,7 @@ int main(int argc, char *argv[])
       { if (code == 'P')
           { nextS = nextQ = 1;
             nline = 0;
-          }
+	  }
         else
           { fscanf(input," %d ",&len);
             if (code == 'S')
@@ -707,11 +750,11 @@ int main(int argc, char *argv[])
             Compress_Read(rlen,(char *) revr);
             fwrite(revr,sizeof(uint8),rclen,sfile);
 
-            Compress_QV(fclen,fqvs,qbits,map);
+            Compress_QV(flen,fqvs,qbits,map);
             fwrite(fqvs,sizeof(uint8),fqlen,sfile);
 
-            Compress_QV(rclen,rqvs,qbits,map);
-            fwrite(rqvs,sizeof(uint8),fqlen,sfile);
+            Compress_QV(rlen,rqvs,qbits,map);
+            fwrite(rqvs,sizeof(uint8),rqlen,sfile);
 
             nused += 1;
           }
@@ -720,8 +763,13 @@ int main(int argc, char *argv[])
     fclose(sfile);
 
     if (VERBOSE)
-      { fprintf(stderr,"  %d pairs had good codes, %d repairable codes, %d dropped.\n",
-                       ngood,nused-ngood,npair-nused);
+      { fprintf(stderr,"  ");
+        Print_Number((int64) ngood,0,stderr);
+        fprintf(stderr," (%.1f%%) pairs have good codes, ",(100.*ngood)/npair);
+        Print_Number((int64) (nused-ngood),0,stderr);
+        fprintf(stderr," (%.1f%%) have repairable codes, and ",(100.*(nused-ngood))/npair);
+        Print_Number((int64) (npair-nused),0,stderr);
+        fprintf(stderr," (%.1f%%) were dropped.\n",(100.*(npair-nused))/npair);
         fflush(stderr);
       }
   }
@@ -754,7 +802,8 @@ int main(int argc, char *argv[])
     date[24] = '\0';
     clen = strlen(argv[1]);
 
-    printf(". 10x 1.0\n");
+    printf("1 3 seq 1 0\n");
+    printf("2 3 10x\n");
     printf("# ! %d\n",nprov+1);
     printf("# g %d\n",ndiff);
     printf("# P %d\n",nused);
@@ -789,14 +838,16 @@ int main(int argc, char *argv[])
     printf("%% g + Q %d\n",gmax*((flen-23)+rlen));
 
     for (i = 0; i < nprov; i++)
-      printf("! %s\n",provenance + i*mprov);
+      printf("!%s\n",provenance + i*mprov);
     printf("! 8 VGPcloud 3 1.0 %d %s 24 %s\n",clen,argv[1],date);
   }
 
   { FILE  *sfile;
     int    gc, yes;
+    uint8 *bp;
+    uint32 val;
 
-    sfile = fopen(Catenate(SORT_PATH,"/",fname,".sort"),"w");
+    sfile = fopen(Catenate(SORT_PATH,"/",fname,".sort"),"r");
     if (sfile == NULL)
       { fprintf(stderr,"%s: Cannot create %s.sort in directory %s\n",Prog_Name,fname,SORT_PATH);
         exit (1);
@@ -804,12 +855,17 @@ int main(int argc, char *argv[])
 
     yes = 0;
     gc  = 0;
-    while (fread(forw,sizeof(uint8),fclen,sfile) < (uint32) fclen)
-      { if ( *((uint32 *) forw) == count[gc])
+    bp  = (uint8 *) count;
+    val = (bp[0] << 24 | bp[1] << 16 | bp[2] << 8 | bp[3]);
+    while (fread(forw,sizeof(uint8),fclen,sfile) >= (uint32) fclen)
+      { if ( *((uint32 *) forw) == val)
           { printf("g %d",count[gc+1]);
             gc += 2;
             yes = 1;
+            bp += 8;
+            val = (bp[0] << 24 | bp[1] << 16 | bp[2] << 8 | bp[3]);
           }
+
 
         Uncompress_Read(flen,(char *) forw);
 
@@ -817,10 +873,10 @@ int main(int argc, char *argv[])
         Uncompress_Read(rlen,(char *) revr);
 
         fread(fqvs,sizeof(uint8),fqlen,sfile);
-        Uncompress_QV(fclen,fqvs,qbits,qmask,inv);
+        Uncompress_QV(flen,fqvs,qbits,qmask,inv);
 
-        fread(rqvs,sizeof(uint8),fqlen,sfile);
-        Uncompress_QV(rclen,rqvs,qbits,qmask,inv);
+        fread(rqvs,sizeof(uint8),rqlen,sfile);
+        Uncompress_QV(rlen,rqvs,qbits,qmask,inv);
 
         forw[flen] = revr[rlen] = 4;
         Lower_Read((char *) forw);
@@ -832,6 +888,8 @@ int main(int argc, char *argv[])
           }
 
         printf("P\n");
+        // printf("S %d %s\n",flen,forw);
+        // printf("Q %d %s\n",flen,fqvs);
         printf("S %d %s\n",flen-23,forw+23);
         printf("Q %d %s\n",flen-23,fqvs+23);
         printf("S %d %s\n",rlen,revr);
