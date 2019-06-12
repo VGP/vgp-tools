@@ -7,17 +7,17 @@
  *   it is a separate file so as to make it easy to change the format and version
  * Exported functions:
  * HISTORY:
- * Last edited: May  1 00:05 2019 (rd109)
+ * Last edited: Jun 12 21:02 2019 (rd109)
  * Created: Sun Feb 24 14:48:21 2019 (rd109)
  *-------------------------------------------------------------------
  */
 
-#include "vgprd.h"
-
-static LineSpecification *vgpDefineLine (FieldType f0, FieldType f1, FieldType f2, FieldType f3)
+static LineSpecification *vgpDefineLine (FieldType f0, FieldType f1, FieldType f2,
+					 FieldType f3, FieldType f4, FieldType f5)
 {
   LineSpecification *ls = new0 (1, LineSpecification) ;
-  ls->field[0] = f0 ; ls->field[1] = f1 ; ls->field[2] = f2 ; ls->field[3] = f3 ;
+  ls->field[0] = f0 ; ls->field[1] = f1 ; ls->field[2] = f2 ;
+  ls->field[3] = f3 ; ls->field[4] = f4 ; ls->field[5] = f5 ;
   return ls ;
 }
 
@@ -31,66 +31,68 @@ static FileSpecification *vgpDefineFormat (void)
   LineSpecification **header = new0 (128, LineSpecification*) ;
 
   /* header line type 1 is treated separately below */
-  header['2'] = vgpDefineLine (STRING, 0, 0, 0) ;
-  header['#'] = vgpDefineLine (CHAR, INT, 0, 0) ;
-  header['@'] = vgpDefineLine (CHAR, INT, 0, 0) ;
-  header['+'] = vgpDefineLine (CHAR, INT, 0, 0) ;
-  header['%'] = vgpDefineLine (CHAR, CHAR, INT, 0) ;
-  header['!'] = vgpDefineLine (STRING_LIST, 0, 0, 0) ;
-  header['<'] = vgpDefineLine (STRING, INT, 0, 0) ;
-  header['>'] = vgpDefineLine (STRING, 0, 0, 0) ;
-  /* NB strictly !, < and > lines contain strings so isList should be TRUE for them */
+  header['2'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* subtype */
+  header['#'] = vgpDefineLine (CHAR, INT, 0, 0, 0, 0) ; /* linetype count */
+  header['@'] = vgpDefineLine (CHAR, INT, 0, 0, 0, 0) ; /* linetype max */
+  header['+'] = vgpDefineLine (CHAR, INT, 0, 0, 0, 0) ; /* linetype total */
+  header['%'] = vgpDefineLine (CHAR, CHAR, CHAR, INT, 0, 0) ; /* grouptype #/+ linetype value */
+  header['!'] = vgpDefineLine (STRING_LIST, 0, 0, 0, 0, 0) ;	/* name version command date */
+  header['<'] = vgpDefineLine (STRING, INT, 0, 0, 0, 0) ; /* filename objectcount */
+  header['>'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ;   /* filename */
 
   for (i = 0 ; i < MAX_FILE ; ++i)
     { fileSpec[i].major = MajorVersion ; fileSpec[i].minor = MinorVersion ;
       if (i > 0) for (j = 0 ; j < 128 ; ++j) if (header[j]) fileSpec[i].line[j] = header[j] ;
     }
 
-  fileSpec[0].line['1'] = vgpDefineLine (STRING, INT, INT, 0) ;
+  fileSpec[0].line['1'] = vgpDefineLine (STRING, INT, INT, 0, 0, 0) ;
 
   fileSpec[SEQ].objectType = 'S' ;
-  fileSpec[SEQ].line['S'] = vgpDefineLine (STRING, 0, 0, 0) ;
-  fileSpec[SEQ].line['Q'] = vgpDefineLine (STRING, 0, 0, 0) ;
-  fileSpec[SEQ].line['P'] = vgpDefineLine (0, 0, 0, 0) ;
-  fileSpec[SEQ].line['W'] = vgpDefineLine (INT, INT, INT, REAL) ;
-  fileSpec[SEQ].line['N'] = vgpDefineLine (REAL, REAL, REAL, REAL) ;
-  fileSpec[SEQ].line['A'] = vgpDefineLine (STRING, 0, 0, 0) ;
-  fileSpec[SEQ].line['g'] = vgpDefineLine (INT, STRING, 0, 0) ;
+  fileSpec[SEQ].line['g'] = vgpDefineLine (INT, STRING, 0, 0, 0, 0) ; /* group number name */
+  fileSpec[SEQ].line['S'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* the sequence */
+  fileSpec[SEQ].line['Q'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* qualities ascii 33+q */
+  fileSpec[SEQ].line['P'] = vgpDefineLine (0, 0, 0, 0, 0, 0) ; /* start of a pair */
+  fileSpec[SEQ].line['W'] = vgpDefineLine (INT, INT, INT, REAL, 0, 0) ; /* well pulseStart pulseEnd score */
+  fileSpec[SEQ].line['N'] = vgpDefineLine (REAL, REAL, REAL, REAL, 0, 0) ; /* SNR in A,C,G,T channels */
+  fileSpec[SEQ].line['A'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* capped pulse widths 1-4 */
 
-  fileSpec[RMD].objectType = 'R' ;
-  fileSpec[RMD].line['R'] = vgpDefineLine (INT, INT_LIST, 0, 0) ;
-  fileSpec[RMD].line['E'] = vgpDefineLine (INT_LIST, 0, 0, 0) ;
-  fileSpec[RMD].line['I'] = vgpDefineLine (REAL_LIST, 0, 0, 0) ;
-  fileSpec[RMD].line['N'] = vgpDefineLine (REAL_LIST, 0, 0, 0) ;
-  fileSpec[RMD].line['r'] = vgpDefineLine (INT, STRING_LIST, 0, 0) ;
+  fileSpec[RMP].objectType = 'R' ;
+  fileSpec[RMP].line['r'] = vgpDefineLine (INT, STRING_LIST, 0, 0, 0, 0) ; /* number restriction_sites */
+  fileSpec[RMP].line['R'] = vgpDefineLine (INT, INT_LIST, 0, 0, 0, 0) ; /* len locations(bp) */
+  fileSpec[RMP].line['E'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* sites in list in r line */
+  fileSpec[RMP].line['I'] = vgpDefineLine (REAL_LIST, 0, 0, 0, 0, 0) ; /* intensities at each site */
+  fileSpec[RMP].line['N'] = vgpDefineLine (REAL_LIST, 0, 0, 0, 0, 0) ; /* SNR_values at each sites */
+  fileSpec[RMP].line['O'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* object number in referred sequence file */
 
-  fileSpec[SXS].objectType = 'X' ;
-  fileSpec[SXS].line['A'] = vgpDefineLine (INT, INT, 0, 0) ;
-  fileSpec[SXS].line['I'] = vgpDefineLine (INT, INT, INT, INT) ;
-  fileSpec[SXS].line['Q'] = vgpDefineLine (INT, 0, 0, 0) ;
-  fileSpec[SXS].line['M'] = vgpDefineLine (INT, 0, 0, 0) ;
-  fileSpec[SXS].line['D'] = vgpDefineLine (INT, 0, 0, 0) ;
-  fileSpec[SXS].line['C'] = vgpDefineLine (STRING, 0, 0, 0) ;
-  fileSpec[SXS].line['T'] = vgpDefineLine (INT_LIST, 0, 0, 0) ;
-  fileSpec[SXS].line['U'] = vgpDefineLine (INT_LIST, 0, 0, 0) ;
-  fileSpec[SXS].line['V'] = vgpDefineLine (INT_LIST, 0, 0, 0) ;
+  fileSpec[ALN].objectType = 'A' ;
+  fileSpec[ALN].line['A'] = vgpDefineLine (INT, INT, 0, 0, 0, 0) ; /* object numbers of aligned objects */
+  fileSpec[ALN].line['I'] = vgpDefineLine (INT, INT, INT, INT, INT, INT) ; /* as ae alen bs be blen */
+  fileSpec[ALN].line['Q'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* quality in phred units */
+  fileSpec[ALN].line['M'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* number of matching bases */
+  fileSpec[ALN].line['D'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* number of differences = substitutions + indel bases */
+  fileSpec[ALN].line['C'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* cigar string */
+  fileSpec[ALN].line['T'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* tracePoint spacing in a (global) */
+  fileSpec[ALN].line['U'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* tracePoints in a */
+  fileSpec[ALN].line['V'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* tracePoints in b */
+  fileSpec[ALN].line['W'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* tracePoint spacings in b */
+  fileSpec[ALN].line['X'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* inter-tracePoint diff counts in b */
+  fileSpec[ALN].line['g'] = vgpDefineLine (INT, STRING, 0, 0, 0, 0) ; /* group number name */
 
   fileSpec[JNS].objectType = 'J' ;
-  fileSpec[JNS].line['J'] = vgpDefineLine (INT, INT, CHAR, CHAR) ;
-  fileSpec[JNS].line['G'] = vgpDefineLine (INT, 0, 0, 0) ;
-  fileSpec[JNS].line['Q'] = vgpDefineLine (INT, 0, 0, 0) ;
-  fileSpec[JNS].line['X'] = vgpDefineLine (INT_LIST, 0, 0, 0) ;
+  fileSpec[JNS].line['J'] = vgpDefineLine (INT, INT, CHAR, INT, INT, CHAR) ; /* a pos_a [s|e] b pos_b [s|e] */
+  fileSpec[JNS].line['G'] = vgpDefineLine (INT, INT, 0, 0, 0, 0) ; /* mean and standard deviation of estimated gap size */
+  fileSpec[JNS].line['Q'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* confidence in phred units */
+  fileSpec[JNS].line['X'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* alignment objects supporting join */
   
   fileSpec[BRK].objectType = 'B' ;
-  fileSpec[BRK].line['B'] = vgpDefineLine (INT, INT, INT, 0) ;
-  fileSpec[BRK].line['Q'] = vgpDefineLine (INT, 0, 0, 0) ;
-  fileSpec[BRK].line['X'] = vgpDefineLine (INT_LIST, 0, 0, 0) ;
+  fileSpec[BRK].line['B'] = vgpDefineLine (INT, INT, INT, 0, 0, 0) ; /* object start end */
+  fileSpec[BRK].line['Q'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* confidence in phred units */
+  fileSpec[BRK].line['X'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* alignment objects supporting join */
   
-  fileSpec[JNS].objectType = 'F' ;
-  fileSpec[JNS].line['F'] = vgpDefineLine (INT, CHAR, INT_LIST, 0) ;
-  fileSpec[JNS].line['N'] = vgpDefineLine (INT, INT_LIST, 0, 0) ;
-
-  fileSpec[LIS].line['L'] = vgpDefineLine (INT_LIST, 0, 0, 0) ;
+  fileSpec[LIS].objectType = 'L' ;
+  fileSpec[LIS].line['L'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* object identifiers */
+  fileSpec[LIS].line['N'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* optional name for list */
+  fileSpec[LIS].line['S'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* seed sequence for scaffold */
 
   /* fill in the listByteSize information */
   int listSize[8] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1 } ;
@@ -103,7 +105,6 @@ static FileSpecification *vgpDefineFormat (void)
 	    else
 	      fileSpec[i].line[j]->listByteSize = listSize[fileSpec[i].line[j]->field[k]] ;
 	  }
-  printf ("format defined\n") ;
   return fileSpec ;
 }
 
