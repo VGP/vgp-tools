@@ -5,13 +5,15 @@
  * Description: header for VGP file reading and writing
  * Exported functions:
  * HISTORY:
- * Last edited: Apr  4 22:17 2019 (rd109)
+ * Last edited: Jun 12 22:58 2019 (rd109)
  * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *-------------------------------------------------------------------
  */
 
 #ifndef VGPRD_DEFINED
 #define VGPRD_DEFINED
+
+#include "vgptypes_0_1.h"	/* must match vgpformat_x_y.h */ 
 
 /*** basic types ***/
 
@@ -26,23 +28,17 @@ typedef char BOOL ;
 typedef int64_t I64 ;
 const static I64 I64MAX = 0x7fffffffffffffff ;
 
-/*** VGP subtypes ***/
-
-typedef enum { SEQ = 1, RMD, SXS, JNS, BRK, SCF, LIS, MAX_FILE } FileType ;
-static char *fileTypeName[] = { 0, "seq", "rmd", "sxs", "jns", "brk", "scf", "lis" } ;
-typedef enum { IRP = 1, PBR, X10, RMB, RMC, RXR, MAP, MAX_SUB } SubType ;
-static char *subTypeName[] = { 0, "irp", "pbr", "10x", "rmb", "rmc", "rxr", "map" } ;
-static FileType subPrimary[] = { 0, SEQ, SEQ, SEQ, RMD, RMD, SXS, SXS } ;
 typedef enum { INT = 1, REAL, CHAR, STRING, INT_LIST, REAL_LIST, STRING_LIST } FieldType ;
-#define MAX_FIELD 4
 typedef union { I64 i ; double r ; char c ; I64 len ; } Field ; /* len for lists */
 typedef struct { char *program, *version, *command, *date ; } Provenance ;
 typedef struct { char *filename ; I64 count ; } Reference ;
+
 typedef struct {
   FieldType field[MAX_FIELD] ;
   int listByteSize ;
   //  char *description ;    	/* should really add this */
 } LineSpecification ;
+
 typedef struct {
   I64 major, minor ;
   LineSpecification *line[128] ;
@@ -81,6 +77,8 @@ typedef struct {
      or owned by user, in which case on reading it is incremented by len * ls->listByteSize */
   BOOL isUserBuf[128] ;		/* flag for whether buffer is owned by user */
   I64 gCount[128], gTotal[128] ; /* used internally to calculate groupCount and groupTotal */
+  char lineBuf[128] ;
+  int linePos ;
 } VgpFile ;
 
 /*** function definitions for reading and writing VgpFiles ***/
@@ -108,6 +106,8 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void* buffer) ;
    this can be called repeatedly, so the location can be changed, e.g. for each line, or group
    NB the package doesn't check the size - the user must allocate enough memory
 */
+
+void vgpWriteHeader (VgpFile *vf, FILE *f) ; /* f = 0 writes to vf->f */
 
 VgpFile *vgpFileOpenWrite (const char *path, FileType type, SubType sub, BOOL isGz) ;
 BOOL vgpWriteLine (VgpFile *vf, char lineType, void *buf) ;

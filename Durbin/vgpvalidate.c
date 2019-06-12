@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 11 15:22 2019 (rd109)
+ * Last edited: Jun 12 22:59 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -22,8 +22,10 @@ int main (int argc, char **argv)
   int i ;
   FileType fileType = 0 ;
   
+  timeUpdate (0) ;
+  
   --argc ; ++argv ;
-
+  
   while (argc && **argv == '-')
     if (argc > 1 && !strcmp (*argv, "-t"))
       { for (i = SEQ ; i < MAX_FILE ; ++i)
@@ -38,10 +40,11 @@ int main (int argc, char **argv)
   VgpFile *vf = vgpFileOpenRead (*argv, fileType) ;
   if (!vf) die ("failed to open vgp file *s", *argv) ;
   while (vgpReadLine (vf)) ;
-  printf ("read %lld lines from VGP file %s type %s\n", vf->line, *argv, fileTypeName[vf->type]) ;
+  printf ("read %lld objects in %lld lines from VGP file %s type %s\n",
+	  vf->count[vf->spec->objectType], vf->line, *argv, fileTypeName[vf->type]) ;
+  vgpWriteHeader (vf, stdout) ;
+  timeTotal (stdout) ;
   vgpFileClose (vf) ;
-  
-  exit (0) ;
 }
 
 /********************* end of file ***********************/
