@@ -209,7 +209,7 @@ Another important header line type indicates that references in this file are ma
 in another file. This has the syntax:
 
 ```
-    <reference_header> = '<' <string:file_name> <symbol:X> <int:nx>
+    <reference_header> = '<' <string:file_name>  <int:nx>
 ```
 The symbol ```X``` in this line denotes the line type in the referenced file of the objects
 to be referred to, and ```nx``` indicates the number of these items in the file (hence
