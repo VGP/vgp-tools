@@ -5,7 +5,7 @@
  * Description: implementation for vgprd.h
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 08:56 2019 (rd109)
+ * Last edited: Jun 13 09:31 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -136,7 +136,7 @@ VgpFile *vgpFileOpenRead (const char *path, FileType type)
 	      break ;
 	    case '>':
 	      --vf->count['>'] ; /* to avoid double counting */
-	      vgpAddReference (vf, vgpString(vf), vgpInt(vf,1)) ;
+	      vgpAddDeferred (vf, vgpString(vf)) ;
 	      break ;
 	    default: parseError (vf, "unknown header line type %c", vf->lineType) ;
 	    }
@@ -377,7 +377,7 @@ void vgpWriteHeader (VgpFile *vf, FILE *f)
     N += fprintf (f, "\n< %lu %s %lld\n", strlen(r->filename), r->filename, r->count) ;
   r = vf->deferred ;
   for (i = vf->count['>'] ; i-- ; ++r)
-    N += fprintf (f, "\n> %lu %s %lld\n", strlen(r->filename), r->filename, r->count) ;
+    N += fprintf (f, "\n> %lu %s\n", strlen(r->filename), r->filename) ;
 
   if (!vf->isHeader && vf->f == f)
     { vf->isHeader = TRUE ;
@@ -454,8 +454,8 @@ BOOL vgpAddReference (VgpFile *vf, char *filename, I64 count)
 BOOL vgpInheritDeferred (VgpFile *vf, VgpFile *source)
 { return addReference (vf, source->deferred, source->count['>'], TRUE) ; }
 
-BOOL vgpAddDeferred (VgpFile *vf, char *filename, I64 count)
-{ Reference ref ; ref.filename = filename ; ref.count = count ;
+BOOL vgpAddDeferred (VgpFile *vf, char *filename)
+{ Reference ref ; ref.filename = filename ;
   return addReference (vf, &ref, 1, TRUE) ;
 }
 
