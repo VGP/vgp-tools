@@ -7,7 +7,7 @@
  *   it is a separate file so as to make it easy to change the format and version
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 12 21:02 2019 (rd109)
+ * Last edited: Jun 13 01:49 2019 (rd109)
  * Created: Sun Feb 24 14:48:21 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -100,11 +100,12 @@ static FileSpecification *vgpDefineFormat (void)
     for (j = 0 ; j < 128 ; ++j)
       if (fileSpec[i].line[j])
 	for (k = 0 ; k < MAX_FIELD ; k++)
-	  { if (listSize[fileSpec[i].line[j]->field[k]] && fileSpec[i].line[j]->listByteSize)
-	      die ("VGP format %s spec error: two list types in record %c", fileTypeName[i], j) ;
-	    else
-	      fileSpec[i].line[j]->listByteSize = listSize[fileSpec[i].line[j]->field[k]] ;
-	  }
+	  if (listSize[fileSpec[i].line[j]->field[k]])
+	    { if (fileSpec[i].line[j]->listByteSize && j >= 'A') /* header records are shared */
+		die ("VGP format %s spec error: two list types in record %c", fileTypeName[i], j) ;
+	      else
+		fileSpec[i].line[j]->listByteSize = listSize[fileSpec[i].line[j]->field[k]] ;
+	    }
   return fileSpec ;
 }
 
