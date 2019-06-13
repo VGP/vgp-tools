@@ -5,7 +5,7 @@
  * Description: header for VGP file reading and writing
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 12 22:58 2019 (rd109)
+ * Last edited: Jun 13 09:29 2019 (rd109)
  * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -123,7 +123,7 @@ BOOL vgpAddProvenance (VgpFile *vf, char *prog, char *version, char *command, ch
 BOOL vgpInheritReference (VgpFile *vf, VgpFile *source) ; /* as for provenance */
 BOOL vgpAddReference (VgpFile *vf, char *filename, I64 count) ;
 BOOL vgpInheritDeferred (VgpFile *vf, VgpFile *source) ;
-BOOL vgpAddDeferred (VgpFile *vf, char *filename, I64 count) ;
+BOOL vgpAddDeferred (VgpFile *vf, char *filename) ;
 
 void vgpFileClose (VgpFile *vf) ; /* automatically rewrites header if allowed when writing */
 
