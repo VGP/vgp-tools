@@ -5,7 +5,7 @@
  * Description: implementation for vgprd.h
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 09:31 2019 (rd109)
+ * Last edited: Jun 13 18:53 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -106,7 +106,8 @@ VgpFile *vgpFileOpenRead (const char *path, FileType type)
 		if (vf->lineType == '#') vf->expectCount[lt] = vgpInt(vf,1) ;
 		else if (vf->lineType == '@')
 		  { vf->expectMax[lt] = vgpInt(vf,1) ;
-		    vf->buffer[lt] = new (vf->expectMax[lt]+1, char) ;
+		    vf->bufSize[lt] = vf->expectMax[lt] + 1 ; /* allow for string terminators */
+		    vf->buffer[lt] = new(vf->bufSize[lt] * vf->spec->line[lt]->listByteSize, char) ;
 		  }
 		else if (vf->lineType == '+') vf->expectTotal[lt] = vgpInt(vf,1) ;
 		else /* must be % */
@@ -152,21 +153,28 @@ static inline double readReal (VgpFile *vf) ;
 static inline void readString (VgpFile *vf, char *buf, I64 n) ;
 static inline void readFlush (VgpFile *vf) ; /* reads to the end of the line */
 
-static inline void confirmBufferSize (VgpFile *vf, char t, I64 size)
+static inline void confirmBufferSize (VgpFile *vf, char t, I64 size, I64 nStrings)
 {
   vf->total[t] += size ;
-  int byteSize = vf->spec->line[t]->listByteSize ;
-  BOOL isNewMax = FALSE ; if (size > vf->max[t]) { vf->max[t] = size ; isNewMax = TRUE ; }
-  if (!vf->isUserBuf[t]) /* check there is space to write */
-    { if (!vf->buffer[t])  /* make it */
-	{ size = (vf->expectMax[t] > vf->max[t]) ? vf->expectMax[t] : vf->max[t] ;
-	  vf->buffer[t] = new (size*byteSize, char) ;
-	}
-      else if (isNewMax && size > vf->expectMax[t])
-	{ free (vf->buffer[t]) ;
-	  vf->buffer[t] = new (size*byteSize, char) ;
-	}
+  if (size > vf->max[t]) vf->max[t] = size ;
+  size += nStrings ;		/* need to allocate space for terminal 0s */
+  if (!vf->isUserBuf[t] && size > vf->bufSize[t])   /* expand buffer */
+    { if (vf->buffer[t]) free (vf->buffer[t]) ;
+      vf->buffer[t] = new (size*vf->spec->line[t]->listByteSize, char) ;
+      vf->bufSize[t] = size ;
     }
+}
+
+static inline void updateGroupCount (VgpFile *vf)
+{ int i ;
+  for (i = 'A' ; i <= 'Z' ; ++i)
+    if (vf->count[i])
+      { if (vf->inGroup && vf->count[i] - vf->gCount[i] > vf->groupCount[i])
+	  vf->groupCount[i] = vf->count[i] - vf->gCount[i] ;
+	if (vf->inGroup && vf->total[i] - vf->gTotal[i] > vf->groupTotal[i])
+	  vf->groupTotal[i] = vf->total[i] - vf->gTotal[i] ;
+	vf->gCount[i] = vf->count[i] ; vf->gTotal[i] = vf->total[i] ;
+      }
 }
 
 BOOL vgpReadLine (VgpFile *vf)
@@ -176,20 +184,18 @@ BOOL vgpReadLine (VgpFile *vf)
 { int i, j ;
   vf->linePos = 0 ;		/* must come before first vfGetc() */
   char t = vfGetc (vf) ;	/* read first char */
-  if (feof (vf->f)) return FALSE ; /* after getting char to deal with final char */
+  if (feof (vf->f))
+    { updateGroupCount (vf) ;
+      return FALSE ; /* after getting char to deal with final char */
+    }
   /* otherwise  presume we are at a good line, and die if not */
   vf->lineType = t ;
   ++vf->line ;
   ++vf->count[t] ;
   if (t >= 'a' && t <= 'z') 	/* a group - update groupCount and groupTotal */
-    for (i = 'A' ; i <= 'Z' ; ++i)
-      if (vf->count[i])
-	{ if (vf->count[i] - vf->gCount[i] > vf->groupCount[i])
-	    vf->groupCount[i] = vf->count[i] - vf->gCount[i] ;
-	  if (vf->total[i] - vf->gTotal[i] > vf->groupTotal[i])
-	    vf->groupTotal[i] = vf->total[i] - vf->gTotal[i] ;
-	  vf->gCount[i] = vf->count[i] ; vf->gTotal[i] = vf->total[i] ;
-	}
+    { updateGroupCount (vf) ;
+      vf->inGroup = TRUE ;
+    }
   LineSpecification *ls = vf->spec->line[t] ;
   if (!ls) parseError (vf, "unknown line type %c", t) ;
   for (i = 0 ; ls->field[i] && i < MAX_FIELD ; ++i)
@@ -202,17 +208,17 @@ BOOL vgpReadLine (VgpFile *vf)
 	{ I64 len = readInt (vf) ;
 	  vf->field[i].len = len ;
 	  if (ls->field[i] == STRING)
-	    { confirmBufferSize (vf, t, len+1) ;
+	    { confirmBufferSize (vf, t, len, 1) ;
 	      char *buf = (char*) vf->buffer[t] ;
 	      readString (vf, buf, len) ;
 	    }
 	  else if (ls->field[i] == INT_LIST)
-	    { confirmBufferSize (vf, t, len) ;
+	    { confirmBufferSize (vf, t, len, 0) ;
 	      I64 *buf = (I64*) vf->buffer[t] ;
 	      for (j = 0 ; j < len ; ++j) *buf++ = readInt (vf) ;
 	    }
 	  else if (ls->field[i] == REAL_LIST)
-	    { confirmBufferSize (vf, t, len) ;
+	    { confirmBufferSize (vf, t, len, 0) ;
 	      double *buf = (double*) vf->buffer[t] ;
 	      for (j = 0 ; j < len ; ++j) *buf++ = readReal (vf) ;
 	    }
@@ -221,11 +227,11 @@ BOOL vgpReadLine (VgpFile *vf)
 	      char **string = new (len, char*) ;
 	      for (j = 0 ; j < len ; ++j)
 		{ I64 sLen = readInt (vf) ;
-		  totLen += sLen + 1 ;
+		  totLen += sLen ;
 		  string[j] = new (sLen+1, char) ;
 		  readString (vf, string[j], sLen) ;
 		}
-	      confirmBufferSize (vf, t, totLen) ;
+	      confirmBufferSize (vf, t, totLen, len) ;
 	      char *buf = (char*) vf->buffer[t] ;
 	      for (j = 0 ; j < len ; ++j)
 		{ strcpy (buf, string[j]) ;
@@ -369,15 +375,15 @@ void vgpWriteHeader (VgpFile *vf, FILE *f)
   
   Provenance *p = vf->provenance ; 
   for (i = vf->count['!'] ; i-- ; ++p)
-    N += fprintf (f, "\n! %lu %s %lu %s %lu %s %lu %s\n",
+    N += fprintf (f, "\n! %lu %s %lu %s %lu %s %lu %s",
 		  strlen (p->program), p->program, strlen (p->version), p->version,
 		  strlen (p->command), p->command, strlen (p->date), p->date) ;
   Reference *r = vf->reference ;
   for (i = vf->count['<'] ; i-- ; ++r)
-    N += fprintf (f, "\n< %lu %s %lld\n", strlen(r->filename), r->filename, r->count) ;
+    N += fprintf (f, "\n< %lu %s %lld", strlen(r->filename), r->filename, r->count) ;
   r = vf->deferred ;
   for (i = vf->count['>'] ; i-- ; ++r)
-    N += fprintf (f, "\n> %lu %s\n", strlen(r->filename), r->filename) ;
+    N += fprintf (f, "\n> %lu %s", strlen(r->filename), r->filename) ;
 
   if (!vf->isHeader && vf->f == f)
     { vf->isHeader = TRUE ;
@@ -405,7 +411,7 @@ static BOOL addProvenance (VgpFile *vf, Provenance *from, int n)
   Provenance *p = new (vf->count['!'] + n, Provenance) ;
   I64 *count = &vf->count['!'] ;
   if (vf->provenance) memcpy (p, vf->provenance, *count*sizeof(Provenance)) ;
-  memcpy (p+*count*sizeof(Provenance), from, n*sizeof(Provenance)) ;
+  memcpy (p + *count, from, n*sizeof(Provenance)) ;
   if (vf->provenance) free (vf->provenance) ;
   vf->provenance = p ;
   *count += n ;
@@ -436,7 +442,7 @@ static BOOL addReference (VgpFile *vf, Reference *from, int n, BOOL isDeferred)
   I64 *count = isDeferred ? &vf->count['>'] : &vf->count['<'] ;
   Reference *r = new (*count + n, Reference) ;
   if (*target) memcpy (r, *target, *count*sizeof(Reference)) ;
-  memcpy (r+*count*sizeof(Reference), from, n*sizeof(Reference)) ;
+  memcpy (r + *count, from, n*sizeof(Reference)) ;
   if (*target) free (*target) ;
   *target = r ;
   *count += n ;
@@ -479,12 +485,14 @@ static inline char* readBuf (VgpFile *vf)
 
 static inline I64 readInt (VgpFile *vf)
 { char *ep, *buf = readBuf (vf) ;
+  if (!*buf) parseError (vf, "empty int field") ;
   I64 x = strtoll (buf, &ep, 10) ; if (*ep) parseError (vf, "bad int") ;
   return x ;
 }
 
 static inline double readReal (VgpFile *vf)
 { char *ep, *buf = readBuf (vf) ;
+  if (!*buf) parseError (vf, "empty real field") ;
   double x = strtod (buf, &ep) ; if (*ep) parseError (vf, "bad real line") ;
   return x ;
 }
@@ -649,8 +657,8 @@ void timeUpdate (FILE *f)
       if (usecs < 0) { usecs += 1000000 ; secs -= 1 ; }
       fprintf (f, "\tsystem\t%d.%06d", secs, usecs) ;
       fprintf (f, "\tmax_RSS\t%ld", rNew.ru_maxrss - rOld.ru_maxrss) ;
-      fprintf (f, "\tnalloc\t%li", nAlloc) ;   
-      fprintf (f, "\tmemory\t%li", totalAlloc) ;   
+      fprintf (f, "\tnnew\t%li", nAlloc) ;   
+      fprintf (f, "\ttotnew\t%li", totalAlloc) ;   
       fputc ('\n', f) ;
     }
   else

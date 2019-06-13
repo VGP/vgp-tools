@@ -5,7 +5,7 @@
  * Description: header for VGP file reading and writing
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 09:29 2019 (rd109)
+ * Last edited: Jun 13 17:06 2019 (rd109)
  * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -69,9 +69,11 @@ typedef struct {
   /* fields below here are private to the package */
   FILE *f ;
   BOOL isWrite ;
+  BOOL inGroup ;       		/* set once inside a group */
   int headerSize ;		/* needed for when go back to rewrite header */
   Field field[MAX_FIELD] ;	/* used to hold the current line - accessed by macros */
   void *buffer[128] ;
+  I64 bufSize[128] ;
   /* buffer is used for list contents when reading - only nonzero if lineSpec->listType
      buffer can be owned by VgpFile, in which case size is expectMax | max
      or owned by user, in which case on reading it is incremented by len * ls->listByteSize */
@@ -107,15 +109,13 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void* buffer) ;
    NB the package doesn't check the size - the user must allocate enough memory
 */
 
-void vgpWriteHeader (VgpFile *vf, FILE *f) ; /* f = 0 writes to vf->f */
-
 VgpFile *vgpFileOpenWrite (const char *path, FileType type, SubType sub, BOOL isGz) ;
+void vgpWriteHeader (VgpFile *vf, FILE *f) ; /* f = 0 writes to vf->f */
 BOOL vgpWriteLine (VgpFile *vf, char lineType, void *buf) ;
 /* process is to fill fields by assigning to macros, then call */
 /* list contents are in buf - string is 0-terminated, though len must also be set */
 /* if lineType is stringList then buf is concatenation of null-terminated strings */
 /* NB adds '\n' before writing line not after, so user fprintf() can add extra material */
-/* first call will write initial header, allowing space for count sizes to expand on close */
 BOOL vgpInheritProvenance (VgpFile *vf, VgpFile *source) ;
 /* add all provenance lines in source - fails after WriteLine called */
 BOOL vgpAddProvenance (VgpFile *vf, char *prog, char *version, char *command, char *dateTime) ;
