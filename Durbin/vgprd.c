@@ -5,7 +5,7 @@
  * Description: implementation for vgprd.h
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 00:16 2019 (rd109)
+ * Last edited: Jun 13 08:56 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -222,7 +222,7 @@ BOOL vgpReadLine (VgpFile *vf)
 	      for (j = 0 ; j < len ; ++j)
 		{ I64 sLen = readInt (vf) ;
 		  totLen += sLen + 1 ;
-		  string[j] = new (sLen, char) ;
+		  string[j] = new (sLen+1, char) ;
 		  readString (vf, string[j], sLen) ;
 		}
 	      confirmBufferSize (vf, t, totLen) ;
