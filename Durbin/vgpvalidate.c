@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 18:52 2019 (rd109)
+ * Last edited: Jun 14 10:46 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -77,7 +77,7 @@ int main (int argc, char **argv)
   {
 #define CHECK(X,Y,Z) if (vf->X[i] && vf->X[i] != vf->Y[i])		\
       { fprintf (stderr, "header mismatch %s %c: header %lld data %lld\n", Z, i, vf->X[i], vf->Y[i]) ; ++nBad ; } \
-      else if (vf->Y[i] && !vf->X[i]) ++nMissing ;			\
+    else if (vf->Y[i] && !vf->X[i]) { fprintf (stderr, "header %s line missing for %c, value is %lld\n", Z, i, vf->Y[i]) ; ++nMissing ; } \
       if (vf->Y[i]) ++nTotal
 
     int i, nTotal = 0, nBad = 0, nMissing = 0 ;
