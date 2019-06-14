@@ -2,9 +2,12 @@ DEST_DIR = ../bin
 
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = VGPseq VGPpacbio VGPcloud Dazz2pbr Dazz2sxs
+ALL = VGPseq VGPzip VGPpacbio VGPcloud Dazz2pbr Dazz2sxs
 
 all: $(ALL)
+
+VGPzip: VGPzip.c gene_core.c gene_core.h
+	gcc $(CFLAGS) -o VGPzip VGPzip.c gene_core.c -lm -lz
 
 VGPseq: VGPseq.c gene_core.c gene_core.h
 	gcc $(CFLAGS) -o VGPseq VGPseq.c gene_core.c -lm -lz

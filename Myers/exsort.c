@@ -14,11 +14,17 @@
 
 #undef DEBUG
 
-#define SHELL 24
+#define SHELL  24
+#define   LEV2 10
+#define   LEV1  4
+
 #define SMAX   6
+
 #define MOVE(A,B) memcpy(A,B,rsize)
 
 static int64 Shell;
+static int64 Lev2;
+static int64 Lev1;
 
 #ifdef DEBUG
 
@@ -31,21 +37,23 @@ static inline void sorted(uint8 *array, int asize, int rsize, int ksize)
 
 #endif
 
-static inline void gap_sort(uint8 *array, int asize, int rsize, int ksize, int gap)
+static inline void gap_sort(uint8 *array, int asize, int rsize, int ksize, int digit, int gap)
 { int    i, j, step;
   uint8  temp[rsize];
-  uint8 *garray;
+  uint8 *garray, *carray, *ctemp;
 
   step   = gap*rsize;
   garray = array + step;
+  carray = array + digit;
+  ctemp  = temp  + digit;
   for (i = step; i < asize; i += rsize)
     { j = i-step;
-      if (memcmp(array+j,array+i,ksize) <= 0)
+      if (memcmp(carray+j,carray+i,ksize) <= 0)
         continue;
       MOVE(temp,array+i);
       MOVE(array+i,array+j);
       for(j -= step; j >= 0; j -= step)
-        { if (memcmp(array+j,temp,ksize) <= 0)
+        { if (memcmp(carray+j,ctemp,ksize) <= 0)
             break;
           MOVE(garray+j,array+j);
         }
@@ -53,12 +61,15 @@ static inline void gap_sort(uint8 *array, int asize, int rsize, int ksize, int g
     }
 }
 
-static inline void shell_sort(uint8 *array, int asize, int rsize, int ksize)
-{ if (memcmp(array,array+(asize-rsize),ksize) == 0)
+static inline void shell_sort(uint8 *array, int asize, int rsize, int ksize, int digit)
+{ ksize -= digit;
+  if (memcmp(array+digit,array+(asize-rsize)+digit,ksize) == 0)
     return;
-  gap_sort(array,asize,rsize,ksize,10);
-  gap_sort(array,asize,rsize,ksize,4);
-  gap_sort(array,asize,rsize,ksize,1);
+  if (asize > Lev2)
+    gap_sort(array,asize,rsize,ksize,digit,10);
+  if (asize > Lev1)
+    gap_sort(array,asize,rsize,ksize,digit,4);
+  gap_sort(array,asize,rsize,ksize,digit,1);
 }
 
 typedef struct
@@ -217,7 +228,7 @@ static void radix_sort(uint8 *array, int64 asize, int rsize, int ksize, int digi
         if (len[x] > Shell)
           radix_sort(array + beg[x], len[x], rsize, ksize, digit);
         else if (len[x] > rsize)
-          shell_sort(array + beg[x], len[x], rsize, ksize);
+          shell_sort(array + beg[x], len[x], rsize, ksize, digit);
     }
 }
 
@@ -243,7 +254,7 @@ static void *sort_thread(void *arg)
       if (parts[x] > Shell)
         radix_sort(array + off, parts[x], rsize, ksize, 1);
       else if (parts[x] > rsize)
-        shell_sort(array + off, parts[x], rsize, ksize);
+        shell_sort(array + off, parts[x], rsize, ksize, 1);
       off += parts[x];
     }
 

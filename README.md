@@ -38,13 +38,13 @@ or dataset2.pbr.
 	- **.sxs** for alignments between sequences (pronounced "success").
 	- **.rxr** for alignments between restriction maps .
 	- **.sxr** for alignments between sequences and restriction maps .
-	- **.map** for alignments between sequences and restriction maps.
+	- **.map** for alignments between sequences and a target superstring.
 
-- **.lnk**   primary type for linkages or breaks amongst (contig) sequences.
-	- **.jns** for join information between (contig) sequences.
-	- **.brk** for break or mis-join information within (contig) sequences.
+- **.jns**   primary type for join information between (contig) sequences.
 
-- **.lis**  a utility file type recording lists of objects of any of the other types.
+- **.brk**   primary type for break or mis-join information within (contig) sequences.
+
+- **.lis**   a utility file type recording lists of objects of any of the other types.
 	- **.lyo** lists of sequence alignments defining an assembly layout.
 	- **.scf** lists of scaffolding links defining sets of linear scaffolds.
 
@@ -100,12 +100,11 @@ pair (.irp) file:
 ```
      1 3 seq 1 0            header start: primary file type, major and minor version
      2 3 irp                optional secondary subtype
-     # ! 1                  number of provenance lines in the file
+     ! 7 VGPpair 3 0.1 ...  provenance line saying how file arose
      # P 3                  number of read pairs in file
      # S 6                  number of sequences in file
      @ S 5                  maximum number of bp’s in a read
      + S 26                 total number of bp's in file
-     ! 7 VGPpair 3 0.1 ...  provenance line saying how file arose
 
      P                      data start: separator for read pairs - helps human interpretability 
      S 5 acgta              forward sequence of pair 1
@@ -185,12 +184,13 @@ list of items, such as ```<string>``` (a list of characters) or say a list of re
 sites, a +-line tells you the total number of items in all the lists in the file,
 e.g. "<code>+ S 26</code>" in the example above indicates that altogether the sequences in the
 file total 26 bases.  Similarly, an @-line indicates the length of the largest list that
-occurs in any given line of the specified type.  In almost all cases there is only one list object
-per line type, however, a notable exception is the provenance line below, which has 4 strings
-in a line.  In such cases, ```+``` is the sum of all of the list element lengths over all lines
-of the given type, and ```@``` is the maximum list length over all the lists in all of the lines.
-There must be a \#-line for every data line-type that could be in the primary file type,
-and +- and @-lines for every such data line-type that has list elements.
+occurs in any given line of the specified type.
+These ``limit'' lines are only present for line types that occur in the body and not lines
+that occur in the header itself.  In almost all cases there is only one list object
+per line type, however, a notable exception is the restriction site line (see 2.2), which has
+a variable number of strings in a line.  In such cases, ```+``` is the sum of all of the list
+element lengths over all lines of the given type, and ```@``` is the maximum of the sum of the
+list lengths of each line.
 
 Often the objects in a file are naturally partitioned into groups, e.g. all the read pairs in a
 flow-cell lane, or all the read pairs in a "cloud".   VGP formats support this with the concept
@@ -209,10 +209,10 @@ Another important header line type indicates that references in this file are ma
 in another file. This has the syntax:
 
 ```
-    <reference_header> = '<' <string:file_name>  <int:nx>
+    <reference_header> = '<' <string:file_name> <int:nx>
 ```
-The symbol ```X``` in this line denotes the line type in the referenced file of the objects
-to be referred to, and ```nx``` indicates the number of these items in the file (hence
+All the objects (all of the same type) in the specified file are available and
+and ```nx``` indicates the number of these items in the file (hence
 the range of reference indices is ```[1,nx]```).  For example a ```.sxs``` alignment file refers
 to sequence objects designated by S-lines in another file.
 
@@ -222,7 +222,8 @@ above.
 ```
     <forward_header> = '>' <string:file_name>
 ```
-In this case there is no need to indicate the primary objects in the file and their number, since the current file will not refer to them.
+In this case there is no need to indicate the number of objects in the file, since the current
+file will not refer to them.
 
 The final header line type is the provenance or !-line that records a processing step that
 was involved in producing the current file.  Each line contains four strings giving (a) the
@@ -410,7 +411,7 @@ then there must be a reference header giving the source of the sequence, and for
 an associated O-line referring back to the relevant sequence object.
 
 ```
-  < <string:ref_sequence_filename> S <int:ns>
+  < <string:ref_sequence_filename> <int:ns>
 
   O <int>
 ```
@@ -436,8 +437,8 @@ The two references can be to the same file in the case of an "all against all" t
 typical in the first step of assembly.
 
 ```
-  < <string:file_A> <char:A> <int:na>        source of A objects = sequences or RMs
-  < <string:file_B> <char:B> <int:nb>        source of B objects = sequences or RMs
+  < <string:file_A> <int:na>        source of A objects = sequences or RMs
+  < <string:file_B> <int:nb>        source of B objects = sequences or RMs
 ```
 The series of alignments in the data segment are encoded with the following lines where
 only the initial A-line is mandatory:
@@ -497,10 +498,8 @@ Their syntax is as follows where we index the list of trace point values for use
 explanation below:
 <br>
 <br>
-<span style="padding-left:14px;justify>
 <code>U \<int:n\> \<int:u<sub>1</sub>\> \<int:u<sub>2</sub>\> ... \<int:u<sub>n</sub>\>
 <span style="padding-left:20px;justify>&nbsp;</span>list of absolute trace points in a</code>
-</span>
 <br>
 <span style="padding-left:14px;justify>
 <code>V \<int:n\> \<int:v<sub>1</sub>\> \<int:v<sub>2</sub>\> ... \<int:v<sub>n</sub>\>
@@ -579,32 +578,26 @@ desirable.
 <br>
 <br>
 
-## 2.4 Linkage files, .lnk
+## 2.4. Contig join file, .jns
 
 For assemblies, we expect that our assembly process will create a **.seq** file of contigs,
 and that various methods will be applied to use 10X Genomics, BioNano, HiC and/or other data
-to propose joins between these contigs, and possible breaks in them where they believe that
-there were missassemblies. This file type encodes the possible joins and implicit breaks.
+to propose joins between these contigs.
+This file type encodes the possible joins and implicit breaks.
 We envision that there will be a program that can act on contig file together with lists of
 putative joins to create scaffolds (see .scf file type below).
 
 ```
-< <string:.ctg_file>   S <int:nseqs>
-< <string:.aln_file_1> A <int:naln_1>
+< <string:.ctg_file>   <int:nseqs>
+< <string:.aln_file_1> <int:naln_1>
     . . .
-< <string:.aln_file_k> A <int:naln_k>
+< <string:.aln_file_k> <int:naln_k>
 
 J <int:seq_a> <int:pos_a> [se] <int:seq_b> <int:pos_b> [se]   potential join link
-B <int:seq> <int:start> <int:end>                             potential break in contig between start and end
 Q <int:Phred_confidence>                                      score of confidence in the join
 X <int:k> <int:n> <int:a>^n                                   source k alignment objects evidencing the join
 G <int:mean> <int:std. deviation>                             mean & standard deviation of gap estimate
 ```
-Typically either just J-lines or B-lines will occur in a linkage file because while on the one
-hand both give information about contig linkages or lack thereof, the information content of
-the two lines is distinct.  Such separation of information into separate files is indicated
-by using the secondary .jns- or .brk-extensions.  
-
 A J-line encodes a possible join between two contig sequences.
 It asserts that there is evidence that the coordinate ```pos_a``` on sequence ```seq_a```
 in the direction towards the end (```e```) or start (```s```)
@@ -618,40 +611,41 @@ reflect the underlying alignments.
 
 ![](figures/Link.ex.png)
 
-A B-line explicitly indicates a potential breaks.  The meaning is that there is evidence that
-the given sequenc should be broken somewhere between positions ```start``` and ```end```.
-as in practice scaffolding programs typically can only localise possible breaks to a wider
-interval.
-
 An optional Q line encodes confidence in the assertion of the link. As in .sxs files, this is
 encoded in Phred-scaled units *q* = -10log<sub>10</sub> p(link is false).  Further
 score information from the specific method that proposed the join can be given after the
 Phred score.  The line can qualify either a J- or a B-linee.
 
 An optional X line points to the evidence from source k for the join assertion, in the form of
-a list of alignments from the given source file which must be in the header.  The line can qualify
-either a J- or a B-linee.
+a list of alignments from the given source file which must be in the header.
 
 An optional G line indicates the expected length of a join and its standard devision, if
-such is known.  The line only qualifies J-lines and not B-lines.
+such is known.
 If the gap is negative then the contigs overlap by the specified number of bases.
 For technologoies such as Hi-C or 10X read clouds that do not provide such estimates
 on gap size, the G-line is simply not given.
 
-### 2.4.1. Contig join file, .jns
+## 2.5. Contig break file, .brk
 
-This subtype is a .lnk file that contains only J-lines and the qualifying lines applicable
-to them.
+In counter point to joins, the same secondary information can also indicate intervals of a
+contig where it was misassembled and a break should actually occur.  We consider both the .jns
+and .brk files to encoding linkage infromation between and within contigs, and call them
+collectively "link" files.  A .brk file consists of all the same lines as a .jns file saved
+that J-lines are replaced by B-lines, and G-lines do not occur.
 
-### 2.4.2. Contig break file, .brk
+```
+B <int:seq> <int:start> <int:end>                             potential break in contig between start and end
+```
 
-This subtype is a .lnk file that contains only B-lines and the qualifying lines applicable
-to them.
+A B-line explicitly indicates a potential breaks.  The meaning is that there is evidence that
+the given sequenc should be broken somewhere between positions ```start``` and ```end```.
+as in practice scaffolding programs typically can only localise possible breaks to a wider
+interval.
 
 <br>
 <br>
 
-## 2.5. List file, .lis
+## 2.6. List file, .lis
 
 This file type just keeps lists of indices into other VGP file types.  We use this to define
 subsets of objects in existing VGP files, without needing to create an explicit listing of
@@ -659,8 +653,8 @@ all the objects, although this can be done if desired as in the case of a .map f
 assembly.
 
 ```
-< <string:list_file> X <int:nx>
-< <string:seed_file> S <int:ns>
+< <string:list_file> <int:nx>
+< <string:seed_file> <int:ns>
 	
 L <int:n> <int:[1,nx]>^n
 S <int:[1,ns]>
@@ -684,7 +678,7 @@ in .scf-files (see below) to name the final scaffold objects output by an assemb
 
 <br>
 
-### 2.5.1. Assembly layout file, .lyo
+### 2.6.1. Assembly layout file, .lyo
 
 An assembly layout file consists of a collection of lists over sequence read alignments
 between reads in the same .seq-file.  Each list encodes a path in the string graph of the
@@ -694,7 +688,7 @@ into the contig and provide additional data for consensus.
 
 <br>
 
-### 2.5.2. Scaffold file, .scf
+### 2.6.2. Scaffold file, .scf
 
 A scaffold file consists of a collection of lists over a scaffold link file, each of which
 gives a linear order of links defining a proposed assembly scaffold.
