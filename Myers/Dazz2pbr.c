@@ -846,7 +846,7 @@ int main(int argc, char *argv[])
 
       printf("1 3 seq 1 0\n");
       printf("2 3 pbr\n");
-      printf("# ! 1\n");
+      // printf("# ! 1\n");
       if (DOGRP)
         printf("# g %lld\n",ngroup);
       printf("# S %lld\n",noreads);
@@ -864,17 +864,17 @@ int main(int argc, char *argv[])
       for (i = 1; i < argc; i++)
         clen += strlen(argv[i])+1;
 
-      printf("+ ! %d\n",clen+35);
+      // printf("+ ! %d\n",clen+35);
       if (DOGRP)
         printf("+ g %lld\n",gtotc);
       printf("+ S %lld\n",seqtot);
       if (DOARW)
         printf("+ A %lld\n",seqtot);
 
-      if (clen > 24)
-        printf("@ ! %d\n",clen);
-      else
-        printf("@ ! 24\n");
+      // if (clen > 24)
+        // printf("@ ! %d\n",clen);
+      // else
+        // printf("@ ! 24\n");
       if (DOGRP)
         printf("@ g %lld\n",gmaxc);
       printf("@ S %lld\n",seqmax);
@@ -883,6 +883,7 @@ int main(int argc, char *argv[])
 
       if (DOGRP)
         { printf("%% g # S %lld\n",gmxread);
+          printf("%% g # W %lld\n",gmxread);
           if (DOARW)
             printf("%% g # A %lld\n",gmxread);
           printf("%% g + S %lld\n",gmxtot);

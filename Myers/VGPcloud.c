@@ -118,7 +118,6 @@ static int find(uint32 code, int l, int h, uint32 *count)
   for (m = l; m < h; m += 2)
     if (count[m] == code)
       return (m+1);
-printf("FAIL\n");
   return (0);
 }
 
@@ -671,7 +670,7 @@ int main(int argc, char *argv[])
   }
 
 
-  //  Scan 2: Correct barcodes when possible, output compressed pairs for 
+  //  Scan 2: Correct barcodes when possible, output compressed pairs for sorting
 
   { char  code;
     int   nextQ, nextS;
@@ -841,6 +840,8 @@ int main(int argc, char *argv[])
       printf("!%s\n",provenance + i*mprov);
     printf("! 8 VGPcloud 3 1.0 %d %s 24 %s\n",clen,argv[1],date);
   }
+
+  //  Output clouds
 
   { FILE  *sfile;
     int    gc, yes;

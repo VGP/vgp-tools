@@ -365,13 +365,15 @@ int main(int argc, char *argv[])
       }
   }
 
-  { int   c, j, al, ar, tlen;
+  { int   c, j, al, ar, alen, tlen;
     int64 novls, odeg, omax, sdeg, smax, tmax, ttot;
+    int64 gmaxlt, gsumlt;
 
     //  For each record do
 
     novls = omax = smax = ttot = tmax = 0;
     sdeg  = odeg = 0;
+    gmaxlt = gsumlt = 0;
 
     ngroup = 0;
     gmax   = 0;
@@ -442,7 +444,12 @@ int main(int argc, char *argv[])
                         gcount[ngroup++] = odeg;
                       }
                     sdeg = odeg = 0;
+
                     al = ar;
+                    alen = Number_Digits((int64) (ar+1));
+                    if (alen > gmaxlt)
+                      gmaxlt = alen;
+                    gsumlt += alen;
                   }
 
                 odeg  += 1;
@@ -461,7 +468,7 @@ int main(int argc, char *argv[])
               { gmax = 1.2*ngroup + 1000;
                 gcount = Realloc(gcount,sizeof(int)*gmax,"Reallocating group count vector");
               }
-            gcount[ngroup++] = odeg;
+            gcount[ngroup] = odeg;
             ngroup += 1;
 
             fclose(input);
@@ -470,6 +477,9 @@ int main(int argc, char *argv[])
       }
 
     trmax = tmax;
+    tmax >>= 1;
+    ttot >>= 1;
+    smax >>= 1;
 
     { int    i, clen, optl;
       char   date[26];
@@ -485,8 +495,8 @@ int main(int argc, char *argv[])
 
       printf("1 3 aln 1 0\n");
       printf("2 3 sxs\n");
-      printf("# ! 1\n");
-      printf("# > 1\n");
+      // printf("# ! 1\n");
+      // printf("# > 2\n");
       if (DOGROUP)
         printf("# g %d\n",ngroup);
       printf("# A %lld\n",novls);
@@ -496,19 +506,26 @@ int main(int argc, char *argv[])
         printf("# D %lld\n",novls);
       if (DOTRACE)
         printf("# W %lld\n# X %lld\n",novls,novls);
+      printf("# T 1\n");
 
-      printf("+ ! %d\n",clen+35);
+      // printf("+ ! %d\n",clen+35);
+      // printf("+ > %ld\n",strlen(fname1)+strlen(fname2));
       if (DOGROUP)
-        printf("+ g 0\n");
+        printf("+ g %lld\n",gsumlt);
       if (DOTRACE)
         printf("+ W %lld\n+ X %lld\n",ttot,ttot);
 
-      if (clen > 24)
-        printf("@ ! %d\n",clen);
-      else
-        printf("@ ! 24\n");
+      // if (clen > 24)
+        // printf("@ ! %d\n",clen);
+      // else
+        // printf("@ ! 24\n");
+      // if (strlen(fname1) > strlen(fname2))
+        // printf("@ > %ld\n",strlen(fname1));
+      // else
+        // printf("@ > %ld\n",strlen(fname2));
+
       if (DOGROUP)
-        printf("@ g 0\n");
+        printf("@ g %lld\n",gmaxlt);
       if (DOTRACE)
         printf("@ W %lld\n@ X %lld\n",tmax,tmax);
 
@@ -524,7 +541,7 @@ int main(int argc, char *argv[])
             }
         }
 
-      printf("\n! 8 Dazzsxs 3 1.0 %d",clen);
+      printf("! 8 Dazz2sxs 3 1.0 %d",clen);
       if (optl > 0)
         { printf(" -");
           if (VERBOSE)
@@ -545,8 +562,8 @@ int main(int argc, char *argv[])
       date[24] = '\0';
       printf(" 24 %s\n",date);
 
-      printf("\n> %ld %s S %d\n",strlen(fname1),fname1,nread1);
-      printf("> %ld %s S %d\n\n",strlen(fname2),fname2,nread2);
+      printf("< %ld %s %d\n",strlen(fname1),fname1,nread1);
+      printf("< %ld %s %d\n",strlen(fname2),fname2,nread2);
     }
   }
 
@@ -599,7 +616,7 @@ int main(int argc, char *argv[])
                 ar = ovl->aread;
                 if (ar != al)
                   { if (DOGROUP)
-                      printf("g %d 0\n",gcount[ng++]);
+                      printf("g %d %d %d\n",gcount[ng++],Number_Digits((int64) (ar+1)),ar+1);
                     al = ar;
                   }
 
@@ -612,7 +629,7 @@ int main(int argc, char *argv[])
                   { if (COMP(ovl->flags))
                       printf("I %d %d %d %d %d %d\n",
                              ovl->path.abpos,ovl->path.aepos,rlen1[ar],
-                             blen - ovl->path.bbpos, blen - ovl->path.bepos,blen);
+                             ovl->path.bepos, ovl->path.bbpos,blen);
                     else
                       printf("I %d %d %d %d %d %d\n",
                              ovl->path.abpos,ovl->path.aepos,rlen1[ar],
@@ -628,14 +645,14 @@ int main(int argc, char *argv[])
                     if (small)
                       Decompress_TraceTo16(ovl);
                  
-                    printf("W %d ",tlen>>1);
+                    printf("W %d",tlen>>1);
                     for (k = 0; k < tlen; k += 2)
                       printf(" %d",trace[k+1]);
                     printf("\n");
         
                     printf("X %d",tlen>>1);
                     for (k = 0; k < tlen; k += 2)
-                      printf(" %3d",trace[k]);
+                      printf(" %d",trace[k]);
                     printf("\n");
                   }
               }
