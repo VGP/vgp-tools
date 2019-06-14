@@ -17,15 +17,11 @@ clean:
 install:
 	cp $(ALL) $(DEST_DIR)
 
-### object files
-
-UTILS_OBJS=hash.o dict.o array.o utils.o
-UTILS_HEADERS=utils.h array.h dict.h hash.h
-$(UTILS_OBJS): utils.h $(UTILS_HEADERS)
+vgprd.o: vgprd.h
 
 ### programs
 
-vgpvalidate: vgpvalidate.c $(UTILS_OBJS)
+vgpvalidate: vgpvalidate.c vgprd.o
 	$(CC) $(CFLAGS) $^ -o $@ -lm -lz
 
 ### end of file
