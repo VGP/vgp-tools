@@ -5,7 +5,7 @@
  * Description: implementation for vgprd.h
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 14 10:17 2019 (rd109)
+ * Last edited: Jun 24 00:03 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -64,6 +64,7 @@ VgpFile *vgpFileOpenRead (const char *path, FileType type)
 		  fclose (vf->f) ; free (vf) ; return 0 ;
 		}
 	      vf->type = type ; vf->spec = &formatSpec[type] ;
+	      vf->major = vf->spec->major ; vf->minor = vf->spec->minor ;
 	      isFirst = FALSE ;
 	    }
 	  break ;

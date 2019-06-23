@@ -7,7 +7,7 @@
  *   it is a separate file so as to make it easy to change the format and version
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 01:49 2019 (rd109)
+ * Last edited: Jun 23 23:33 2019 (rd109)
  * Created: Sun Feb 24 14:48:21 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -23,8 +23,8 @@ static LineSpecification *vgpDefineLine (FieldType f0, FieldType f1, FieldType f
 
 static FileSpecification *vgpDefineFormat (void)
 {
-  static int MajorVersion = 1 ;
-  static int MinorVersion = 0 ;
+  static int MajorVersion = 0 ;
+  static int MinorVersion = 1 ;
   
   int i, j, k ;
   FileSpecification *fileSpec = new0 (MAX_FILE, FileSpecification) ;
