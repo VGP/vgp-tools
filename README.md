@@ -498,13 +498,9 @@ Their syntax is as follows where we index the list of trace point values for use
 explanation below:
 <br>
 <br>
-<code>U \<int:n\> \<int:u<sub>1</sub>\> \<int:u<sub>2</sub>\> ... \<int:u<sub>n</sub>\>
-<span style="padding-left:20px;justify>&nbsp;</span>list of absolute trace points in a</code>
+<code>  U  \<int:n\> \<int:u<sub>1</sub>\> \<int:u<sub>2</sub>\> ... \<int:u<sub>n</sub>\>     list of absolute trace points in a</code>
 <br>
-<span style="padding-left:14px;justify>
-<code>V \<int:n\> \<int:v<sub>1</sub>\> \<int:v<sub>2</sub>\> ... \<int:v<sub>n</sub>\>
-<span style="padding-left:20px;justify>&nbsp;</span>list of absolute trace points in b</code>
-</span>
+<code>   V \<int:n\> \<int:v<sub>1</sub>\> \<int:v<sub>2</sub>\> ... \<int:v<sub>n</sub>\>     list of absolute trace points in b</code>
 <br>
 <br>
 Let <code>u<sub>0</sub> = as</code> and <code>u<sub>n+1</sub> = ae</code>, and similarly
@@ -759,6 +755,23 @@ An alternative enabled by having proposed scaffolding operations in VGP formats 
 
 # 4. VGP Tool Manuals
 
+### <code>4.0. VGPzip [-T\<int(4)\>] \<file\></code>
+
+VGPzip compresses the given file into a blocked gzip file with the name ```<file>.gz``` and
+associate index in ```<file>.vz```i.  The ```.gz``` file can be decompressed with
+ ```gunzip``` just like any other gzip file.
+The file is compressed in 10MB blocks save for the
+last.  This program is like ```bgzip``` except that it parallelizes the compression with threads,
+either 4 by default or the number requested by the ```-T``` option.  This saves a great deal of
+waiting around: compressing a 40GB file with ```gzip``` takes over an hour, but VGPzip takes just
+11 minutes with the 6 cores on my new Mac.
+
+The other distinguithing feature of ```VGPzip``` is the very large block size (```bgzip``` uses
+64KB blocks).  Our goal is to have a compressed file that can be operated on several
+large pieces by parallel threads, so small blocks are just a nuisance and would make the associated
+```.vzi``` index excessively large.  Various tools in the VGP repertoire are currently being
+upgraded to perform parallel threaded processing on VGPzip'd files.
+
 ### <code>4.1. VGPseq [-vsg] \<forward:.fast[aq][.gz]> \<reverse:.fast[aq][.gz]></code>
 
 VGPseq reads two correlated, possibly gzip compressed, fasta or fastq files and outputs the
@@ -841,8 +854,8 @@ As usual all .suffix extensions are auto-completed by the program as necessary. 
 the Dazzler '@' notation in the .las file names is supported.
 
 The -v option asks Dazz2sxs to output information on its progress to the standard error output.
-The -i option asks Dazz2pbr to output I-lines.
-The -d option asks Dazz2pbr to output D-lines.
-The -t option asks Dazz2pbr to output alignment information using T-, R- and Q-lines.
-The -g option asks Dazz2pbr to output the alignments grouped according to the A-read
+The -i option asks Dazz2sxs to output I-lines.
+The -d option asks Dazz2sxs to output D-lines.
+The -t option asks Dazz2sxs to output alignment information using T-, R- and Q-lines.
+The -g option asks Dazz2sxs to output the alignments grouped according to the A-read
 (facilitating the Dazzler concept of a read pile).
