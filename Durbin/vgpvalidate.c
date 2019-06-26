@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 18:52 2019 (rd109)
+ * Last edited: Jun 23 23:54 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -51,9 +51,7 @@ int main (int argc, char **argv)
     else if (!strcmp (*argv, "-h") || !strcmp (*argv, "--header"))
       { isHeader = TRUE ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-w") || !strcmp (*argv, "--write"))
-      { isWrite = TRUE ; --argc ; ++argv ;
-	fprintf (stderr, "Sorry, rewriting option is not present yet.  Write out a header and cat the body of the data onto it as a temporary measure.\n") ;
-      }
+      { isWrite = TRUE ; --argc ; ++argv ; }
     else if (argc > 1 && (!strcmp (*argv, "-o") || !strcmp (*argv, "--output")))
       { if (!(outFile = fopen (argv[1], "w"))) die ("failed to open output file %s", argv[1]) ;
 	argc -= 2 ; argv += 2 ;
@@ -68,16 +66,29 @@ int main (int argc, char **argv)
   if (vf->line == 1) fprintf (stderr, "header missing\n") ;
   else fprintf (stderr, "read %lld header lines\n", vf->line) ;
 
+  I64 objectCount = 0, lastGroupSize, lastGroupLine = 0 ;
   while (vgpReadLine (vf))
-    {
-    }
-  printf ("read %lld objects in %lld lines from VGP file %s type %s\n",
+    if (vf->lineType >= 'a' && vf->lineType <= 'z') /* a group line */
+      { if (lastGroupLine && objectCount != lastGroupSize)
+	  fprintf (stderr, "group size mismatch: group %c line %lld said %lld objects, but found %lld\n",
+		   vf->lineType, lastGroupLine, lastGroupSize, objectCount) ;
+	lastGroupLine = vf->line ;
+	lastGroupSize = vgpInt(vf,0) ;
+	objectCount = 0 ;
+      }
+    else if (vf->lineType == vf->spec->objectType)
+      ++objectCount ;
+  if (lastGroupLine && objectCount != lastGroupSize)
+    fprintf (stderr, "group size mismatch: group %c line %lld said %lld objects, but found %lld\n",
+	     vf->lineType, lastGroupLine, lastGroupSize, objectCount) ;
+
+  fprintf (stderr, "read %lld objects in %lld lines from VGP file %s type %s\n",
 	  vf->count[vf->spec->objectType], vf->line, *argv, fileTypeName[vf->type]) ;
 
   {
 #define CHECK(X,Y,Z) if (vf->X[i] && vf->X[i] != vf->Y[i])		\
       { fprintf (stderr, "header mismatch %s %c: header %lld data %lld\n", Z, i, vf->X[i], vf->Y[i]) ; ++nBad ; } \
-      else if (vf->Y[i] && !vf->X[i]) ++nMissing ;			\
+    else if (vf->Y[i] && !vf->X[i]) { fprintf (stderr, "header %s line missing for %c, value is %lld\n", Z, i, vf->Y[i]) ; ++nMissing ; } \
       if (vf->Y[i]) ++nTotal
 
     int i, nTotal = 0, nBad = 0, nMissing = 0 ;
@@ -95,7 +106,17 @@ int main (int argc, char **argv)
   
   if (isHeader) { vgpWriteHeader (vf, outFile) ; fprintf (outFile, "\n") ; }
 
-  vgpFileClose (vf) ;
+  if (isWrite)
+    { vgpFileClose (vf) ;
+      vf = vgpFileOpenRead (*argv, fileType) ; /* reads the header */
+      if (!vf) die ("failed to reopen vgp file %s", *argv) ;
+      int bufsize = 2 << 24, nRead ;
+      char *buf = new (bufsize, char) ;
+      while ((nRead = fread (buf, 1, bufsize, vf->f)))  /* copy remainder of vf->f to outfile */
+	if (fwrite (buf, 1, nRead, outFile) != nRead) die ("failed to write to outFile") ;
+    }
+
+  fclose (outFile) ;
 
   timeTotal (stderr) ;
 }

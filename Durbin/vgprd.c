@@ -5,7 +5,7 @@
  * Description: implementation for vgprd.h
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 18:53 2019 (rd109)
+ * Last edited: Jun 24 00:03 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -64,6 +64,7 @@ VgpFile *vgpFileOpenRead (const char *path, FileType type)
 		  fclose (vf->f) ; free (vf) ; return 0 ;
 		}
 	      vf->type = type ; vf->spec = &formatSpec[type] ;
+	      vf->major = vf->spec->major ; vf->minor = vf->spec->minor ;
 	      isFirst = FALSE ;
 	    }
 	  break ;
@@ -348,6 +349,19 @@ void vgpWriteHeader (VgpFile *vf, FILE *f)
   if (vf->sub)
     N += fprintf (f, "\n2 %lu %s", strlen(subTypeName[vf->sub]), subTypeName[vf->sub]) ;
 
+  Reference *r = vf->reference ;
+  for (i = vf->count['<'] ; i-- ; ++r)
+    N += fprintf (f, "\n< %lu %s %lld", strlen(r->filename), r->filename, r->count) ;
+  r = vf->deferred ;
+  for (i = vf->count['>'] ; i-- ; ++r)
+    N += fprintf (f, "\n> %lu %s", strlen(r->filename), r->filename) ;
+  
+  Provenance *p = vf->provenance ; 
+  for (i = vf->count['!'] ; i-- ; ++p)
+    N += fprintf (f, "\n! %lu %s %lu %s %lu %s %lu %s",
+		  strlen (p->program), p->program, strlen (p->version), p->version,
+		  strlen (p->command), p->command, strlen (p->date), p->date) ;
+
   for (i = 'A' ; i <= 'Z' ; ++i)	/* don't write metadata for header symbols */
     if (vf->count[i])
       { N += fprintf (f, "\n# %c %lld", i, vf->count[i]) ;
@@ -372,18 +386,6 @@ void vgpWriteHeader (VgpFile *vf, FILE *f)
 	      N += fprintf (f, "\n%% %c + %c %lld", groupChar, j, vf->groupTotal[j]) ;
 	  }
       }
-  
-  Provenance *p = vf->provenance ; 
-  for (i = vf->count['!'] ; i-- ; ++p)
-    N += fprintf (f, "\n! %lu %s %lu %s %lu %s %lu %s",
-		  strlen (p->program), p->program, strlen (p->version), p->version,
-		  strlen (p->command), p->command, strlen (p->date), p->date) ;
-  Reference *r = vf->reference ;
-  for (i = vf->count['<'] ; i-- ; ++r)
-    N += fprintf (f, "\n< %lu %s %lld", strlen(r->filename), r->filename, r->count) ;
-  r = vf->deferred ;
-  for (i = vf->count['>'] ; i-- ; ++r)
-    N += fprintf (f, "\n> %lu %s", strlen(r->filename), r->filename) ;
 
   if (!vf->isHeader && vf->f == f)
     { vf->isHeader = TRUE ;
