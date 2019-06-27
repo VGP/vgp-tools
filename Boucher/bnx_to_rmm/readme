@@ -1,0 +1,15 @@
+Usage:
+
+
+make
+
+
+bin/bnxcnv <bnx_filename> <rmm_filename> <enzyme_restriction_pattern>
+
+
+
+For converting xyz.bnx to xyz.rmm when the restriction enzyme is BspQI (restriction site GCTCTTC)
+
+
+
+bnxcnv xyz.bnx xyz.rmm GCTCTTC
