@@ -7,7 +7,7 @@ ALL = VGPseq VGPzip VGPpacbio VGPcloud Dazz2pbr Dazz2sxs
 all: $(ALL)
 
 VGPzip: VGPzip.c gene_core.c gene_core.h
-	gcc $(CFLAGS) -o VGPzip VGPzip.c gene_core.c -lm -lz
+	gcc $(CFLAGS) -o VGPzip VGPzip.c gene_core.c -lm -lz -lpthread
 
 VGPseq: VGPseq.c gene_core.c gene_core.h
 	gcc $(CFLAGS) -o VGPseq VGPseq.c gene_core.c -lm -lz

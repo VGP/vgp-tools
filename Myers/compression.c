@@ -77,20 +77,20 @@ typedef struct
     char   lookup[0x10000];  //  Lookup table (just for decoding)
     int    esc_code;         //  The special escape code (-1 if not partial)
     uint64 hist[256];        //  Byte distribution for codec
-  } _VGPcompressor;
+  } _VGPcodec;
 
   //  The special "predefined" DNA compressor
 
-_VGPcompressor _DNAcompressor = { CODED_READ };
-VGPcompressor  *DNAcompressor = (VGPcompressor *) &_DNAcompressor;
+_VGPcodec _DNAcodec = { CODED_READ };
+VGPcodec  *DNAcodec = (VGPcodec *) &_DNAcodec;
 
   //  Create an EMPTY compressor object with zero'd histogram and determine machine endian
 
-VGPcompressor *vcCreate()
-{ _VGPcompressor *v;
+VGPcodec *vcCreate()
+{ _VGPcodec *v;
   int i;
 
-  v = (_VGPcompressor *) malloc(sizeof(_VGPcompressor));
+  v = (_VGPcodec *) malloc(sizeof(_VGPcodec));
   if (v == NULL)
     { fprintf(stderr,"vcCreate: Could not allocate compressor\n");
       exit (1);
@@ -108,22 +108,22 @@ VGPcompressor *vcCreate()
     v->isbig = (b[0] == 0);
   }
 
-  return ((VGPcompressor *) v);
+  return ((VGPcodec *) v);
 }
 
   //  Free a compressor object
 
-void vcDestroy(VGPcompressor *vc)
-{ _VGPcompressor *v = (_VGPcompressor *) vc;
-  if (vc != DNAcompressor)
+void vcDestroy(VGPcodec *vc)
+{ _VGPcodec *v = (_VGPcodec *) vc;
+  if (vc != DNAcodec)
   free(v);
 }
 
   //  Add the frequencies of bytes in bytes[0..len) to vc's histogram
   //    State becomes FILLED
 
-void vcAddToTable(VGPcompressor *vc, int len, char *bytes)
-{ _VGPcompressor *v = (_VGPcompressor *) vc;
+void vcAddToTable(VGPcodec *vc, int len, char *bytes)
+{ _VGPcodec *v = (_VGPcodec *) vc;
   int i;
 
   if (v->state >= CODED_WITH)
@@ -150,8 +150,8 @@ int HSORT(const void *l, const void *r)
   return (HIST[x] - HIST[y]);
 }
 
-void vcCreateCodec(VGPcompressor *vc, int partial)
-{ _VGPcompressor *v = (_VGPcompressor *) vc;
+void vcCreateCodec(VGPcodec *vc, int partial)
+{ _VGPcodec *v = (_VGPcodec *) vc;
 
   uint64  *hist;
   char    *look;
@@ -344,8 +344,8 @@ void vcCreateCodec(VGPcompressor *vc, int partial)
   //  For debug, give a nice print out of the distribution histogram (if present)
   //     and the Huffman codec
 
-void vcPrint(VGPcompressor *vc)
-{ _VGPcompressor *v = (_VGPcompressor *) vc;
+void vcPrint(VGPcodec *vc)
+{ _VGPcodec *v = (_VGPcodec *) vc;
 
   uint64  total_bits, ucomp_bits, count;
   uint16  mask, code, *bits;
@@ -355,7 +355,7 @@ void vcPrint(VGPcompressor *vc)
   int     hashist;
   int     i, k;
 
-  if (vc == DNAcompressor)
+  if (vc == DNAcodec)
     { printf("    DNAcompressor\n");
       return;
     }
@@ -433,14 +433,14 @@ int vcMaxSerialSize()
 
   //  Code the compressor into blob 'out' and return number of bytes in the code
 
-int vcSerialize(VGPcompressor *vc, void *out)
-{ _VGPcompressor *v = (_VGPcompressor *) vc;
+int vcSerialize(VGPcodec *vc, void *out)
+{ _VGPcodec *v = (_VGPcodec *) vc;
   
   int     i;
   uint16 *bits;
   uint8  *lens, *o;
 
-  if (vc == DNAcompressor)
+  if (vc == DNAcodec)
     return (0);
 
   if (v->state < CODED_WITH)
@@ -474,15 +474,15 @@ int vcSerialize(VGPcompressor *vc, void *out)
   //    the one that serialized the compressor don't match, then all relevant
   //    items are byte-flipped.
 
-VGPcompressor *vcDeserialize(void *in)
-{ _VGPcompressor *v;
+VGPcodec *vcDeserialize(void *in)
+{ _VGPcodec *v;
 
   char    *look;
   uint8   *lens, *ip;
   uint16  *bits, base;
   int      i, j, powr;
 
-  v = (_VGPcompressor *) malloc(sizeof(_VGPcompressor));
+  v = (_VGPcodec *) malloc(sizeof(_VGPcodec));
   if (v == NULL)
     { fprintf(stderr,"vcRead: Could not allocate compressor\n");
       exit (1);
@@ -540,7 +540,7 @@ VGPcompressor *vcDeserialize(void *in)
         }
     }
 
-  return ((VGPcompressor *) v);
+  return ((VGPcodec *) v);
 }
 
 
@@ -603,15 +603,15 @@ int Compress_DNA(int len, char *s, char *t)
   //  Encode ibytes[0..ilen) according to compressor vc and place in obytes
   //  Return the # of bits used.
 
-int vcEncode(VGPcompressor *vc, int ilen, char *ibytes, char *obytes)
-{ _VGPcompressor *v = (_VGPcompressor *) vc;
+int vcEncode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
+{ _VGPcodec *v = (_VGPcodec *) vc;
 
   uint64  c, ocode, *ob;
   int     n, k, rem, tbits, ibits, esc;
   uint8  *clens, x, *bcode, *bb;
   uint16 *cbits;
 
-  if (vc == DNAcompressor)
+  if (vc == DNAcodec)
     return (Compress_DNA(ilen,ibytes,obytes));
 
   if (v->state < CODED_WITH)
@@ -746,8 +746,8 @@ int Uncompress_DNA(char *s, int len, char *t)
   //  Decode ilen bits in ibytes, into obytes according to vc's codec
   //  Return the number of bytes decoded.
 
-int vcDecode(VGPcompressor *vc, int ilen, char *ibytes, char *obytes)
-{ _VGPcompressor *v = (_VGPcompressor *) vc;
+int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
+{ _VGPcodec *v = (_VGPcodec *) vc;
 
   char   *look;
   uint8  *lens, *q;
@@ -756,7 +756,7 @@ int vcDecode(VGPcompressor *vc, int ilen, char *ibytes, char *obytes)
   char    c, esc, *o;
   int     n, k, inbig;
 
-  if (vc == DNAcompressor)
+  if (vc == DNAcodec)
     return (Uncompress_DNA(ibytes,ilen>>1,obytes));
 
   if (v->state < CODED_WITH)
@@ -894,13 +894,13 @@ static char *test[4] =
   };
 
 int main(int argc, char *argv[])
-{ VGPcompressor *scheme;
-  uint8          junk[10];
-  FILE          *io;
-  void          *blob;
-  int            size, olen, ilen;
-  uint8          obuf[30];
-  char           ibuf[30];
+{ VGPcodec *scheme;
+  uint8     junk[10];
+  FILE     *io;
+  void     *blob;
+  int       size, olen, ilen;
+  uint8     obuf[30];
+  char      ibuf[30];
 
   int i, t;
 
