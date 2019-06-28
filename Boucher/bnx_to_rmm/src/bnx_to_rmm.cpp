@@ -132,7 +132,7 @@ int main (int argc, char* argv[]) {
 
   for(int i=0;i<pos_values.size();i++){
 
-        rmmfile<<"R \t"<<pos_values[i].back()<<"\t"<<pos_values[i].size()<<"\t";
+        rmmfile<<"R \t"<<pos_values[i].back()<<"\t"<<pos_values[i].size()-1<<"\t";
 
         for(int j=0;j<pos_values[i].size();j++){
             rmmfile<<pos_values[i][j]<<"\t";
