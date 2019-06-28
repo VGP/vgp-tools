@@ -16,8 +16,6 @@
 #include <stdint.h>
 #include <zlib.h>
 
-#include "DB.h"
-
 typedef enum { sam, bam } samFormat;
 
 typedef struct
