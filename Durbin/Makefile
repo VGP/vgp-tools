@@ -6,7 +6,7 @@ DEST_DIR = ../bin
 CFLAGS= -g				# for debugging
 #CFLAGS= -03 -DOMP -fopenmp		# for OMP parallelisation - doesn't compile on Mac
 
-ALL = vgpvalidate
+ALL = vgpvalidate vgpview
 
 all: $(ALL)
 
@@ -19,9 +19,15 @@ install:
 
 vgprd.o: vgprd.h
 
+compression.o: ../Myers/compression.h
+	$(CC) $(CFLAGS) -c ../Myers/compression.c -o ./compression.o
+
 ### programs
 
-vgpvalidate: vgpvalidate.c vgprd.o
+vgpvalidate: vgpvalidate.c vgprd.o compression.o
+	$(CC) $(CFLAGS) $^ -o $@ -lm -lz
+
+vgpview: vgpview.c vgprd.o compression.o
 	$(CC) $(CFLAGS) $^ -o $@ -lm -lz
 
 ### end of file
