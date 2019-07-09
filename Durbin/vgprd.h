@@ -5,7 +5,7 @@
  * Description: header for VGP file reading and writing
  * Exported functions:
  * HISTORY:
- * Last edited: Jun 13 17:06 2019 (rd109)
+ * Last edited: Jul  7 22:50 2019 (rd109)
  * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -13,7 +13,8 @@
 #ifndef VGPRD_DEFINED
 #define VGPRD_DEFINED
 
-#include "vgptypes_0_1.h"	/* must match vgpformat_x_y.h */ 
+#include "vgptypes_1_0.h"	/* must match vgpformat_x_y.h */ 
+#include "../Myers/compression.h"
 
 /*** basic types ***/
 
@@ -36,29 +37,31 @@ typedef struct { char *filename ; I64 count ; } Reference ;
 typedef struct {
   FieldType field[MAX_FIELD] ;
   int listByteSize ;
+  int nField ;			/* number of fields in this line type */
+  int listField ;		/* 1 + field number for length of list (so 0 is no list) */
   //  char *description ;    	/* should really add this */
 } LineSpecification ;
 
 typedef struct {
   I64 major, minor ;
   LineSpecification *line[128] ;
-  char objectType ;		/* line designation character for the primary object */
+  char binaryTypeUnpack[256], binaryTypePack[128] ;
+  char objectType ;		/* line designation character for primary objects */
+  char groupType ;		/* line designation character for groups (optional) */
 } FileSpecification ;
 
 /*** the main VGP file type ***/
 
 typedef struct {
   /* these fields may be read by user - but don't change them! */
-  FileType type ;
-  SubType sub ;
+  FileType fileType ;
+  SubType subType ;
   FileSpecification *spec ;	/* contains the file type and line specifications */
   I64 major, minor ;		/* actual major and minor versions of this file */
-  BOOL isHeader ;		/* true if there was a header when reading */
   char lineType ;		/* current lineType */
   I64 line ;			/* current line number */
   I64 object ;			/* current object - incremented when object line read */
   I64 group ; 			/* current group - incremented when group line read */
-  char *remainder ;		/* rest of line after initial whitespace, 0-terminated */
   I64 count[128], max[128], total[128] ; /* amounts read or written so far */
   I64 groupCount[128], groupTotal[128] ; /* assumes only one group type per file; true for now */
   I64 expectCount[128], expectMax[128], expectTotal[128] ; /* values read from header */
@@ -66,21 +69,26 @@ typedef struct {
   Provenance *provenance ;      /* if non-zero then count['!'] entries */
   Reference *reference ;	/* if non-zero then count['<'] entries */
   Reference *deferred ; 	/* if non-zero then count['>'] entries */
+  Field field[MAX_FIELD] ;	/* used to hold the current line - accessed by macros */
   /* fields below here are private to the package */
   FILE *f ;
   BOOL isWrite ;
+  BOOL isHeader ;
+  BOOL isBinary ;		/* true if writing a binary file */
   BOOL inGroup ;       		/* set once inside a group */
-  int headerSize ;		/* needed for when go back to rewrite header */
-  Field field[MAX_FIELD] ;	/* used to hold the current line - accessed by macros */
+  BOOL isLastLineBinary ;	/* needed to deal with newlines on ascii files */
   void *buffer[128] ;
   I64 bufSize[128] ;
   /* buffer is used for list contents when reading - only nonzero if lineSpec->listType
      buffer can be owned by VgpFile, in which case size is expectMax | max
-     or owned by user, in which case on reading it is incremented by len * ls->listByteSize */
+     or owned by user */
   BOOL isUserBuf[128] ;		/* flag for whether buffer is owned by user */
   I64 gCount[128], gTotal[128] ; /* used internally to calculate groupCount and groupTotal */
-  char lineBuf[128] ;
-  int linePos ;
+  char lineBuf[128], numberBuf[32], *codecBuf ;
+  I64 linePos ;
+  VGPcodec *fieldCodec[128], *listCodec[128] ;
+  BOOL isUseFieldCodec[128], isUseListCodec[128] ;
+  /* need the isUse*Codec because we accumulate in the codec object before we can use it */
 } VgpFile ;
 
 /*** function definitions for reading and writing VgpFiles ***/
@@ -88,7 +96,12 @@ typedef struct {
 VgpFile *vgpFileOpenRead (const char *path, FileType type) ;
 /* opens file and reads header if it exists
    if there is no header then type must be given
-   if there is a header and type is non-zero then it must match 
+   if there is a header and type is non-zero then it must match
+   will read ascii or vgp binary files transparently
+*/
+void vgpClose (VgpFile *vf) ;
+/* call this for files opened either read or write
+   when writing automatically writes footer, if there was a $ directive in the header
 */
 BOOL vgpReadLine (VgpFile *vf) ;
 /* this reads the next line and returns FALSE at end of file or on error
@@ -103,15 +116,15 @@ BOOL vgpReadLine (VgpFile *vf) ;
 #define vgpRealList(vf) (double*)((vf)->buffer[(vf)->lineType])
 void vgpUserBuffer (VgpFile *vf, char lineType, void* buffer) ;
 /* this lets the user reassign the buffer that lists are read into
-   if this is not set a default is provided, but this will be overwritten each line 
-   if set, lists for the given line type will be read sequentially into the buffer (no overwrite)
-   this can be called repeatedly, so the location can be changed, e.g. for each line, or group
-   NB the package doesn't check the size - the user must allocate enough memory
+   prior to this function being called, or if buffer==0, a default is provided
+   in either case, the buffer will be overwritten each line 
+   this can be called repeatedly, so the location can be changed, e.g. for each line
+   NB the user must allocate enough memory for user buffers (package buffers are always safe)
 */
 
-VgpFile *vgpFileOpenWrite (const char *path, FileType type, SubType sub, BOOL isGz) ;
-void vgpWriteHeader (VgpFile *vf, FILE *f) ; /* f = 0 writes to vf->f */
-BOOL vgpWriteLine (VgpFile *vf, char lineType, void *buf) ;
+VgpFile *vgpFileOpenWriteFrom (const char *path, VgpFile *vfIn, BOOL isBinary) ;
+VgpFile *vgpFileOpenWriteNew (const char *path, FileType type, SubType sub, BOOL isBinary) ;
+void vgpWriteLine (VgpFile *vf, char lineType, void *buf) ;
 /* process is to fill fields by assigning to macros, then call */
 /* list contents are in buf - string is 0-terminated, though len must also be set */
 /* if lineType is stringList then buf is concatenation of null-terminated strings */
@@ -124,8 +137,7 @@ BOOL vgpInheritReference (VgpFile *vf, VgpFile *source) ; /* as for provenance *
 BOOL vgpAddReference (VgpFile *vf, char *filename, I64 count) ;
 BOOL vgpInheritDeferred (VgpFile *vf, VgpFile *source) ;
 BOOL vgpAddDeferred (VgpFile *vf, char *filename) ;
-
-void vgpFileClose (VgpFile *vf) ; /* automatically rewrites header if allowed when writing */
+void vgpWriteHeader (VgpFile *vf) ;
 
 /*** utility declarations that RD uses in his parsing code and so users get for free ***/
 
@@ -136,8 +148,8 @@ void *mycalloc (size_t number, size_t size) ;
 #define	new0(n,type)	(type*)mycalloc((n),sizeof(type))
 FILE *fzopen (const char* path, const char* mode) ; /* will open gzip files silently */
 FILE *fopenTag (char* root, char* tag, char* mode) ; /* uses fzopen, silently handling .gz */
-void timeUpdate (FILE *f) ;	/* print time usage since last call to file */
-void timeTotal (FILE *f) ;	/* print full time usage since first call to timeUpdate */
+void timeUpdate (FILE *f) ;	/* print time usage since last call to file f */
+void timeTotal (FILE *f) ;	/* print full time usage since first call of timeUpdate */
 
 #endif	/* VGPRD_DEFINED */
 

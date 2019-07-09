@@ -7,7 +7,9 @@
  *   it is a separate file so as to make it easy to change the format and version
  * Exported functions:
  * HISTORY:
- * Last edited: Jul  7 21:58 2019 (rd109)
+ * Last edited: Jul  7 22:49 2019 (rd109)
+ * * Jul  7 22:14 2019 (rd109): add DNAcodec for sequence S data
+ * * Jul  7 22:13 2019 (rd109): added code to build auxiliary structures, pack etc. last 2 days
  * Created: Sun Feb 24 14:48:21 2019 (rd109)
  *-------------------------------------------------------------------
  */
