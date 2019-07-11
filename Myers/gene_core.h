@@ -4,6 +4,12 @@
 
 #include <stdio.h>
 
+/*******************************************************************************************
+ *
+ *  MY STANDARD TYPE DECLARATIONS
+ *
+ ********************************************************************************************/
+
 typedef unsigned char      uint8;
 typedef unsigned short     uint16;
 typedef unsigned int       uint32;
@@ -15,7 +21,13 @@ typedef signed long long   int64;
 typedef float              float32;
 typedef double             float64;
 
-extern char *Prog_Name;   //  Name of program
+/*******************************************************************************************
+ *
+ *  MACROS TO HELP PARSE COMMAND LINE
+ *
+ ********************************************************************************************/
+
+extern char *Prog_Name;   //  Name of program, available everywhere
 
 #define ARG_INIT(name)                  \
   Prog_Name = Strdup(name,"");          \
@@ -63,6 +75,12 @@ extern char *Prog_Name;   //  Name of program
       exit (1);                                                                         \
     }
 
+/*******************************************************************************************
+ *
+ *  MEMORY ALLOCATION,FILE HANDLING, AND PRETTY PRINTING UTILITIES
+ *
+ ********************************************************************************************/
+
 //  The following general utilities return NULL if any of their input pointers are NULL, or if they
 //    could not perform their function (in which case they also print an error to stderr).
 
@@ -99,6 +117,12 @@ char *Numbered_Suffix(char *left, int num, char *right);
 void Print_Number(int64 num, int width, FILE *out);   //  Print readable big integer
 int  Number_Digits(int64 num);                        //  Return # of digits in printed number
 
+/*******************************************************************************************
+ *
+ *  ROUTINES FOR HANDLING DNA AND ARROW STRINGS
+ *
+ ********************************************************************************************/
+
 #define COMPRESSED_LEN(len)  (((len)+3) >> 2)
 
 void   Compress_Read(int len, char *s);   //  Compress read in-place into 2-bit form
@@ -112,5 +136,19 @@ void Change_Read(char *s);    //  Convert read from one case to the other
 
 void Letter_Arrow(char *s);   //  Convert arrow pw's from numbers to uppercase letters (0-3 to 1234)
 void Number_Arrow(char *s);   //  Convert arrow pw string from letters to numbers
+
+/*******************************************************************************************
+ *
+ *  ROUTINES TO SUPPORT GZIP COMPRESSION
+ *
+ ********************************************************************************************/
+
+  //  GCB(size) = upper bound on largest gzip block produced on input block of given size.
+  //  GC(d,&D,s,S,l) compresses s[0..S) into d[0..*D) where *D must be size of buffer d on call
+  //  GU(d,&D,s,S,l) uncompresses s[0..S) into d[0..*D) where *D must be size of buffer d on call
+
+uint32 Gzip_Compress_Bound(uint32 size);
+int    Gzip_Compress(uint8 *dest, uint32 *dlenp, uint8 *src, uint32 slen,int level);
+int    Gzip_Uncompress(uint8 *dest, uint32 *dlenp, uint8 *src, uint32 slen);
 
 #endif // _CORE

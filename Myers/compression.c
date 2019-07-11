@@ -1,4 +1,4 @@
-/*  Last edited: Jul  8 23:10 2019 (rd109) */
+/*  Last edited: Jul 11 04:49 2019 (rd109) */
 /*******************************************************************************************
  *
  *  Length limited Huffman Compressor/decompressor with special 2-bit compressor for DNA.
@@ -598,7 +598,7 @@ int Compress_DNA(int len, char *s, char *t)
       break;
   }
 
-  return ((len+3)<<1); // was (j<<1)
+  return ((len+3)<<1);
 }
 
   //  Encode ibytes[0..ilen) according to compressor vc and place in obytes

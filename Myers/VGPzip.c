@@ -28,87 +28,40 @@ int    CLEVEL;   //  Compression level (in [1,9]);
 
 #define IN_BLOCK  10000000
 
-#define GZIP_HEAD 10
-#define GZIP_TAIL  8
-
-static int64 MAXOUT;
 static int64 OUT_BLOCK;
 static int64 SEEK_STEP;
 
 static char *Usage = "[-v] [-T<int(4)>] [-C<int(6)>] <input>";
 
 typedef struct
-  { int   inp;     //  Input file descriptor (independent for each thread even though same file)
+  { int    inp;    //  Input file descriptor (independent for each thread even though same file)
     uint8 *in;     //  Input buffer (IO_BLOCK bytes)
-    uint8 *out;    //  Output buffer (MAXOUT bytes)
+    uint8 *out;    //  Output buffer (OUT_BLOCK bytes)
     int64  seek;   //  Location in file to start next read+compress
     uint32 dlen;   //  Size of compressed block
     int    eof;    //  Hit end of file on last go
   } Deflate_Arg;
-
-static uint8 gzip_header[GZIP_HEAD] = "\037\213\010\0\0\0\0\0\0\377";
-
-static int compress3(uint8 *dest, uint32 *destLen, uint8 *source, uint32 sourceLen, int level)
-{ z_stream stream;
-  int      err;
-
-  stream.zalloc = (alloc_func) NULL;
-  stream.zfree  = (free_func) NULL;
-  stream.opaque = (voidpf) NULL;
-
-  err = deflateInit2(&stream,level,Z_DEFLATED,-15,9,Z_DEFAULT_STRATEGY);
-  if (err != Z_OK)
-    return (err);
-
-  stream.next_out  = dest;
-  stream.avail_out = *destLen;
-  stream.next_in   = source;
-  stream.avail_in  = sourceLen;
-
-  err = deflate(&stream,Z_FINISH);
-  if (err != Z_STREAM_END)
-    return (err);
-
-  *destLen = stream.total_out;
-  deflateEnd(&stream);
-  return (Z_OK);
-}
-
-static inline void pack32(uint32 x, uint8 *m)
-{ m[0] = x;
-  m[1] = x >> 8;
-  m[2] = x >> 16;
-  m[3] = x >> 24;
-}
 
 static void *deflate_thread(void *arg)
 { Deflate_Arg *data  = (Deflate_Arg *) arg;
   int          input = data->inp;
   uint8       *in    = data->in;
   uint8       *out   = data->out;
-  uint32       crc;
   uint32       dlen, rlen;
 
   lseek(input,data->seek,SEEK_SET);
   rlen = read(input,in,IN_BLOCK);
   if (rlen > 0)
-    { dlen = MAXOUT;
-      if (compress3(out+GZIP_HEAD,&dlen,in,rlen,CLEVEL) != Z_OK)
+    { dlen = OUT_BLOCK;
+      if (Gzip_Compress(out,&dlen,in,rlen,CLEVEL) != Z_OK)
         { fprintf(stderr,"Compression not OK\n");
           exit (1);
         }
-      dlen += GZIP_HEAD;
-      crc = crc32(0L,in,rlen);
-      pack32(crc,out+dlen);
-      pack32(rlen,out+dlen+4);
-      data->dlen = dlen + GZIP_TAIL;
-      if (rlen < IN_BLOCK)
-        data->eof = 1;
     }
   else
-    { data->dlen = 0;
-      data->eof = 1;
-    }
+    dlen = 0;
+  data->dlen = dlen;
+  data->eof = (rlen < IN_BLOCK);
   return (NULL);
 }
 
@@ -155,6 +108,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: Verbose mode, show progress as proceed.\n");
         fprintf(stderr,"      -T: Number of threads to use\n");
+        fprintf(stderr,"      -C: Compression level in [0,9]\n");
         exit (1);
       }
   }
@@ -194,12 +148,11 @@ int main(int argc, char *argv[])
     int64   b, d;
     int     n;
 
-    MAXOUT    = compressBound(IN_BLOCK);
-    OUT_BLOCK = MAXOUT + GZIP_HEAD + GZIP_TAIL;
+    OUT_BLOCK = Gzip_Compress_Bound(IN_BLOCK);
     SEEK_STEP = NTHREADS * IN_BLOCK;
 
     in  = Malloc(IN_BLOCK*NTHREADS,"Allocating input buffer");
-    out = Malloc(MAXOUT*NTHREADS,"Allocating output buffer");
+    out = Malloc(OUT_BLOCK*NTHREADS,"Allocating output buffer");
     if (in == NULL || out == NULL)
       exit (1);
 
@@ -209,7 +162,7 @@ int main(int argc, char *argv[])
         parm[n].seek = n*IN_BLOCK;
         parm[n].inp  = open(argv[1],O_RDWR);
         parm[n].eof  = 0;
-        memcpy(parm[n].out,gzip_header,GZIP_HEAD);
+        // memcpy(parm[n].out,gzip_header,GZIP_HEAD);
       }
 
     //  Allocate index
