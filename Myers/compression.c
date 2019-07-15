@@ -17,7 +17,7 @@
 #include "compression.h"
 
 #undef  DEBUG
-#undef  TEST
+#define  TEST
 
 typedef unsigned long long uint64;
 typedef unsigned int       uint32;
@@ -76,6 +76,7 @@ typedef struct
     uint8  codelens[256];    //    non-Huffman exceptions
     char   lookup[0x10000];  //  Lookup table (just for decoding)
     int    esc_code;         //  The special escape code (-1 if not partial)
+    int    esc_len;          //  The length in bits of the special code (if present)
     uint64 hist[256];        //  Byte distribution for codec
   } _VGPcodec;
 
@@ -321,12 +322,6 @@ void vcCreateCodec(VGPcodec *vc, int partial)
       bitv[code[i]] = bits[i];
     }
 
-  if (partial)
-    v->esc_code = ecode;
-  else
-    v->esc_code = -1;
-  v->state = CODED_WITH;
-
   { int    j, powr;    //  Fill in a decoder table giving the next Huffman code
     uint16 base;       //    that is a prefix of the next 16 bits
 
@@ -339,6 +334,15 @@ void vcCreateCodec(VGPcodec *vc, int partial)
           }
       }
   }
+
+  if (partial)
+    { v->esc_code = ecode;
+      v->esc_len  = lens[ecode];
+      lens[ecode] = 0;
+    }
+  else
+    v->esc_code = -1;
+  v->state = CODED_WITH;
 }
 
   //  For debug, give a nice print out of the distribution histogram (if present)
@@ -390,31 +394,34 @@ void vcPrint(VGPcodec *vc)
 
   printf("\nCode Table:\n");
   for (i = 0; i < 256; i++)
-    if (lens[i] > 0)
-      { clen = lens[i];
-        mask = (1 << clen);
-        code = bits[i];
-        if (isprint(i))
-          printf("   %c: %2d ",i,clen);
-        else
-          printf(" %3d: %2d ",i,clen);
-        for (k = 0; k < clen; k++)
-          { mask >>= 1;
-            if (code & mask)
-              printf("1");
-            else
-              printf("0");
-          }
-        if (i == v->esc_code)
-          printf(" ***\n");
-        else
-          { printf("\n");
-            if (hashist)
-              { total_bits += clen*hist[i];
-                ucomp_bits += (hist[i]<<3);
-              }
-          }
-      }
+    { clen = lens[i];
+      if (i == v->esc_code)
+        clen = v->esc_len;
+      if (clen > 0)
+        { mask = (1 << clen);
+          code = bits[i];
+          if (isprint(i))
+            printf("   %c: %2d ",i,clen);
+          else
+            printf(" %3d: %2d ",i,clen);
+          for (k = 0; k < clen; k++)
+            { mask >>= 1;
+              if (code & mask)
+                printf("1");
+              else
+                printf("0");
+            }
+          if (i == v->esc_code)
+            printf(" ***\n");
+          else
+            { printf("\n");
+              if (hashist)
+                { total_bits += clen*hist[i];
+                  ucomp_bits += (hist[i]<<3);
+                }
+            }
+        }
+    }
   if (hashist)
     printf("\nTotal Bytes = %lld (%.2f%%)\n",(total_bits-1)/8+1,(100.*total_bits)/ucomp_bits);
 }
@@ -457,6 +464,8 @@ int vcSerialize(VGPcodec *vc, void *out)
 
   *o++ = v->isbig;
   memcpy(o,&(v->esc_code),sizeof(int));
+  o += sizeof(int);
+  memcpy(o,&(v->esc_len),sizeof(int));
   o += sizeof(int);
   for (i = 0; i < 256; i++)
     { *o++ = lens[i];
@@ -506,9 +515,12 @@ VGPcodec *vcDeserialize(void *in)
     { FLIP32(ip)
       memcpy(&(v->esc_code),ip,sizeof(int));
       ip += sizeof(int);
+      FLIP32(ip)
+      memcpy(&(v->esc_len),ip,sizeof(int));
+      ip += sizeof(int);
       for (i = 0; i < 256; i++)
         { lens[i] = *ip++;
-          if (lens[i] > 0)
+          if (lens[i] > 0 || i == v->esc_code)
             { FLIP16(ip)
               memcpy(bits+i,ip,sizeof(uint16));
               ip += sizeof(uint16);
@@ -520,9 +532,11 @@ VGPcodec *vcDeserialize(void *in)
   else
     { memcpy(&(v->esc_code),ip,sizeof(int));
       ip += sizeof(int);
+      memcpy(&(v->esc_len),ip,sizeof(int));
+      ip += sizeof(int);
       for (i = 0; i < 256; i++)
         { lens[i] = *ip++;
-          if (lens[i] > 0)
+          if (lens[i] > 0 || i == v->esc_code)
             { memcpy(bits+i,ip,sizeof(uint16));
               ip += sizeof(uint16);
             }
@@ -607,7 +621,7 @@ int vcEncode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
 { _VGPcodec *v = (_VGPcodec *) vc;
 
   uint64  c, ocode, *ob;
-  int     n, k, rem, tbits, ibits, esc;
+  int     n, k, rem, tbits, ibits, esc, elen;
   uint8  *clens, x, *bcode, *bb;
   uint16 *cbits;
 
@@ -620,6 +634,7 @@ int vcEncode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
     }
 
   esc   = v->esc_code;
+  elen  = v->esc_len;
   clens = v->codelens;
   cbits = v->codebits;
   ibits = (ilen << 3);
@@ -654,12 +669,15 @@ int vcEncode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
     { x = ibytes[k];
       n = clens[x];
       if (n == 0)
-        { n = clens[esc];
+        { if (esc < 0)
+            { fprintf(stderr,"Compression lib: No code for %c(%x) and no escape code\n",x,x);
+              exit (1);
+            }
           c = cbits[esc];
-          tbits += 8+n;
+          tbits += 8+elen;
           if (tbits > ibits)
             break;
-          OCODE(n,c);
+          OCODE(elen,c);
           c = x;
           OCODE(8,c);
         }
@@ -691,8 +709,9 @@ int vcEncode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
     }
 
   if (tbits >= 64 && !v->isbig)
-    { ob = (uint64 *) obytes;
-      *ob = (*ob << 2);
+    { x = obytes[7];
+      obytes[7] = obytes[0];
+      obytes[0] = x;
     }
 
   return (tbits);
@@ -754,7 +773,7 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
   uint64  icode, ncode, *p;
   int     rem, nem;
   char    c, esc, *o;
-  int     n, k, inbig;
+  int     n, k, elen, inbig;
 
   if (vc == DNAcodec)
     return (Uncompress_DNA(ibytes,ilen>>1,obytes));
@@ -764,7 +783,7 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
       exit (1);
     }
 
-  if (*ibytes == '\377')
+  if (*((uint8 *) ibytes) == 0xff)
     { int olen = (ilen>>3)-1;
       memcpy(obytes,ibytes+1,olen);
       return (olen);
@@ -774,7 +793,10 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
 
   inbig = (*ibytes & 0x40);
   if (!inbig && ilen >= 64)
-    *p = (*p >> 2);
+    { uint8 x = ibytes[7];
+      ibytes[7] = ibytes[0];
+      ibytes[0] = x;
+    }
 
   if (inbig != v->isbig)
     { q = (uint8 *) ibytes;
@@ -787,6 +809,7 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
   lens = v->codelens;
   look = v->lookup;
   esc  = v->esc_code;
+  elen = v->esc_len;
 
 #define GET(n)						\
   ilen  -= n;						\
@@ -837,11 +860,14 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
   nem   = 0;
   while (ilen > 0)
     { c = look[icode >> 48];
-      n = lens[c];
-      GET(n)
       if (c == esc)
-        { c = (icode >> 56);
+        { GET(elen)
+          c = (icode >> 56);
           GET(8);
+        }
+      else
+        { n = lens[c];
+          GET(n)
         }
       *o++ = c;
     }
@@ -898,11 +924,17 @@ int main(int argc, char *argv[])
   uint8     junk[10];
   FILE     *io;
   void     *blob;
-  int       size, olen, ilen;
-  uint8     obuf[30];
-  char      ibuf[30];
+  int       size, olen, ilen, tlen;
+  uint8     obuf[300];
+  char      ibuf[300];
+  long long xbuf[50] =
+       { 0, 0, 0, 0, 1, 1, 0, 0, 0, 1,
+         0, 1, 1, 0, 0, 0, 0, 1, 0, 2,
+         1, 1, 0, 0, 2, 0, 0, 1, 0, 0,
+         0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 1, 1, 0, 0, 0, 13, 42 };
 
-  int i, t;
+  int i, j, t;
 
   scheme = vcCreate();
 
@@ -970,6 +1002,38 @@ int main(int argc, char *argv[])
     }
     
   vcDestroy(scheme);
+
+  io = fopen("X.vcx","r");
+  fread(blob,1,500,io);
+  fclose(io);
+
+  scheme = vcDeserialize(blob);
+
+  vcPrint(scheme);
+
+  olen = vcEncode(scheme,400,(char *) xbuf,(char *) obuf);
+
+  printf("\nIn:\n");
+  for (i = 0; i < 400; i++)
+    printf(" %s",bits[((char *) xbuf)[i]]);
+  printf("\nEncode: %d\n",olen);
+  tlen = (olen+7)>>3;
+  for (i = 0; i < tlen; i += 8)
+    { if (i+8 <= tlen)
+        for (j = i+7; j >= i; j--)
+          printf(" %s",bits[obuf[j]]);
+      else
+        for (j = i; j < tlen; j++)
+          printf(" %s",bits[obuf[j]]);
+      if (i%8 == 0)
+        printf("\n");
+    }
+  printf("\n");
+ 
+  ilen = vcDecode(scheme,olen,(char *) xbuf,ibuf);
+  printf("Decode:\n");
+  for (i = 0; i < ilen; i++)
+    printf(" %s",bits[((char *) xbuf)[i]]);
 
   exit (0);
 }

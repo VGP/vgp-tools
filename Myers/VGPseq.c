@@ -108,7 +108,7 @@ static void Check_FastQ(FILE *input, int fastq, char *file_name, Header_Info *in
 
       if (GROUP)
         { p = line+1;
-          for (i = 0; i < 4; i++)
+          for (i = 0; i < 3; i++)
             { p = index(p+1,':');
               if (p == NULL)
                 { fprintf(stdout,"%s: %s.%lld: Entry header does not appear to be",
@@ -262,14 +262,14 @@ static void Output_Sequence(int ispair, FILE *forward, FILE *reverse, Header_Inf
   while ((line = read_line(forward,NULL)) != NULL)
     { if (GROUP)
         { p = line+1;
-          for (i = 0; i < 4; i++)
+          for (i = 0; i < 3; i++)
             p = index(p+1,':');
           *p = '\0';
 
           if (readgroup == NULL || strcmp(readgroup,line) != 0)
             { free(readgroup);
               readgroup = strdup(line);
-              printf("g %lld %ld %s\n",gcount[gc++],strlen(readgroup+1)+1,readgroup+1);
+              printf("g %lld %ld %s\n",gcount[gc++],strlen(readgroup+1),readgroup+1);
             } 
         }
 
@@ -379,10 +379,12 @@ int main(int argc, char *argv[])
         if (strcmp(fname1,fname2) == 0)
           { char *aname1, *aname2;
     
+/*
             if (strcmp(pwd1,pwd2) == 0)
               { fprintf(stderr,"%s: Forward and reverse files are the same file?\n",Prog_Name);
                 exit (1);
               }
+*/
             aname1 = Strdup(Catenate(pwd1,"/",fname1,""),NULL);
             aname2 = Strdup(Catenate(pwd2,"/",fname2,""),NULL);
             free(fname2);
@@ -452,7 +454,6 @@ int main(int argc, char *argv[])
     printf("1 3 seq 1 0\n");
     if (ispair)
       printf("2 3 irp\n");
-    printf("# ! 1\n");
     if (GROUP)
       printf("# g %d\n",stats1.ngroup);
     if (ispair)
@@ -461,17 +462,12 @@ int main(int argc, char *argv[])
     if ( ! SEQ_ONLY)
       printf("# Q %lld\n",(1+ispair)*stats1.nread);
 
-    printf("+ ! %d\n",clen+34);
     if (GROUP)
       printf("+ g %lld\n",stats1.gtotc);
     printf("+ S %lld\n",stats1.totbp);
     if ( ! SEQ_ONLY)
       printf("+ Q %lld\n",stats1.totbp);
 
-    if (clen > 24)
-      printf("@ ! %d\n",clen);
-    else
-      printf("@ ! 24\n");
     if (GROUP)
       printf("@ g %lld\n",stats1.gmaxc);
     printf("@ S %d\n",stats1.maxlen);
@@ -489,7 +485,7 @@ int main(int argc, char *argv[])
           printf("%% g + Q %lld\n",stats1.gmaxbp);
       }
 
-    printf("! 7 VGPpair 3 1.0 %d",clen);
+    printf("! 6 VGPseq 3 1.0 %d",clen);
     if (optl)
       { printf(" -");
         if (VERBOSE)
