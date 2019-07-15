@@ -17,7 +17,7 @@
 #include "compression.h"
 
 #undef  DEBUG
-#define  TEST
+#undef  TEST
 
 typedef unsigned long long uint64;
 typedef unsigned int       uint32;
