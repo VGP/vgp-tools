@@ -410,7 +410,7 @@ static inline void pack32(uint32 x, uint8 *m)
   m[3] = x >> 24;
 }
 
-int Gzip_Compress(uint8 *dest, uint32 *dlenp, uint8 *src, uint32 slen,int level)
+int Gzip_Compress(uint8 *dest, uint32 *dlenp, uint8 *src, uint32 slen, int level)
 { static uint8 *lastdest = NULL;
   z_stream stream;
   uint32 crc, dlen;
@@ -460,6 +460,12 @@ int Gzip_Uncompress(uint8 *dest, uint32 *dlenp, uint8 *src, uint32 slen)
   err = inflateInit2(&stream,-15);
   if (err != Z_OK)
     return (err);
+
+  if (src[3] & 0x4)
+    { int extra = (src[GZIP_HEAD] | (src[GZIP_HEAD+1] << 8)) + 2;
+      src += extra;
+      slen -= extra;
+    }
 
   stream.next_out  = dest;
   stream.avail_out = *dlenp;
