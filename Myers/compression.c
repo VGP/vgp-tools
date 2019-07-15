@@ -97,7 +97,7 @@ VGPcodec *vcCreate()
       exit (1);
     }
 
-  v->state = EMPTY;
+  ->state = EMPTY;
   for (i = 0; i < 256; i++)
     v->hist[i] = 0;
 
@@ -436,7 +436,7 @@ void vcPrint(VGPcodec *vc)
   //  Maximum # of bytes in a serialized compressor code
 
 int vcMaxSerialSize()
-{ return (257 + sizeof(int) + 256*sizeof(uint16)); }
+{ return (257 + 2*sizeof(int) + 256*sizeof(uint16)); }
 
   //  Code the compressor into blob 'out' and return number of bytes in the code
 
@@ -469,7 +469,7 @@ int vcSerialize(VGPcodec *vc, void *out)
   o += sizeof(int);
   for (i = 0; i < 256; i++)
     { *o++ = lens[i];
-      if (lens[i] > 0)
+      if (lens[i] > 0 || i == v->esc_code)
         { memcpy(o,bits+i,sizeof(uint16));
           o += sizeof(uint16);
         }
@@ -543,6 +543,9 @@ VGPcodec *vcDeserialize(void *in)
           else
             bits[i] = 0;
         }
+// printf("set\n");
+// v->esc_len = lens[v->esc_code];
+// lens[v->esc_code] = 0;
     }
 
   for (i = 0; i < 256; i++)
