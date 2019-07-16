@@ -97,7 +97,7 @@ VGPcodec *vcCreate()
       exit (1);
     }
 
-  ->state = EMPTY;
+  v->state = EMPTY;
   for (i = 0; i < 256; i++)
     v->hist[i] = 0;
 
@@ -543,11 +543,9 @@ VGPcodec *vcDeserialize(void *in)
           else
             bits[i] = 0;
         }
-// printf("set\n");
-// v->esc_len = lens[v->esc_code];
-// lens[v->esc_code] = 0;
     }
 
+  lens[v->esc_code] = v->esc_len;
   for (i = 0; i < 256; i++)
     { if (lens[i] > 0)
         { base = (bits[i] << (16-lens[i]));
@@ -556,6 +554,7 @@ VGPcodec *vcDeserialize(void *in)
             look[base+j] = i;
         }
     }
+  lens[v->esc_code] = 0;
 
   return ((VGPcodec *) v);
 }
@@ -1033,10 +1032,12 @@ int main(int argc, char *argv[])
     }
   printf("\n");
  
-  ilen = vcDecode(scheme,olen,(char *) xbuf,ibuf);
+  ilen = vcDecode(scheme,olen,(char *) obuf,ibuf);
   printf("Decode:\n");
   for (i = 0; i < ilen; i++)
-    printf(" %s",bits[((char *) xbuf)[i]]);
+    printf(" %s",bits[ibuf[i]]);
+
+  vcDestroy(scheme);
 
   exit (0);
 }
