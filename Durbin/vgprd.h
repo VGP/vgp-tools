@@ -5,7 +5,7 @@
  * Description: header for VGP file reading and writing
  * Exported functions:
  * HISTORY:
- * Last edited: Jul  7 22:50 2019 (rd109)
+ * Last edited: Jul 16 15:19 2019 (rd109)
  * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -35,20 +35,20 @@ typedef struct { char *program, *version, *command, *date ; } Provenance ;
 typedef struct { char *filename ; I64 count ; } Reference ;
 
 typedef struct {
-  FieldType field[MAX_FIELD] ;
+  I64 count, max, total, groupCount, groupTotal ; /* amounts so far */
+  I64 expectCount, expectMax, expectTotal, expectGroupCount, expectGroupTotal ; /* from header */
+  FieldType fieldSpec[MAX_FIELD] ;
   int listByteSize ;
   int nField ;			/* number of fields in this line type */
   int listField ;		/* 1 + field number for length of list (so 0 is no list) */
-  //  char *description ;    	/* should really add this */
-} LineSpecification ;
-
-typedef struct {
-  I64 major, minor ;
-  LineSpecification *line[128] ;
-  char binaryTypeUnpack[256], binaryTypePack[128] ;
-  char objectType ;		/* line designation character for primary objects */
-  char groupType ;		/* line designation character for groups (optional) */
-} FileSpecification ;
+  I64 gCount, gTotal ;		/* used internally to calculate groupCount and groupTotal */
+  void *buffer ;		/* only used during reading if not isUserBuf */
+  I64 bufSize ;
+  VGPcodec *fieldCodec, *listCodec ;
+  BOOL isUseFieldCodec, isUseListCodec ;
+  BOOL isUserBuf ;		/* flag for whether buffer is owned by user */
+  char binaryTypePack ;
+} LineInfo ;
 
 /*** the main VGP file type ***/
 
@@ -56,20 +56,19 @@ typedef struct {
   /* these fields may be read by user - but don't change them! */
   FileType fileType ;
   SubType subType ;
-  FileSpecification *spec ;	/* contains the file type and line specifications */
   I64 major, minor ;		/* actual major and minor versions of this file */
   char lineType ;		/* current lineType */
+  char objectType ;		/* line designation character for primary objects */
+  char groupType ;		/* line designation character for groups (optional) */
   I64 line ;			/* current line number */
   I64 object ;			/* current object - incremented when object line read */
   I64 group ; 			/* current group - incremented when group line read */
-  I64 count[128], max[128], total[128] ; /* amounts read or written so far */
-  I64 groupCount[128], groupTotal[128] ; /* assumes only one group type per file; true for now */
-  I64 expectCount[128], expectMax[128], expectTotal[128] ; /* values read from header */
-  I64 expectGroupCount[128], expectGroupTotal[128] ; /* NB the group* are maxes per group */
   Provenance *provenance ;      /* if non-zero then count['!'] entries */
   Reference *reference ;	/* if non-zero then count['<'] entries */
   Reference *deferred ; 	/* if non-zero then count['>'] entries */
   Field field[MAX_FIELD] ;	/* used to hold the current line - accessed by macros */
+  LineInfo *lineInfo[128] ;	/* all the per-linetype information */
+  I64 codecTrainingSize ;	/* amount of data to see before building Huffman code table */
   /* fields below here are private to the package */
   FILE *f ;
   BOOL isWrite ;
@@ -77,18 +76,11 @@ typedef struct {
   BOOL isBinary ;		/* true if writing a binary file */
   BOOL inGroup ;       		/* set once inside a group */
   BOOL isLastLineBinary ;	/* needed to deal with newlines on ascii files */
-  void *buffer[128] ;
-  I64 bufSize[128] ;
-  /* buffer is used for list contents when reading - only nonzero if lineSpec->listType
-     buffer can be owned by VgpFile, in which case size is expectMax | max
-     or owned by user */
-  BOOL isUserBuf[128] ;		/* flag for whether buffer is owned by user */
-  I64 gCount[128], gTotal[128] ; /* used internally to calculate groupCount and groupTotal */
-  char lineBuf[128], numberBuf[32], *codecBuf ;
+  BOOL isIndex ;		/* index read in */
+  char lineBuf[128], numberBuf[32], *codecBuf ; /* working buffers */
+  I64 codecBufSize ;
   I64 linePos ;
-  VGPcodec *fieldCodec[128], *listCodec[128] ;
-  BOOL isUseFieldCodec[128], isUseListCodec[128] ;
-  /* need the isUse*Codec because we accumulate in the codec object before we can use it */
+  char binaryTypeUnpack[256] ;	/* from the packed byte */
 } VgpFile ;
 
 /*** function definitions for reading and writing VgpFiles ***/
@@ -111,9 +103,9 @@ BOOL vgpReadLine (VgpFile *vf) ;
 #define vgpReal(vf,i) ((vf)->field[i].r)
 #define vgpChar(vf,i) ((vf)->field[i].c)
 #define vgpLen(vf,i) ((vf)->field[i].len)
-#define vgpString(vf) (char*)((vf)->buffer[(vf)->lineType])
-#define vgpIntList(vf) (I64*)((vf)->buffer[(vf)->lineType])
-#define vgpRealList(vf) (double*)((vf)->buffer[(vf)->lineType])
+#define vgpString(vf) (char*)((vf)->lineInfo[(vf)->lineType]->buffer)
+#define vgpIntList(vf) (I64*)((vf)->lineInfo[(vf)->lineType]->buffer)
+#define vgpRealList(vf) (double*)((vf)->lineInfo[(vf)->lineType]->buffer)
 void vgpUserBuffer (VgpFile *vf, char lineType, void* buffer) ;
 /* this lets the user reassign the buffer that lists are read into
    prior to this function being called, or if buffer==0, a default is provided
@@ -121,6 +113,8 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void* buffer) ;
    this can be called repeatedly, so the location can be changed, e.g. for each line
    NB the user must allocate enough memory for user buffers (package buffers are always safe)
 */
+BOOL vgpGotoObject (VgpFile *vf, I64 i) ;
+/* goto i'th object in file - only works on binary files, which have an index */
 
 VgpFile *vgpFileOpenWriteFrom (const char *path, VgpFile *vfIn, BOOL isBinary) ;
 VgpFile *vgpFileOpenWriteNew (const char *path, FileType type, SubType sub, BOOL isBinary) ;

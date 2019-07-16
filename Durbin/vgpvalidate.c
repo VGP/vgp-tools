@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Jul  7 14:59 2019 (rd109)
+ * Last edited: Jul  8 04:21 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -68,7 +68,7 @@ int main (int argc, char **argv)
   I64 lastGroupObject = 0, lastGroupSize, lastGroupLine = 0 ;
   char lastGroupChar ;
   while (vgpReadLine (vfIn))
-    if (vfIn->lineType == vfIn->spec->groupType) /* a group line */
+    if (vfIn->lineType == vfIn->groupType) /* a group line */
       { if (lastGroupLine && vfIn->object - lastGroupObject != lastGroupSize)
 	  fprintf (stderr, "group size mismatch: group %c line %lld said %lld objects, but found %lld\n",
 		   vfIn->lineType, lastGroupLine, lastGroupSize, vfIn->object-lastGroupObject) ;
@@ -85,15 +85,16 @@ int main (int argc, char **argv)
 	   vfIn->object, vfIn->line, *argv, fileTypeName[vfIn->fileType]) ;
 
   {
-#define CHECK(X,Y,Z) if (vfIn->X[i] && vfIn->X[i] != vfIn->Y[i])		\
-      { fprintf (stderr, "header mismatch %s %c: header %lld data %lld\n", Z, i, vfIn->X[i], vfIn->Y[i]) ; ++nBad ; } \
-    else if (vfIn->Y[i] && !vfIn->X[i]) { fprintf (stderr, "header %s line missing for %c, value is %lld\n", Z, i, vfIn->Y[i]) ; ++nMissing ; } \
-      if (vfIn->Y[i]) ++nTotal
+#define CHECK(X,Y,Z) if (li->X && li->X != li->Y)		\
+      { fprintf (stderr, "header mismatch %s %c: header %lld data %lld\n", Z, i, li->X, li->Y) ; ++nBad ; } \
+    else if (li->Y && !li->X) { fprintf (stderr, "header %s line missing for %c, value is %lld\n", Z, i, li->Y) ; ++nMissing ; } \
+      if (li->Y) ++nTotal
 
     int i, nTotal = 0, nBad = 0, nMissing = 0 ;
     for (i = 0 ; i < 128 ; ++i)
-      if ((i >= 'A' && i <= 'Z') || (i >= 'a' && i <= 'z'))
-	{ CHECK(expectCount, count, "count") ;
+      if (((i >= 'A' && i <= 'Z') || i == vfIn->groupType) && vfIn->lineInfo[i])
+	{ LineInfo *li = vfIn->lineInfo[i] ;
+	  CHECK(expectCount, count, "count") ;
 	  CHECK(expectMax, max, "max") ;
 	  CHECK(expectTotal, total, "total") ;
 	  CHECK(expectGroupCount, groupCount, "group count") ;
@@ -109,12 +110,14 @@ int main (int argc, char **argv)
   
       if (isHeader)
 	{ for (i = 0 ; i < 128 ; ++i)
-	    { vfOut->expectCount[i] = vfIn->count[i] ;
-	      vfOut->expectMax[i] = vfIn->max[i] ;
-	      vfOut->expectTotal[i] = vfIn->total[i] ;
-	      vfOut->expectGroupCount[i] = vfIn->groupCount[i] ;
-	      vfOut->expectGroupTotal[i] = vfIn->groupTotal[i] ;
-	    }
+	    if (vfIn->lineInfo[i] && vfIn->lineInfo[i]->count)
+	      { LineInfo *liIn = vfIn->lineInfo[i], *liOut = vfOut->lineInfo[i] ;
+		liOut->expectCount = liIn->count ;
+		liOut->expectMax = liIn->max ;
+		liOut->expectTotal = liIn->total ;
+		liOut->expectGroupCount = liIn->groupCount ;
+		liOut->expectGroupTotal = liIn->groupTotal ;
+	      }
 	  vgpWriteHeader (vfOut) ; fputc ('\n', vfOut->f) ; fflush (vfOut->f) ;
 	}
 

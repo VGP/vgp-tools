@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Jul  7 15:00 2019 (rd109)
+ * Last edited: Jul 12 13:27 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -28,12 +28,35 @@ static char *commandLine (int argc, char **argv)
   return buf ;
 }
 
+typedef struct ObjectListStruct {
+  I64 i0, iN ;
+  struct ObjectListStruct *next ;
+} ObjectList ;
+
+static ObjectList *parseObjectList (char *s)
+{
+  ObjectList *ol, *ol0 = ol = new0 (1, ObjectList) ;
+  while (*s)
+    { while (*s >= '0' && *s <= '9') ol->i0 = ol->i0*10 + (*s++ - '0') ;
+      if (*s == '-')
+	{ ++s ; while (*s >= '0' && *s <= '9') ol->iN = ol->iN*10 + (*s++ - '0') ;
+	  if (ol->iN <= ol->i0) die ("end index %lld <= start index %lld", ol->iN, ol->i0) ;
+	}
+      else
+	ol->iN = ol->i0 + 1 ;
+      if (*s == ',') { ol->next = new0 (1, ObjectList) ; ol = ol->next ; ++s ; }
+      else if (*s) die ("unrecognised character %c at %s in object list\n", *s, s) ;
+    }
+  return ol0 ; 
+}
+
 int main (int argc, char **argv)
 {
   int i ;
   FileType fileType = 0 ;
   char *outFileName = "-" ;
   BOOL isHeader = FALSE, isHeaderOnly = FALSE, isBinary = FALSE ;
+  ObjectList *objList = 0 ;
   
   timeUpdate (0) ;
 
@@ -42,11 +65,13 @@ int main (int argc, char **argv)
 
   if (!argc)
     { fprintf (stderr, "vgpview [options] vgpfile\n") ;
-      fprintf (stderr, "  -t --type <abc>         file type, e.g. seq, aln - required if no header\n") ;
-      fprintf (stderr, "  -h --header             include the header in ascii output\n") ;
-      fprintf (stderr, "  -H --headerOnly         only write the header (in ascii)\n") ;
-      fprintf (stderr, "  -b --binary             write in binary (default is ascii)\n") ;
-      fprintf (stderr, "  -o --output <filename>  output file name (default stdout)\n") ;
+      fprintf (stderr, "  -t --type <abc>           file type, e.g. seq, aln - required if no header\n") ;
+      fprintf (stderr, "  -h --header               include the header in ascii output\n") ;
+      fprintf (stderr, "  -H --headerOnly           only write the header (in ascii)\n") ;
+      fprintf (stderr, "  -b --binary               write in binary (default is ascii)\n") ;
+      fprintf (stderr, "  -o --output <filename>    output file name (default stdout)\n") ;
+      fprintf (stderr, "  -i --index x[-y](,x[-y])* write specified objects\n") ;
+      fprintf (stderr, "index works only for binary files; '-i 0-10' outputs first 10 objects\n") ;
       exit (0) ;
     }
   
@@ -65,6 +90,8 @@ int main (int argc, char **argv)
       { isBinary = TRUE ; --argc ; ++argv ; }
     else if (argc > 1 && (!strcmp (*argv, "-o") || !strcmp (*argv, "--output")))
       { outFileName = argv[1] ; argc -= 2 ; argv += 2 ; }
+    else if (argc > 1 && (!strcmp (*argv, "-i") || !strcmp (*argv, "--index")))
+      { objList = parseObjectList (argv[1]) ; argc -= 2 ; argv += 2 ; }
     else die ("unknown option %s - run without arguments to see options", *argv) ;
 
   if (isBinary) isHeader = TRUE ;
@@ -87,12 +114,28 @@ int main (int argc, char **argv)
 
       static size_t fieldSize[128] ;
       for (i = 0 ; i < 128 ; ++i)
-	if (vfIn->spec->line[i]) fieldSize[i] = vfIn->spec->line[i]->nField*sizeof(Field) ;
-      
-      while (vgpReadLine (vfIn))
-	{ memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
-	  vgpWriteLine (vfOut, vfIn->lineType, vfIn->buffer[vfIn->lineType]) ;
+	if (vfIn->lineInfo[i]) fieldSize[i] = vfIn->lineInfo[i]->nField*sizeof(Field) ;
+
+      if (objList)
+	{ vfOut->isLastLineBinary = TRUE ; /* prevents leading '\n' */
+	  while (objList)
+	    { if (!vgpGotoObject (vfIn, objList->i0))
+		die ("failed to seek to object %lld", objList->i0 ) ;
+	      if (!vgpReadLine (vfIn)) die ("can't read object %lld", objList->i0) ;
+	      I64 i ;
+	      for (i = objList->i0 ; i < objList->iN ; vfIn->lineType==vfIn->objectType ? ++i : i)
+		{ memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
+		  vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
+		  if (!vgpReadLine (vfIn)) break ;
+		}
+	      objList = objList->next ;
+	    }
 	}
+      else
+	while (vgpReadLine (vfIn))
+	  { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
+	    vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
+	  }
     }
 
   vgpClose (vfOut) ;
