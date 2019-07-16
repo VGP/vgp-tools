@@ -7,7 +7,7 @@
  *   it is a separate file so as to make it easy to change the format and version
  * Exported functions:
  * HISTORY:
- * Last edited: Jul 16 13:58 2019 (rd109)
+ * Last edited: Jul 16 16:17 2019 (rd109)
  * * Jul  7 22:14 2019 (rd109): add DNAcodec for sequence S data
  * * Jul  7 22:13 2019 (rd109): added code to build auxiliary structures, pack etc. last 2 days
  * Created: Sun Feb 24 14:48:21 2019 (rd109)
@@ -22,13 +22,14 @@ static LineInfo *vgpDefineLine (FieldType f0, FieldType f1, FieldType f2,
   return li ;
 }
 
-static void defineFormat (VgpFile *vf)
+static void defineFormat (VgpFile *vf, FileType fileType)
 {
   if (!vf) die ("vgpDefineFormat() called without a file") ;
 
   vf->major = 1 ; vf->minor = 0 ;
 
-  switch (vf->fileType)
+  vf->fileType = fileType ;
+  switch (fileType)
     {
     case SEQ:
       vf->objectType = 'S' ;

@@ -5,7 +5,7 @@
  * Description: implementation for vgprd.h
  * Exported functions:
  * HISTORY:
- * Last edited: Jul 16 15:18 2019 (rd109)
+ * Last edited: Jul 16 16:17 2019 (rd109)
  * * Jul  8 04:28 2019 (rd109): refactored to use lineInfo[]
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
@@ -29,7 +29,6 @@
 static VgpFile *vgpFileCreate (FileType fileType)
 {
   VgpFile *vf = new0 (1, VgpFile) ;
-  vf->fileType = fileType ;
 
   /* define the header lines */
   vf->lineInfo['1'] = vgpDefineLine (STRING, INT, INT, 0, 0, 0) ; /* type, major, minor */
@@ -49,7 +48,7 @@ static VgpFile *vgpFileCreate (FileType fileType)
   vf->lineInfo['^'] = vgpDefineLine (0, 0, 0, 0, 0, 0) ;       /* end of footer - return to top */
   vf->lineInfo['-'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* seek offset to footer */
 
-  defineFormat (vf) ;		/* from vgpformat_1_0.h */
+  defineFormat (vf, fileType) ;		/* from vgpformat_1_0.h */
 
       /* fill in the nField and listByteSize information, and perform format consistency checks */
   int j, k, n = 0 ;
@@ -57,7 +56,7 @@ static VgpFile *vgpFileCreate (FileType fileType)
 
   for (j = 0 ; j < 128 ; ++j)
     if (vf->lineInfo[j])
-      { for (k = 0 ; k < MAX_FIELD ; k++)
+      { for (k = 0 ; k < MAX_FIELD ; k++) /*  */
 	  if (listSize[vf->lineInfo[j]->fieldSpec[k]])
 	    { if (vf->lineInfo[j]->listByteSize)
 		die ("VGP spec error file type %s: two list types in record %d",
