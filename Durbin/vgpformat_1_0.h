@@ -7,7 +7,7 @@
  *   it is a separate file so as to make it easy to change the format and version
  * Exported functions:
  * HISTORY:
- * Last edited: Jul 16 16:17 2019 (rd109)
+ * Last edited: Jul 18 18:20 2019 (rd109)
  * * Jul  7 22:14 2019 (rd109): add DNAcodec for sequence S data
  * * Jul  7 22:13 2019 (rd109): added code to build auxiliary structures, pack etc. last 2 days
  * Created: Sun Feb 24 14:48:21 2019 (rd109)
@@ -51,9 +51,13 @@ static void defineFormat (VgpFile *vf, FileType fileType)
       vf->groupType = 'r' ;
       vf->lineInfo['r'] = vgpDefineLine (INT, STRING_LIST, 0, 0, 0, 0) ; /* number restriction_sites */
       vf->lineInfo['R'] = vgpDefineLine (INT, INT_LIST, 0, 0, 0, 0) ; /* len locations(bp) */
+      vf->lineInfo['R']->isIntListDiff = TRUE ;
       vf->lineInfo['E'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* sites in list in r line */
+      vf->lineInfo['R']->listCodec = vcCreate() ;
       vf->lineInfo['I'] = vgpDefineLine (REAL_LIST, 0, 0, 0, 0, 0) ; /* intensities at each site */
-      vf->lineInfo['N'] = vgpDefineLine (REAL_LIST, 0, 0, 0, 0, 0) ; /* SNR_values at each sites */
+      vf->lineInfo['I']->listCodec = vcCreate() ;
+      vf->lineInfo['N'] = vgpDefineLine (REAL_LIST, 0, 0, 0, 0, 0) ; /* SNR_values at each site */
+      vf->lineInfo['N']->listCodec = vcCreate() ;
       vf->lineInfo['O'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* object number in referred sequence file */
       break ;
 
@@ -68,11 +72,14 @@ static void defineFormat (VgpFile *vf, FileType fileType)
       vf->lineInfo['M'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* number of matching bases */
       vf->lineInfo['D'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* number of differences = substitutions + indel bases */
       vf->lineInfo['C'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* cigar string */
+      vf->lineInfo['C']->listCodec = vcCreate() ;
       vf->lineInfo['T'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* tracePoint spacing in a (global) */
       vf->lineInfo['U'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* tracePoints in a */
       vf->lineInfo['U']->listCodec = vcCreate() ;
+      vf->lineInfo['U']->isIntListDiff = TRUE ;
       vf->lineInfo['V'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* tracePoints in b */
       vf->lineInfo['V']->listCodec = vcCreate() ;
+      vf->lineInfo['V']->isIntListDiff = TRUE ;
       vf->lineInfo['W'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* tracePoint spacings in b */
       vf->lineInfo['W']->listCodec = vcCreate() ;
       vf->lineInfo['X'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* inter-tracePoint diff counts in b */
@@ -97,6 +104,8 @@ static void defineFormat (VgpFile *vf, FileType fileType)
     case LIS:
       vf->objectType = 'L' ;
       vf->lineInfo['L'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0) ; /* object identifiers */
+      vf->lineInfo['L']->listCodec = vcCreate() ;
+      vf->lineInfo['L']->isIntListDiff = TRUE ;
       vf->lineInfo['N'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0) ; /* optional name for list */
       vf->lineInfo['S'] = vgpDefineLine (INT, 0, 0, 0, 0, 0) ; /* seed sequence for scaffold */
       break ;

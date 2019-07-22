@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Jul 12 13:27 2019 (rd109)
+ * Last edited: Jul 22 13:25 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -52,10 +52,10 @@ static ObjectList *parseObjectList (char *s)
 
 int main (int argc, char **argv)
 {
-  int i ;
+  I64 i ;
   FileType fileType = 0 ;
   char *outFileName = "-" ;
-  BOOL isHeader = FALSE, isHeaderOnly = FALSE, isBinary = FALSE ;
+  BOOL isHeader = FALSE, isHeaderOnly = FALSE, isBinary = FALSE, isUsage = FALSE ;
   ObjectList *objList = 0 ;
   
   timeUpdate (0) ;
@@ -71,6 +71,7 @@ int main (int argc, char **argv)
       fprintf (stderr, "  -b --binary               write in binary (default is ascii)\n") ;
       fprintf (stderr, "  -o --output <filename>    output file name (default stdout)\n") ;
       fprintf (stderr, "  -i --index x[-y](,x[-y])* write specified objects\n") ;
+      fprintf (stderr, "  -u --usage                byte usage per line type; no other output\n") ;
       fprintf (stderr, "index works only for binary files; '-i 0-10' outputs first 10 objects\n") ;
       exit (0) ;
     }
@@ -92,53 +93,81 @@ int main (int argc, char **argv)
       { outFileName = argv[1] ; argc -= 2 ; argv += 2 ; }
     else if (argc > 1 && (!strcmp (*argv, "-i") || !strcmp (*argv, "--index")))
       { objList = parseObjectList (argv[1]) ; argc -= 2 ; argv += 2 ; }
+    else if (!strcmp (*argv, "-u") || !strcmp (*argv, "--usage"))
+      { isUsage = TRUE ; --argc ; ++argv ; }
     else die ("unknown option %s - run without arguments to see options", *argv) ;
 
   if (isBinary) isHeader = TRUE ;
   if (isHeaderOnly) { isHeaderOnly = TRUE ; isBinary = FALSE ; }
   
   if (argc != 1) die ("can currently only take one input file") ;
-  
+
   VgpFile *vfIn = vgpFileOpenRead (*argv, fileType) ; /* reads the header */
   if (!vfIn) die ("failed to open vgp file %s", *argv) ;
-
-  VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, isBinary) ;
-  if (!vfOut) die ("failed to open output file %s", outFileName) ;
-
-  if (isHeaderOnly)
-    { vgpWriteHeader (vfOut) ; fputc ('\n', vfOut->f) ;
-    }
-  else
-    { vgpAddProvenance (vfOut, "vgpview", "0.0", command, 0) ;
-      if (isHeader) vgpWriteHeader (vfOut) ;
-
-      static size_t fieldSize[128] ;
-      for (i = 0 ; i < 128 ; ++i)
-	if (vfIn->lineInfo[i]) fieldSize[i] = vfIn->lineInfo[i]->nField*sizeof(Field) ;
-
+  
+  if (isUsage)
+    { I64 usage[128] ; memset (usage, 0, 128*sizeof(I64)) ; 
+      off_t u, uLast = ftello (vfIn->f) ;
+#define UPDATE_U { u = ftello (vfIn->f) ; usage[vfIn->lineType] += u-uLast ; uLast = u ; }
+      
       if (objList)
-	{ vfOut->isLastLineBinary = TRUE ; /* prevents leading '\n' */
-	  while (objList)
-	    { if (!vgpGotoObject (vfIn, objList->i0))
-		die ("failed to seek to object %lld", objList->i0 ) ;
+	{ while (objList)
+	    { if (!vgpGotoObject (vfIn, objList->i0)) die ("bad seek to %lld", objList->i0 ) ;
 	      if (!vgpReadLine (vfIn)) die ("can't read object %lld", objList->i0) ;
-	      I64 i ;
-	      for (i = objList->i0 ; i < objList->iN ; vfIn->lineType==vfIn->objectType ? ++i : i)
-		{ memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
-		  vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
-		  if (!vgpReadLine (vfIn)) break ;
+	      UPDATE_U ;
+	      for (i = objList->i0 ; i < objList->iN ; ) // conditional increment end of loop
+		{ if (!vgpReadLine (vfIn)) break ;
+		  UPDATE_U ;
+		  if (vfIn->lineType == vfIn->objectType) ++i ;
 		}
 	      objList = objList->next ;
 	    }
 	}
       else
 	while (vgpReadLine (vfIn))
-	  { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
-	    vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
-	  }
-    }
+	  UPDATE_U ;
 
-  vgpClose (vfOut) ;
+      UPDATE_U ;
+      for (i = 'A' ; i < 128 ; ++i)
+	if (usage[i]) printf ("usage line type %c bytes %lld\n", (char)i, usage[i]) ;
+     }
+  else
+    { VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, isBinary) ;
+      if (!vfOut) die ("failed to open output file %s", outFileName) ;
+
+      if (isHeaderOnly)
+	{ vgpWriteHeader (vfOut) ; fputc ('\n', vfOut->f) ; }
+      else
+	{ vgpAddProvenance (vfOut, "vgpview", "0.0", command, 0) ;
+	  if (isHeader) vgpWriteHeader (vfOut) ;
+
+	  static size_t fieldSize[128] ;
+	  for (i = 0 ; i < 128 ; ++i)
+	    if (vfIn->lineInfo[i]) fieldSize[i] = vfIn->lineInfo[i]->nField*sizeof(Field) ;
+
+	  if (objList)
+	    { vfOut->isLastLineBinary = TRUE ; /* prevents leading '\n' */
+	      while (objList)
+		{ if (!vgpGotoObject (vfIn, objList->i0)) die ("bad seek to %lld", objList->i0 ) ;
+		  if (!vgpReadLine (vfIn)) die ("can't read object %lld", objList->i0) ;
+		  for (i = objList->i0 ; i < objList->iN ; ) // conditional increment end of loop
+		    { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
+		      vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
+		      if (!vgpReadLine (vfIn)) break ;
+		      if (vfIn->lineType == vfIn->objectType) ++i ;
+		    }
+		  objList = objList->next ;
+		}
+	    }
+	  else
+	    while (vgpReadLine (vfIn))
+	      { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
+		vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
+	      }
+	}
+      
+      vgpClose (vfOut) ;
+    }
 
   timeTotal (stderr) ;
 }

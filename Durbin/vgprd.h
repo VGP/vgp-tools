@@ -5,7 +5,7 @@
  * Description: header for VGP file reading and writing
  * Exported functions:
  * HISTORY:
- * Last edited: Jul 16 15:19 2019 (rd109)
+ * Last edited: Jul 20 17:08 2019 (rd109)
  * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -30,7 +30,7 @@ typedef int64_t I64 ;
 const static I64 I64MAX = 0x7fffffffffffffff ;
 
 typedef enum { INT = 1, REAL, CHAR, STRING, INT_LIST, REAL_LIST, STRING_LIST } FieldType ;
-typedef union { I64 i ; double r ; char c ; I64 len ; } Field ; /* len for lists */
+typedef union { I64 i ; double r ; char c ; int len ; } Field ; /* len for lists - top bits */
 typedef struct { char *program, *version, *command, *date ; } Provenance ;
 typedef struct { char *filename ; I64 count ; } Reference ;
 
@@ -46,6 +46,7 @@ typedef struct {
   I64 bufSize ;
   VGPcodec *fieldCodec, *listCodec ;
   BOOL isUseFieldCodec, isUseListCodec ;
+  BOOL isIntListDiff ;	        /* diff int lists before compressing with codec */
   BOOL isUserBuf ;		/* flag for whether buffer is owned by user */
   char binaryTypePack ;
 } LineInfo ;
@@ -77,9 +78,12 @@ typedef struct {
   BOOL inGroup ;       		/* set once inside a group */
   BOOL isLastLineBinary ;	/* needed to deal with newlines on ascii files */
   BOOL isIndex ;		/* index read in */
+  BOOL isBig ;			/* are we on a big-endian machine? */
+  BOOL isCheckString ;		/* set when validating to read char by char, else fread() */
   char lineBuf[128], numberBuf[32], *codecBuf ; /* working buffers */
   I64 codecBufSize ;
   I64 linePos ;
+  I64 *objectIndex ;
   char binaryTypeUnpack[256] ;	/* from the packed byte */
 } VgpFile ;
 
@@ -102,7 +106,7 @@ BOOL vgpReadLine (VgpFile *vf) ;
 #define vgpInt(vf,x) ((vf)->field[x].i)
 #define vgpReal(vf,i) ((vf)->field[i].r)
 #define vgpChar(vf,i) ((vf)->field[i].c)
-#define vgpLen(vf,i) ((vf)->field[i].len)
+#define vgpLen(vf,i) (((vf)->field[i].len) & 0xffffffffffffff)
 #define vgpString(vf) (char*)((vf)->lineInfo[(vf)->lineType]->buffer)
 #define vgpIntList(vf) (I64*)((vf)->lineInfo[(vf)->lineType]->buffer)
 #define vgpRealList(vf) (double*)((vf)->lineInfo[(vf)->lineType]->buffer)

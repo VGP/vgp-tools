@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Jul  8 04:21 2019 (rd109)
+ * Last edited: Jul 20 17:11 2019 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -61,6 +61,7 @@ int main (int argc, char **argv)
   
   VgpFile *vfIn = vgpFileOpenRead (*argv, fileType) ; /* reads the header */
   if (!vfIn) die ("failed to open vgp file %s", *argv) ;
+  vfIn->isCheckString = TRUE ;
 
   if (vfIn->line == 1) fprintf (stderr, "header missing\n") ;
   else fprintf (stderr, "read %lld header lines\n", vfIn->line) ;
