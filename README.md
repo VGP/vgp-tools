@@ -12,8 +12,8 @@
 VGP-Tools is a collection of tools that operate on DNA sequencing data encoded in a collection
 of file formats called collectively VGP-Formats.  The encodings include descriptions of source
 data, process intermediates, and the ultimate reconstructed genome assemblies.
-There are five **primary file types**, one for each of *sequences*, *restriction maps*,
-*alignments*, *links*, and *lists*, that contain a collection of objects of a given type.  Each
+There are six **primary file types**, one for each of *sequences*, *restriction maps*,
+*alignments*, *links*, *breaks*, and *lists*, that contain a collection of objects of a given type.  Each
 of these primary file types can be specialized as a **secondary file type** that ensures certain
 semantic constraints on the objects (e.g. all reads are paired and have QVs), and/or introduces
 additional information about each object (e.g. pulse widths for PacBio read sequences.)
@@ -189,7 +189,7 @@ These ``limit'' lines are only present for line types that occur in the body and
 that occur in the header itself.  In almost all cases there is only one list object
 per line type, however, a notable exception is the restriction site line (see 2.2), which has
 a variable number of strings in a line.  In such cases, ```+``` is the sum of all of the list
-element lengths over all lines of the given type, and ```@``` is the maximum of the sum of the
+element lengths over all lines of the given type, and ```\@``` is the maximum of the sum of the
 list lengths of each line.
 
 Often the objects in a file are naturally partitioned into groups, e.g. all the read pairs in a
@@ -755,7 +755,7 @@ An alternative enabled by having proposed scaffolding operations in VGP formats 
 
 # 4. VGP Tool Manuals
 
-### <code>4.0. VGPzip [-T\<int(4)\>] \<file\></code>
+#### <code>4.0. VGPzip [-T\<int(4)\>] \<file\></code>
 
 VGPzip compresses the given file into a blocked gzip file with the name ```<file>.gz``` and
 associate index in ```<file>.vz```i.  The ```.gz``` file can be decompressed with
@@ -772,7 +772,7 @@ large pieces by parallel threads, so small blocks are just a nuisance and would 
 ```.vzi``` index excessively large.  Various tools in the VGP repertoire are currently being
 upgraded to perform parallel threaded processing on VGPzip'd files.
 
-### <code>4.1. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> [\<reverse:.fast[aq][.gz]></code>]
+#### <code>4.1. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> [\<reverse:.fast[aq][.gz]></code>]
 
 VGPseq reads one or possibly two correlated, possibly VGPzip compressed, fasta or fastq files and outputs the
 single file in .seq format and the file pair in .irp format to the standard output.
@@ -800,7 +800,7 @@ information to group reads into lanes.
 VGPseq checks the syntax of the input files but does not verify that the DNA and QV
 strings are over the appropriate symbols.
 
-### <code>4.2. VGPpacbio [-vaU] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> . . .</code>
+#### <code>4.2. VGPpacbio [-vaU] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> . . .</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or .subread.sam files and outputs a .brp file to
 standard output.  As it typical for Myers tools, the suffixes may be dropped on the command
@@ -811,7 +811,7 @@ The -a option asks VGPpacbio to  output the arrow information in N- and A-lines 
 the default is to not output this information.  The -U option requests that the DNA sequences
 are in upper case (the default is lower case).  The reads are grouped into SMRT cells.
 
-### <code>4.3. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<source:.irp[.gz]></code>
+#### <code>4.3. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<source:.irp[.gz]></code>
 
 *Still under development but operational*
 
@@ -826,11 +826,11 @@ The -v option asks VGPcloud to output information on its progress to the standar
 The sorts of VGPcloud are threaded and the -T option specifies how many threads to use (4 by
 default).
 
-### <code>4.4. VGPbionano [-v] \<source:.bnx></code>
+#### <code>4.4. VGPbionano [-v] \<source:.bnx></code>
 
 *Not yet.*
 
-### <code>4.5. Dazz2pbr [-vaguU] \<dazzler:.db> . . .</code>
+#### <code>4.5. Dazz2pbr [-vaguU] \<dazzler:.db> . . .</code>
 
 Dazz2pbr takes a Dazzler suite database of a Pacbio long read data set and outputs
 a .pbr file to the standard output of its contents modulated by the option flags.
@@ -848,7 +848,7 @@ one (the longest) read from a given well.  This is the trimmed data set that is 
 output by Dazz2pbr.  Lastly, the -U option asks Dazz2pbr to output the read sequences in
 upper case, rather than the default lower case.
 
-### <code>4.6. Dazz2sxs [-vidtg] \<src1:.pbr[.gz]> [\<src2:.pbr[.gz]>] <dazzler:.las> . . .</code>
+#### <code>4.6. Dazz2sxs [-vidtg] \<src1:.pbr[.gz]> [\<src2:.pbr[.gz]>] <dazzler:.las> . . .</code>
 
 Dazz2sxs takes a Dazzler .las file encoding a collection of local alignments found by daligner
 and output an equivalent .sxs file to the standard output.  To do so, it also needs .pbr
