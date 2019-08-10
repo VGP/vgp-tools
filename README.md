@@ -189,7 +189,7 @@ These ``limit'' lines are only present for line types that occur in the body and
 that occur in the header itself.  In almost all cases there is only one list object
 per line type, however, a notable exception is the restriction site line (see 2.2), which has
 a variable number of strings in a line.  In such cases, ```+``` is the sum of all of the list
-element lengths over all lines of the given type, and ```\@``` is the maximum of the sum of the
+element lengths over all lines of the given type, and <code>@</code> is the maximum of the sum of the
 list lengths of each line.
 
 Often the objects in a file are naturally partitioned into groups, e.g. all the read pairs in a
@@ -766,7 +766,7 @@ either 4 by default or the number requested by the ```-T``` option.  This saves 
 waiting around: compressing a 40GB file with ```gzip``` takes over an hour, but VGPzip takes just
 11 minutes with the 6 cores on my new Mac.
 
-The other distinguithing feature of ```VGPzip``` is the very large block size (```bgzip``` uses
+The other distinguishing feature of ```VGPzip``` is the very large block size (```bgzip``` uses
 64KB blocks).  Our goal is to have a compressed file that can be operated on several
 large pieces by parallel threads, so small blocks are just a nuisance and would make the associated
 ```.vzi``` index excessively large.  Various tools in the VGP repertoire are currently being
