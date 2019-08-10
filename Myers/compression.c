@@ -1,4 +1,3 @@
-/*  Last edited: Jul 11 04:49 2019 (rd109) */
 /*******************************************************************************************
  *
  *  Length limited Huffman Compressor/decompressor with special 2-bit compressor for DNA.

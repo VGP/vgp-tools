@@ -772,17 +772,21 @@ large pieces by parallel threads, so small blocks are just a nuisance and would 
 ```.vzi``` index excessively large.  Various tools in the VGP repertoire are currently being
 upgraded to perform parallel threaded processing on VGPzip'd files.
 
-### <code>4.1. VGPseq [-vsg] \<forward:.fast[aq][.gz]> \<reverse:.fast[aq][.gz]></code>
+### <code>4.1. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> [\<reverse:.fast[aq][.gz]></code>]
 
-VGPseq reads two correlated, possibly gzip compressed, fasta or fastq files and outputs the
-pairs in .irp format to the standard output.  The pair of files must both be of the same
-type, .fasta or fastq, and they both must contain the same number of sequence entries.
-The output pairs have Q-lines if .fastq is input, and do not otherwise.
+VGPseq reads one or possibly two correlated, possibly VGPzip compressed, fasta or fastq files and outputs the
+single file in .seq format and the file pair in .irp format to the standard output.
+If a pair of files is given then they must both be of the same type, .fasta or fastq, and they both must
+contain the same number of sequence entries.  The output pairs have Q-lines if .fastq is input and the -s
+option is not set, and do not otherwise.
 
 The file names given to VGPseq do not need to have a complete suffix designation, the
 program will find the appropriate extension.  That is, if a user which to refer to a
 file ```foo.fastq.gz``` then simply saying ```foo``` or ```foo.fastq``` on the command
 line will suffice.
+
+VGPseq is threaded 4 ways by default, but the number of threads can be explicitly controlled
+with the -T parameter.
 
 The -v option asks VGPseq to output information on its progress to the standard error output.
 The -s option asks VGPseq to *not* output the quality values or Q-lines, if present, but just the

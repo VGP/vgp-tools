@@ -50,28 +50,26 @@ static void flip_double(void *w)
 
  // Universal data buffer for all routines
 
-static uint8 *data = NULL;
-static int    dmax = 0;
-
-static int make_room(int len)
-{ if (len > dmax)
-    { if (dmax == 0)
-        dmax = 8192;
+static int make_room(samFile *sf, int len)
+{ samRecord *theR = &(sf->rec);
+  if (len > theR->dmax)
+    { if (theR->dmax == 0)
+        theR->dmax = 8192;
       else
-        dmax *= 2;
-      if (dmax >= 0x7fffffff)
+        theR->dmax *= 2;
+      if (theR->dmax >= 0x7fffffff)
         { fprintf(stderr,"%s: More than MAX_INT memory requested ? Corrupt BAM?\n",Prog_Name);
           return (1);
         }
-      while (len > dmax)
-        dmax *= 2;
-      if (dmax >= 0x7fffffff)
+      while (len > theR->dmax)
+        theR->dmax *= 2;
+      if (theR->dmax >= 0x7fffffff)
         { fprintf(stderr,"%s: More than MAX_INT memory requested ? Corrupt BAM?\n",Prog_Name);
           return (1);
         }
-      data = realloc(data,dmax);
-      if (data == NULL)
-        { fprintf(stderr,"%s: Could not (re)allocate %d bytes of memory\n",Prog_Name,dmax);
+      theR->data = realloc(theR->data,theR->dmax);
+      if (theR->data == NULL)
+        { fprintf(stderr,"%s: Could not (re)allocate %d bytes of memory\n",Prog_Name,theR->dmax);
           return (1);
         }
     }
@@ -80,31 +78,30 @@ static int make_room(int len)
 
  // Universal sam Record for all routines
 
-static samRecord theR;
-static int       rmax = 0;  //  maximum length for a sequence/arrow
+static int init_record(samFile *sf, int len)
+{ samRecord *theR = &(sf->rec);
 
-static int init_record(int len)
-{ if (len > rmax)
-    { if (rmax == 0)
-        theR.seq = NULL;
-      rmax = 1.2*len + 1000;
-      theR.seq = realloc(theR.seq,2*rmax);
-      if (theR.seq == NULL)
-        { fprintf(stderr,"%s: Could not (re)allocate %d bytes of memory\n",Prog_Name,2*rmax);
+  if (len > sf->rmax)
+    { if (sf->rmax == 0)
+        theR->seq = NULL;
+      sf->rmax = 1.2*len + 1000;
+      theR->seq = realloc(theR->seq,2*sf->rmax);
+      if (theR->seq == NULL)
+        { fprintf(stderr,"%s: Could not (re)allocate %d bytes of memory\n",Prog_Name,2*sf->rmax);
           return (1);
         }
-      theR.arr   = theR.seq + rmax;
+      theR->arr = theR->seq + sf->rmax;
     }
-  theR.well  = -1;
-  theR.beg   = -1;
-  theR.end   = -1;
-  theR.qual  = -1.;
-  theR.snr[0] = -1.;
-  theR.bc[0]  = -1;
-  theR.bc[1]  = -1;
-  theR.bqual  = -1;
-  theR.nump   = -1;
-  theR.arr[0] = 'A';
+  theR->well  = -1;
+  theR->beg   = -1;
+  theR->end   = -1;
+  theR->qual  = -1.;
+  theR->snr[0] = -1.;
+  theR->bc[0]  = -1;
+  theR->bc[1]  = -1;
+  theR->bqual  = -1;
+  theR->nump   = -1;
+  theR->arr[0] = 'A';
   return (0);
 }
 
@@ -145,6 +142,11 @@ samFile *sam_open(char *name)
   sf->is_big = ( *((char *) (&one)) == 0);
   sf->nline  = 0;
 
+  sf->rec.dmax = 0;
+  sf->rec.data = NULL;
+
+  sf->rmax = 0;
+
   return (sf);
 
 error:
@@ -173,20 +175,21 @@ int sam_close(samFile *sf)
 }
 
 static int sam_getline(samFile *sf, int clen)
-{ gzFile file = sf->ptr;
+{ gzFile     file = sf->ptr;
+  samRecord *theR = &(sf->rec);
 
   ++sf->nline;
 
-  if (make_room(8192))
+  if (make_room(sf,8192))
     return (-1);
-  while (gzgets(file,(char *) (data+clen),dmax-clen) != NULL)
-    { clen += strlen((char *) (data+clen));
-      if (data[clen-1] == '\n')
+  while (gzgets(file,(char *) (theR->data+clen),theR->dmax-clen) != NULL)
+    { clen += strlen((char *) (theR->data+clen));
+      if (theR->data[clen-1] == '\n')
         return (clen);
-      dmax *= 2;
-      data = realloc(data,dmax);
-      if (data == NULL)
-        { fprintf(stderr,"%s: Could not (re)allocate %d bytes of memory\n",Prog_Name,dmax);
+      theR->dmax *= 2;
+      theR->data = realloc(theR->data,theR->dmax);
+      if (theR->data == NULL)
+        { fprintf(stderr,"%s: Could not (re)allocate %d bytes of memory\n",Prog_Name,theR->dmax);
           return (-1);
         }
     }
@@ -229,11 +232,11 @@ static int bam_header_read(samFile *sf)
   if (sf->is_big)
     flip_int(&tlen);
 
-  if (make_room(tlen+1))
+  if (make_room(sf,tlen+1))
     return (1);
-  if (gzread(file, data, tlen) != tlen)
+  if (gzread(file, sf->rec.data, tlen) != tlen)
     goto IO_error;
-  data[tlen++] = 0;              // make sure it is NULL terminated
+  sf->rec.data[tlen++] = 0;              // make sure it is NULL terminated
 
   //  read through number of reference sequences
 
@@ -253,9 +256,9 @@ static int bam_header_read(samFile *sf)
         flip_int(&nlen);
       if (nlen <= 0)
         goto corrupted;
-      if (make_room(tlen+nlen+5))
+      if (make_room(sf,tlen+nlen+5))
         return (1);
-      if (gzread(file, data+(tlen+1), nlen+4) != nlen+4)
+      if (gzread(file, sf->rec.data+(tlen+1), nlen+4) != nlen+4)
         goto IO_error;
     }
   return (0);
@@ -285,9 +288,9 @@ static int sam_header_read(samFile *sf)
         return (1);
     }
   if (dlen == 0)
-    { if (make_room(1))
+    { if (make_room(sf,1))
         return (1);
-      data[0] = '\0';
+      sf->rec.data[0] = '\0';
     }
   return (0);
 }
@@ -353,7 +356,7 @@ int sam_header_process(samFile *sf, int numeric)
       ARR_CONVERT = '0';
     }
 
-  desc = strstr((char *) data,"\tDS:");
+  desc = strstr((char *) sf->rec.data,"\tDS:");
   if (desc == NULL)
     { fprintf(stderr,"%s: File header does not contain a description (DS) tag\n",Prog_Name);
       return (-1);
@@ -459,7 +462,8 @@ static void flip_auxilliary(uint8 *s, uint8 *e)
           s += 2;
           break;
         case 4:
-          flip_int(s);
+          if (is_integer[s[-1]])
+            flip_int(s);
           s += 4;
           break;
         case 8:
@@ -499,10 +503,11 @@ static void flip_auxilliary(uint8 *s, uint8 *e)
 }
 
 static int bam_record_read(samFile *sf, int status)
-{ int ldata, lname, lcigar, lseq, aux;
-  int arrow;
+{ int        ldata, lname, lcigar, lseq, aux;
+  int        arrow;
+  samRecord *theR = &(sf->rec);
 
-  arrow  = ((status & HASPW) != 0);
+  arrow = ((status & HASPW) != 0);
 
   { int    ret;      //  read next block
     uint32 x[9];
@@ -537,16 +542,16 @@ static int bam_record_read(samFile *sf, int status)
         return (-1);
       }
 
-    if (make_room(ldata))
+    if (make_room(sf,ldata))
       return (-1);
 
-    if (gzread(sf->ptr, data, ldata) != ldata)
+    if (gzread(sf->ptr, theR->data, ldata) != ldata)
       { fprintf(stderr,"%s: Unexpected end of input file\n",Prog_Name);
         return (-1);
       }
 
     if (sf->is_big)
-      flip_auxilliary(data+aux, data+ldata);
+      flip_auxilliary(theR->data+aux, theR->data+ldata);
   }
   
   { uint8 *t;     //  Load header and sequence from required fields
@@ -558,18 +563,18 @@ static int bam_record_read(samFile *sf, int status)
         return (-1);
       }
 
-    if (init_record(lseq))
+    if (init_record(sf,lseq))
       return (-1);
 
-    theR.header = (char *) data;
-    theR.len    = lseq;
-    seq         = theR.seq;
+    theR->header = (char *) theR->data;
+    theR->len    = lseq;
+    seq          = theR->seq;
 
-    eoh = index(theR.header,'/');
+    eoh = index(theR->header,'/');
     if (eoh != NULL)
       *eoh = 0;
 
-    t = data + (lname + (lcigar<<2)); 
+    t = theR->data + (lname + (lcigar<<2)); 
     for (e = i = 0; i < lseq-1; i += 2, e++)
       { seq[i]   = SEQ_CONVERT[t[e] >> 4];
         seq[i+1] = SEQ_CONVERT[t[e] & 0xf];
@@ -583,9 +588,9 @@ static int bam_record_read(samFile *sf, int status)
     char    *arr;
     int      i;
 
-    arr = theR.arr;
-    p = data + aux;
-    e = data + ldata;
+    arr = theR->arr;
+    p = theR->data + aux;
+    e = theR->data + ldata;
 
 #define PULSES(type)			\
 for (i = 0; i < len; i++, p += size)	\
@@ -598,7 +603,7 @@ for (i = 0; i < len; i++, p += size)	\
 #define BARCODES(type)			\
 for (i = 0; i < len; i++, p += size)	\
   { uint32 x = *((type *) p);		\
-    theR.bc[i] = x;			\
+    theR->bc[i] = x;			\
   }
 
 #define GET_UINT(name,target)							\
@@ -630,14 +635,18 @@ for (i = 0; i < len; i++, p += size)	\
             { fprintf(stderr,"%s: sn-tag does not have 4 floats\n",Prog_Name);
               return (-1);
             }
-          theR.snr[0] = *((float *) (p+8));
-          theR.snr[1] = *((float *) (p+12));
-          theR.snr[2] = *((float *) (p+16));
-          theR.snr[3] = *((float *) (p+20));
+          theR->snr[0] = *((float *) (p+8));
+          theR->snr[1] = *((float *) (p+12));
+          theR->snr[2] = *((float *) (p+16));
+          theR->snr[3] = *((float *) (p+20));
           p   += 24;
         }
       else if (arrow && memcmp(p,"pwB",3) == 0)
-        { size = bam_tag_size[p[3]];
+        { if (!is_integer[p[3]])
+            { fprintf(stderr,"%s: pw-tag is not of integer type\n",Prog_Name);
+              return (-1);
+            }
+          size = bam_tag_size[p[3]];
           len  = *((int32 *) (p+4));
           if (len != lseq)
             { fprintf(stderr,"%s: pw-tag is not the same length as sequence\n",Prog_Name);
@@ -654,13 +663,14 @@ for (i = 0; i < len; i++, p += size)	\
             case 4:
               PULSES(uint32)
               break;
-            default:
-              fprintf(stderr,"%s: pw-tag is not of integer type\n",Prog_Name);
-              return (-1);
           }
         }
       else if (memcmp(p,"bcB",3) == 0)
-        { size = bam_tag_size[p[3]];
+        { if (!is_integer[p[3]])
+            { fprintf(stderr,"%s: pw-tag is not of integer type\n",Prog_Name);
+              return (-1);
+            }
+          size = bam_tag_size[p[3]];
           len  = *((int32 *) (p+4));
           if (len > 2)
             { fprintf(stderr,"%s: More than two barcode values\n",Prog_Name);
@@ -677,25 +687,22 @@ for (i = 0; i < len; i++, p += size)	\
             case 4:
               BARCODES(uint32)
               break;
-            default:
-              fprintf(stderr,"%s: bc-tag is not of integer type\n",Prog_Name);
-              return (-1);
           }
         }
       else if (memcmp(p,"zm",2) == 0)
-        GET_UINT("zm",theR.well)
+        GET_UINT("zm",theR->well)
       else if (memcmp(p,"qs",2) == 0)
-        GET_UINT("qs",theR.beg)
+        GET_UINT("qs",theR->beg)
       else if (memcmp(p,"qe",2) == 0)
-        GET_UINT("qe",theR.end)
+        GET_UINT("qe",theR->end)
       else if (memcmp(p,"rqf",3) == 0)
-        { theR.qual = *((float *) (p+3));
+        { theR->qual = *((float *) (p+3));
           p += 7;
         }
       else if (memcmp(p,"np",2) == 0)
-        GET_UINT("np",theR.nump)
+        GET_UINT("np",theR->nump)
       else if (memcmp(p,"bq",2) == 0)
-        GET_UINT("bq",theR.bqual)
+        GET_UINT("bq",theR->bqual)
       else
         { size = bam_tag_size[p[2]];
           if (size <= 8)
@@ -714,7 +721,8 @@ for (i = 0; i < len; i++, p += size)	\
 }
 
 static int bam_record_scan(samFile *sf)
-{ int ldata, lname, lcigar, lseq, aux;
+{ int       ldata, lname, lcigar, lseq, aux;
+  samRecord *theR = &(sf->rec);
 
   { int    ret;      //  read next block
     uint32 x[9];
@@ -749,16 +757,16 @@ static int bam_record_scan(samFile *sf)
         return (-1);
       }
 
-    if (make_room(ldata))
+    if (make_room(sf,ldata))
       return (-1);
 
-    if (gzread(sf->ptr, data, ldata) != ldata)
+    if (gzread(sf->ptr, theR->data, ldata) != ldata)
       { fprintf(stderr,"%s: Unexpected end of input file\n",Prog_Name);
         return (-1);
       }
 
     if (sf->is_big)
-      flip_auxilliary(data+aux, data+ldata);
+      flip_auxilliary(theR->data+aux, theR->data+ldata);
   }
   
   { char *eoh;
@@ -768,10 +776,10 @@ static int bam_record_scan(samFile *sf)
         return (-1);
       }
 
-    theR.header = (char *) data;;
-    theR.len    = lseq;
+    theR->header = (char *) theR->data;
+    theR->len    = lseq;
 
-    eoh = index(theR.header,'/');
+    eoh = index(theR->header,'/');
     if (eoh != NULL)
       *eoh = 0;
   }
@@ -781,13 +789,17 @@ static int bam_record_scan(samFile *sf)
     char    *arr;
     int      i;
 
-    arr = theR.arr;
-    p = data + aux;
-    e = data + ldata;
+    arr = theR->arr;
+    p = theR->data + aux;
+    e = theR->data + ldata;
 
     while (p < e)
       if (memcmp(p,"bcB",3) == 0)
-        { size = bam_tag_size[p[3]];
+        { if (!is_integer[p[3]])
+            { fprintf(stderr,"%s: pw-tag is not of integer type\n",Prog_Name);
+              return (-1);
+            }
+          size = bam_tag_size[p[3]];
           len  = *((int32 *) (p+4));
           if (len > 2)
             { fprintf(stderr,"%s: More than two barcode values\n",Prog_Name);
@@ -804,25 +816,22 @@ static int bam_record_scan(samFile *sf)
             case 4:
               BARCODES(uint32)
               break;
-            default:
-              fprintf(stderr,"%s: bc-tag is not of integer type\n",Prog_Name);
-              return (-1);
           }
         }
       else if (memcmp(p,"zm",2) == 0)
-        GET_UINT("zm",theR.well)
+        GET_UINT("zm",theR->well)
       else if (memcmp(p,"qs",2) == 0)
-        GET_UINT("qs",theR.beg)
+        GET_UINT("qs",theR->beg)
       else if (memcmp(p,"qe",2) == 0)
-        GET_UINT("qe",theR.end)
+        GET_UINT("qe",theR->end)
       else if (memcmp(p,"rqf",3) == 0)
-        { theR.qual = *((float *) (p+3));
+        { theR->qual = *((float *) (p+3));
           p += 7;
         }
       else if (memcmp(p,"np",2) == 0)
-        GET_UINT("np",theR.nump)
+        GET_UINT("np",theR->nump)
       else if (memcmp(p,"bq",2) == 0)
-        GET_UINT("bq",theR.bqual)
+        GET_UINT("bq",theR->bqual)
       else
         { size = bam_tag_size[p[2]];
           if (size <= 8)
@@ -856,9 +865,10 @@ static int bam_record_scan(samFile *sf)
 }
 
 static int sam_record_read(samFile *sf, int status)
-{ char  *p;
-  int    qlen, ret;
-  int    arrow;
+{ char      *p;
+  int        qlen, ret;
+  int        arrow;
+  samRecord *theR = &(sf->rec);
 
   arrow  = ((status & HASPW) != 0);
 
@@ -868,7 +878,7 @@ static int sam_record_read(samFile *sf, int status)
   if (ret <= 0)
     return (ret);
 
-  p = (char *) data;
+  p = (char *) theR->data;
 
   { char *q, *seq;     //  Load header and sequence from required fields
     int   i;
@@ -878,7 +888,7 @@ static int sam_record_read(samFile *sf, int status)
     CHECK( qlen <= 1, "Empty header name")
     CHECK( qlen > 255, "Header is too long")
 
-    theR.header = q;
+    theR->header = q;
     q = index(q,'/');         // Truncate pacbio well & pulse numbers
     if (q != NULL && q < p)
       *q = 0;
@@ -893,11 +903,11 @@ static int sam_record_read(samFile *sf, int status)
     qlen = p-q;
     CHECK (*q == '*', "No sequence for read?");
 
-    if (init_record(qlen))
+    if (init_record(sf,qlen))
       return (-1);
 
-    seq = theR.seq;
-    theR.len = qlen;
+    seq = theR->seq;
+    theR->len = qlen;
     for (i = 0; i < qlen; i++)
       seq[i] = SEQ_CONVERT[(int) (*q++)];
 
@@ -908,44 +918,44 @@ static int sam_record_read(samFile *sf, int status)
   { char *q, *arr;       //  Get zm, qs, qe, rq, sn, and pw from auxilliary tags
     int   x, cnt;
 
-    arr = theR.arr;
+    arr = theR->arr;
     while (*p++ == '\t')
       if (strncmp(p,"sn:B:f,",7) == 0 && arrow)
         { p += 6;
           for (cnt = 0; *p == ',' && cnt < 4; cnt++)
-            { theR.snr[cnt] = strtod(q=p+1,&p);
+            { theR->snr[cnt] = strtod(q=p+1,&p);
               CHECK( p == q, "Cannot parse snr value")
             }
           CHECK ( *p == ',' || cnt < 4, "Expecting 4 snr values")
           CHECK ( *p != '\t' && *p != '\n', "Cannot parse snr values")
         }
       else if (strncmp(p,"zm:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.well = strtol(p+5,&q,0);
+        { theR->well = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer well number")
           p = q;
         }
       else if (strncmp(p,"qs:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.beg = strtol(p+5,&q,0);
+        { theR->beg = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer start pulse")
           p = q;
         }
       else if (strncmp(p,"qe:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.end = strtol(p+5,&q,0);
+        { theR->end = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer end pulse")
           p = q;
         }
       else if (strncmp(p,"np:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.nump = strtol(p+5,&q,0);
+        { theR->nump = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer number of passes")
           p = q;
         }
       else if (strncmp(p,"bq:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.bqual = strtol(p+5,&q,0);
+        { theR->bqual = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer barcode quality")
           p = q;
         }
       else if (strncmp(p,"rq:f:",5) == 0)
-        { theR.qual = strtod(p+5,&q);
+        { theR->qual = strtod(p+5,&q);
           CHECK (p+5 == q, "Could not parse floating point quality value")
           p = q;
         }
@@ -958,7 +968,7 @@ static int sam_record_read(samFile *sf, int status)
           for (cnt = 0; *p == ',' && cnt < 2; cnt++)
             { x = strtol(q=p+1,&p,0);
               CHECK( p == q, "Cannot parse barcode value")
-              theR.bc[cnt] = x; 
+              theR->bc[cnt] = x; 
             }
           CHECK ( *p == ',' || cnt < 2, "more than 2 barcode values?")
           CHECK ( *p != '\t' && *p != '\n', "Cannot parse barcode values")
@@ -989,8 +999,9 @@ static int sam_record_read(samFile *sf, int status)
 }
 
 static int sam_record_scan(samFile *sf)
-{ char  *p;
-  int    qlen, ret;
+{ char      *p;
+  int        qlen, ret;
+  samRecord *theR = &(sf->rec);
 
   //  read next line
 
@@ -998,14 +1009,14 @@ static int sam_record_scan(samFile *sf)
   if (ret <= 0)
     return (ret);
 
-  p = (char *) data;
+  p = (char *) theR->data;
 
   { char *q;     //  Load header and sequence from required fields
     int   i;
 
     NEXT_ITEM(q,p)
 
-    theR.header = q;
+    theR->header = q;
     q = index(q,'/');         // Truncate pacbio well & pulse numbers
     if (q != NULL && q < p)
       *q = 0;
@@ -1019,7 +1030,7 @@ static int sam_record_scan(samFile *sf)
     NEXT_ITEM(q,p)
     qlen = p-q;
 
-    theR.len = qlen;
+    theR->len = qlen;
 
     p = index(p+1,'\t');  // Skip qual
     CHECK( p == NULL, "No auxilliary tags in SAM record, file corrupted?")
@@ -1030,32 +1041,32 @@ static int sam_record_scan(samFile *sf)
 
     while (*p++ == '\t')
       if (strncmp(p,"zm:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.well = strtol(p+5,&q,0);
+        { theR->well = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer well number")
           p = q;
         }
       else if (strncmp(p,"qs:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.beg = strtol(p+5,&q,0);
+        { theR->beg = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer start pulse")
           p = q;
         }
       else if (strncmp(p,"qe:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.end = strtol(p+5,&q,0);
+        { theR->end = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer end pulse")
           p = q;
         }
       else if (strncmp(p,"np:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.nump = strtol(p+5,&q,0);
+        { theR->nump = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer number of passes")
           p = q;
         }
       else if (strncmp(p,"bq:",3) == 0 && is_integer[(int) p[3]] && p[4] == ':')
-        { theR.bqual = strtol(p+5,&q,0);
+        { theR->bqual = strtol(p+5,&q,0);
           CHECK (p+5 == q, "Could not parse integer barcode quality")
           p = q;
         }
       else if (strncmp(p,"rq:f:",5) == 0)
-        { theR.qual = strtod(p+5,&q);
+        { theR->qual = strtod(p+5,&q);
           CHECK (p+5 == q, "Could not parse floating point quality value")
           p = q;
         }
@@ -1068,7 +1079,7 @@ static int sam_record_scan(samFile *sf)
           for (cnt = 0; *p == ',' && cnt < 2; cnt++)
             { x = strtol(q=p+1,&p,0);
               CHECK( p == q, "Cannot parse barcode value")
-              theR.bc[cnt] = x; 
+              theR->bc[cnt] = x; 
             }
           CHECK ( *p == ',' || cnt < 2, "more than 2 barcode values?")
           CHECK ( *p != '\t' && *p != '\n', "Cannot parse barcode values")
@@ -1086,7 +1097,8 @@ static samRecord _SAM_EOF;
 samRecord *SAM_EOF = &_SAM_EOF;
 
 samRecord *sam_record_extract(samFile *sf, int status)
-{ int64 ret;
+{ int64      ret;
+  samRecord *theR = &(sf->rec);
 
   if (sf->format == bam)
     ret = bam_record_read(sf,status);
@@ -1096,38 +1108,39 @@ samRecord *sam_record_extract(samFile *sf, int status)
   if (ret <= 0)
     return (SAM_EOF);
 
-  if (theR.well < 0)
+  if (theR->well < 0)
     { fprintf(stderr,"%s: Record is missing zm-tag\n",Prog_Name);
       return (NULL);
     }
-  if (theR.beg < 0)
+  if (theR->beg < 0)
     { fprintf(stderr,"%s: Record is missing qs-tag\n",Prog_Name);
       return (NULL);
     }
-  if (theR.end < 0)
+  if (theR->end < 0)
     { fprintf(stderr,"%s: Record is missing qe-tag\n",Prog_Name);
       return (NULL);
     }
-  if (theR.qual < 0.)
+  if (theR->qual < 0.)
     { fprintf(stderr,"%s: Record is missing rq-tag\n",Prog_Name);
       return (NULL);
     }
   if ((status & HASPW) != 0)
-    { if (theR.snr[0] < 0.)
+    { if (theR->snr[0] < 0.)
         { fprintf(stderr,"%s: Record is missing sn-tag\n",Prog_Name);
           return (NULL);
         }
-      if (theR.arr[0] == 'A')
+      if (theR->arr[0] == 'A')
         { fprintf(stderr,"%s: Record is missing pw-tag\n",Prog_Name);
           return (NULL);
         }
     }
 
-  return (&theR);
+  return (theR);
 }
 
 samRecord *sam_scan(samFile *sf)
-{ int64 ret;
+{ int64      ret;
+  samRecord *theR = &(sf->rec);
 
   if (sf->format == bam)
     ret = bam_record_scan(sf);
@@ -1137,22 +1150,22 @@ samRecord *sam_scan(samFile *sf)
   if (ret <= 0)
     return (SAM_EOF);
 
-  if (theR.well < 0)
+  if (theR->well < 0)
     { fprintf(stderr,"%s: Record is missing zm-tag\n",Prog_Name);
       return (NULL);
     }
-  if (theR.beg < 0)
+  if (theR->beg < 0)
     { fprintf(stderr,"%s: Record is missing qs-tag\n",Prog_Name);
       return (NULL);
     }
-  if (theR.end < 0)
+  if (theR->end < 0)
     { fprintf(stderr,"%s: Record is missing qe-tag\n",Prog_Name);
       return (NULL);
     }
-  if (theR.qual < 0.)
+  if (theR->qual < 0.)
     { fprintf(stderr,"%s: Record is missing rq-tag\n",Prog_Name);
       return (NULL);
     }
 
-  return (&theR);
+  return (theR);
 }

@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
   { int   i, j, k;
     int   flags[128];
 
-    ARG_INIT("dextract")
+    ARG_INIT("VGPpacbio")
 
     path   = NULL;
     core   = NULL;

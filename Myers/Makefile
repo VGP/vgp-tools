@@ -34,4 +34,4 @@ install:
 
 package:
 	make clean
-	tar -zcf VGPtools.tar.gz README.md Makefile *.h *.c
+	tar -zcf VGPtools.tar.gz Makefile *.h *.c
