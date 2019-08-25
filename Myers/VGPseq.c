@@ -19,7 +19,6 @@
 static char *Usage = "[-vsg] [-T<int(4)>] <forward:fast[aq][.gz]> [<reverse:fast[aq][.gz]>";
 
 #define IO_BLOCK 10000000ll
-// #define IO_BLOCK 100ll
 
 #define INT_MAXLEN 10
 
@@ -69,6 +68,7 @@ typedef struct
     int64   fsize;  //  Size of file in bytes
     int     fastq;  //  Is file a fastq? (else fasta)
     int     zipd;   //  Is file VGPzip'd (has paired .vzi file)
+    int     recon;  //  Is file an uncompressed regular zip-file?
     int64   zsize;  //  Size of zip index (in blocks)
     int64  *zoffs;  //  zoffs[i] = offset to compressed block i
 
@@ -97,7 +97,7 @@ static void Open_Fastq(char *arg, Fast_Input *input)
   char  *pwd, *root, *path;
   int    fid, i;
   int64  fsize;
-  int    fastq, zipd;
+  int    fastq, zipd, recon;
   int64  zsize = 0;
   int64 *zoffs = NULL;
 
@@ -127,23 +127,36 @@ static void Open_Fastq(char *arg, Fast_Input *input)
   printf("\n%s is a %s file, fastq = %d, zipd = %d, fsize = %lld\n",arg,suffix[i],fastq,zipd,fsize);
 #endif
 
+  recon = 0;
   if (zipd)
     { int idx;
 
       idx = open(Catenate(pwd,"/",root,sufidx[i]),O_RDONLY);
-      if (idx < 0)
-        { fprintf(stderr,"%s: So sorry, but only VGPzip compressed files are accepted\n",Prog_Name);
-          exit (1);
-        }
       free(pwd);
-      read(idx,&zsize,sizeof(int64));
-      zoffs = (int64 *) Malloc(sizeof(int64)*(zsize+2),"Allocating VGPzip index");
-      if (zoffs == NULL)
-        exit (1);
-      read(idx,zoffs+1,sizeof(int64)*zsize);
-      zoffs[0] = 0;
-      zoffs[zsize+1] = zoffs[zsize];
-      close(idx);
+      if (idx < 0)
+        { if (VERBOSE)
+            fprintf(stderr,"  File %s not VGPzip'd, decompressing\n",arg);
+          system(Catenate("gunzip -k ",path,"",""));
+          path[strlen(path)-3] = '\0';
+          zipd  = 0;
+          recon = 1;
+          if (lstat(path,&stats) == -1)
+            { fprintf(stderr,"%s: Cannot get stats for %s\n",Prog_Name,path);
+              exit (1);
+            }
+          fsize = stats.st_size;
+          zsize = (fsize-1)/IO_BLOCK+1;
+        }
+      else
+        { read(idx,&zsize,sizeof(int64));
+          zoffs = (int64 *) Malloc(sizeof(int64)*(zsize+2),"Allocating VGPzip index");
+          if (zoffs == NULL)
+            exit (1);
+          read(idx,zoffs+1,sizeof(int64)*zsize);
+          zoffs[0] = 0;
+          zoffs[zsize+1] = zoffs[zsize];
+          close(idx);
+        }
     }
   else
     { zsize = (fsize-1)/IO_BLOCK+1;
@@ -157,6 +170,7 @@ static void Open_Fastq(char *arg, Fast_Input *input)
   input->fsize = fsize;
   input->fastq = fastq;
   input->zipd  = zipd;
+  input->recon = recon;
   input->zsize = zsize;
   input->zoffs = zoffs;
   input->zrecd = (int64 *) Malloc(sizeof(int64)*(zsize+1),"Allocating block info");
@@ -182,6 +196,8 @@ static void Open_Fastq(char *arg, Fast_Input *input)
 static void Close_Fastq(Fast_Input *input)
 { int n;
 
+  if (input->recon)
+    unlink(input->path);
   free(input->ngrp);
   for (n = 0; n < NTHREADS; n++)
     if (input->gcnt[n] != NULL)
@@ -1787,7 +1803,7 @@ int main(int argc, char *argv[])
 
   { int    i, clen, optl, len, idout;
     char   buffer[5000];
-    char   date[26];
+    char   date[20];
     time_t seconds;
 
     idout = fileno_unlocked(stdout);   //  Is the unlock helping?
@@ -1807,8 +1823,7 @@ int main(int argc, char *argv[])
     for (i = 1; i < argc; i++)
       clen += strlen(argv[i])+1;
     seconds = time(NULL);
-    ctime_r(&seconds,date);
-    date[24] = '\0';
+    strftime(date,20,"%F_%T",localtime(&seconds));
 
     len = sprintf(buffer,"! 6 VGPseq 3 1.0 %d",clen);
     if (optl)
@@ -1822,7 +1837,7 @@ int main(int argc, char *argv[])
       }
     for (i = 1; i < argc; i++)
       len += sprintf(buffer+len," %s",argv[i]);
-    len += sprintf(buffer+len," 24 %s\n",date);
+    len += sprintf(buffer+len," 19 %s\n",date);
     write(idout,buffer,len);
 
     if (GROUP)

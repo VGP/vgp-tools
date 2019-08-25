@@ -755,11 +755,11 @@ An alternative enabled by having proposed scaffolding operations in VGP formats 
 
 # 4. VGP Tool Manuals
 
-#### <code>4.0. VGPzip [-T\<int(4)\>] \<file\></code>
+#### <code>4.0. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
 
 VGPzip compresses the given file into a blocked gzip file with the name ```<file>.gz``` and
-associate index in ```<file>.vz```i.  The ```.gz``` file can be decompressed with
- ```gunzip``` just like any other gzip file.
+associate index in ```<file>.vzi``` if the -x option is *not* set.  The ```.gz``` file can be
+decompressed with ```gunzip``` just like any other gzip file.
 The file is compressed in 10MB blocks save for the
 last.  This program is like ```bgzip``` except that it parallelizes the compression with threads,
 either 4 by default or the number requested by the ```-T``` option.  This saves a great deal of
@@ -768,17 +768,20 @@ waiting around: compressing a 40GB file with ```gzip``` takes over an hour, but 
 
 The other distinguishing feature of ```VGPzip``` is the very large block size (```bgzip``` uses
 64KB blocks).  Our goal is to have a compressed file that can be operated on several
-large pieces by parallel threads, so small blocks are just a nuisance and would make the associated
-```.vzi``` index excessively large.  Various tools in the VGP repertoire are currently being
-upgraded to perform parallel threaded processing on VGPzip'd files.
+large pieces by parallel threads.  For this purpose, small blocks are just a nuisance and make
+the associated ```.vzi``` index excessively large.  Various tools in the VGP repertoire are
+such as **VGPseq** below can perform parallel threaded processing on VGPzip'd files, and thus
+operate much more efficiently.
 
 #### <code>4.1. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> [\<reverse:.fast[aq][.gz]></code>]
 
-VGPseq reads one or possibly two correlated, possibly VGPzip compressed, fasta or fastq files and outputs the
+VGPseq reads one or possibly two correlated, possibly compressed, fasta or fastq files and outputs the
 single file in .seq format and the file pair in .irp format to the standard output.
 If a pair of files is given then they must both be of the same type, .fasta or fastq, and they both must
 contain the same number of sequence entries.  The output pairs have Q-lines if .fastq is input and the -s
-option is not set, and do not otherwise.
+option is not set, and do not otherwise.  It is preferrable that the inputs if compressed, were compressed
+with VGPzip, as otherwise a temporary uncompressed version of each input must be created in order to
+take advantage of parallel threads.
 
 The file names given to VGPseq do not need to have a complete suffix designation, the
 program will find the appropriate extension.  That is, if a user which to refer to a
@@ -800,11 +803,13 @@ information to group reads into lanes.
 VGPseq checks the syntax of the input files but does not verify that the DNA and QV
 strings are over the appropriate symbols.
 
-#### <code>4.2. VGPpacbio [-vaU] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> . . .</code>
+#### <code>4.2. VGPpacbio [-vaU] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> . . .</code>
 
-VGPpacbio reads a sequence of Pacbio .subread.bam or .subread.sam files and outputs a .brp file to
-standard output.  As it typical for Myers tools, the suffixes may be dropped on the command
-line and the tool will find and add them.
+VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a .pbr file to
+standard output.  As is typical for Myers' tools, the suffixes may be dropped on the command
+line and the tool will find and add them.  The program is threaded, by default with 4 threads,
+but the number can be explicitly set with the -T option.  For example, with six threads the program
+runs about 5.5 times faster than with only one.
 
 The -v option asks VGPpacbio to output information on its progress to the standard error output.
 The -a option asks VGPpacbio to  output the arrow information in N- and A-lines per read bundle,

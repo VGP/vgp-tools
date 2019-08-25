@@ -14,7 +14,6 @@
 #undef PRINT_TREE
 
 #include "gene_core.h"
-#include "pb_sam.h"
 #include "pb_expr.h"
 
 #define OP_OR  0
@@ -298,53 +297,50 @@ Filter *parse_filter(char *expr)
   return ((Filter *) v);
 }
 
-static samRecord *S_Record;
-
-static int eval_S(Node *v)
+static int eval_S(Node *v, samRecord *s)
 { switch (v->op)
   { case OP_OR:
-      return (eval_S(v->lft) || eval_S(v->rgt));
+      return (eval_S(v->lft,s) || eval_S(v->rgt,s));
     case OP_AND:
-      return (eval_S(v->lft) && eval_S(v->rgt));
+      return (eval_S(v->lft,s) && eval_S(v->rgt,s));
     case OP_NOT:
-      return ( ! eval_S(v->lft));
+      return ( ! eval_S(v->lft,s));
     case OP_LT:
-      return (eval_S(v->lft) < eval_S(v->rgt));
+      return (eval_S(v->lft,s) < eval_S(v->rgt,s));
     case OP_LE:
-      return (eval_S(v->lft) <= eval_S(v->rgt));
+      return (eval_S(v->lft,s) <= eval_S(v->rgt,s));
     case OP_GT:
-      return (eval_S(v->lft) > eval_S(v->rgt));
+      return (eval_S(v->lft,s) > eval_S(v->rgt,s));
     case OP_GE:
-      return (eval_S(v->lft) >= eval_S(v->rgt));
+      return (eval_S(v->lft,s) >= eval_S(v->rgt,s));
     case OP_NE:
-      return (eval_S(v->lft) != eval_S(v->rgt));
+      return (eval_S(v->lft,s) != eval_S(v->rgt,s));
     case OP_EQ:
-      return (eval_S(v->lft) == eval_S(v->rgt));
+      return (eval_S(v->lft,s) == eval_S(v->rgt,s));
     case OP_INT:
       return ((int) (int64) (v->lft));
     case OP_ZM:
-      return (S_Record->well);
+      return (s->well);
     case OP_LN:
-      return (S_Record->len);
+      return (s->len);
     case OP_RQ:
-      return ((int) (1000*S_Record->qual));
+      return ((int) (1000*s->qual));
     case OP_BC1:
-      return (S_Record->bc[0]);
+      return (s->bc[0]);
     case OP_BC2:
-      return (S_Record->bc[1]);
+      return (s->bc[1]);
     case OP_BQ:
-      return (S_Record->bqual);
+      return (s->bqual);
     case OP_NP:
-      return (S_Record->nump);
+      return (s->nump);
     case OP_QS:
-      return (S_Record->beg);
+      return (s->beg);
     case OP_QE:
-      return (S_Record->end);
+      return (s->end);
   }
   return (0);
 }
 
 int evaluate_bam_filter(Filter *v, samRecord *s)
-{ S_Record = s;
-  return (eval_S((Node *) v));
+{ return (eval_S((Node *) v,s));
 }

@@ -2,8 +2,8 @@
 
 DEST_DIR = ../bin
 
-#CFLAGS= -O3
-CFLAGS= -g				# for debugging
+CFLAGS= -O3
+#CFLAGS= -g				# for debugging
 #CFLAGS= -03 -DOMP -fopenmp		# for OMP parallelisation - doesn't compile on Mac
 
 ALL = vgpvalidate vgpview

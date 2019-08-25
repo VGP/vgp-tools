@@ -70,8 +70,8 @@ typedef unsigned char      uint8;
 #define CODED_READ   3      //  Compressor has codec but no histogram as was created by read
 
 typedef struct
-  { int    isbig;            //  endian of the current machine
-    int    state;            //  1 of the 4 states immediately above
+  { int    state;            //  1 of the 4 states immediately above
+    int    isbig;            //  endian of the current machine
     uint16 codebits[256];    //  Code esc_code is the special code for
     uint8  codelens[256];    //    non-Huffman exceptions
     char   lookup[0x10000];  //  Lookup table (just for decoding)
@@ -82,7 +82,7 @@ typedef struct
 
   //  The special "predefined" DNA compressor
 
-_VGPcodec _DNAcodec = { CODED_READ };
+static _VGPcodec _DNAcodec = { .state = CODED_READ };
 VGPcodec  *DNAcodec = (VGPcodec *) &_DNAcodec;
 
   //  Create an EMPTY compressor object with zero'd histogram and determine machine endian
@@ -133,7 +133,7 @@ void vcAddToTable(VGPcodec *vc, int len, char *bytes)
     }
 
   for (i = 0; i < len; i++)
-    v->hist[bytes[i]] += 1;
+    v->hist[(int) bytes[i]] += 1;
   v->state = FILLED;
 }
 
@@ -566,7 +566,7 @@ VGPcodec *vcDeserialize(void *in)
  *
  ********************************************************************************************/
 
-static char Number[128] =
+static uint8 Number[128] =
     { 0, 0, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, 0,
@@ -588,10 +588,10 @@ static char Number[128] =
   //  Compress DNA into 2-bits per base
 
 int Compress_DNA(int len, char *s, char *t)
-{ int   i, j;
-  char *s0, *s1, *s2, *s3;
+{ int    i, j;
+  uint8 *s0, *s1, *s2, *s3;
 
-  s0 = s;
+  s0 = (uint8 *) s;
   s1 = s0+1;
   s2 = s1+1;
   s3 = s2+1;
@@ -868,7 +868,7 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
           GET(8);
         }
       else
-        { n = lens[c];
+        { n = lens[(int) c];
           GET(n)
         }
       *o++ = c;

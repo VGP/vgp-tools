@@ -22,8 +22,8 @@
 
 #include "gene_core.h"
 
-int    VERBOSE;  //  Verbose mode?
-int    NTHREADS; //  Do not include QV strings
+int    NTHREADS; //  # of threads to use
+int    NOINDEX;  //  Do not make a .vzi index file
 int    CLEVEL;   //  Compression level (in [1,9]);
 
 #define IN_BLOCK  10000000
@@ -31,7 +31,7 @@ int    CLEVEL;   //  Compression level (in [1,9]);
 static int64 OUT_BLOCK;
 static int64 SEEK_STEP;
 
-static char *Usage = "[-v] [-T<int(4)>] [-C<int(6)>] <input>";
+static char *Usage = "[-x] [-T<int(4)>] [-C<int(6)>] <input>";
 
 typedef struct
   { int    inp;    //  Input file descriptor (independent for each thread even though same file)
@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("v")
+            ARG_FLAGS("x")
             break;
           case 'T':
             ARG_POSITIVE(NTHREADS,"Number of threads")
@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
         argv[j++] = argv[i];
     argc = j;
 
-    VERBOSE  = flags['v'];
+    NOINDEX  = flags['x'];
 
     if (argc != 2)
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
@@ -129,8 +129,10 @@ int main(int argc, char *argv[])
     sprintf(fname,"%s.gz",argv[1]);
     output = open(fname, O_WRONLY | O_CREAT, S_IRWXU);
 
-    sprintf(fname,"%s.vzi",argv[1]);
-    table = open(fname, O_WRONLY | O_CREAT, S_IRWXU);
+    if (!NOINDEX)
+      { sprintf(fname,"%s.vzi",argv[1]);
+        table = open(fname, O_WRONLY | O_CREAT, S_IRWXU);
+      }
 
     free(fname);
   }
@@ -162,7 +164,6 @@ int main(int argc, char *argv[])
         parm[n].seek = n*IN_BLOCK;
         parm[n].inp  = open(argv[1],O_RDWR);
         parm[n].eof  = 0;
-        // memcpy(parm[n].out,gzip_header,GZIP_HEAD);
       }
 
     //  Allocate index
@@ -203,15 +204,18 @@ int main(int argc, char *argv[])
 
     //  Output index
 
-    write(table,&isize,sizeof(int64));
-    write(table,idx,sizeof(int64)*isize);
+    if (!NOINDEX)
+      { write(table,&isize,sizeof(int64));
+        write(table,idx,sizeof(int64)*isize);
+      }
 
     free(idx);
     free(out);
     free(in);
   }
 
-  close(table);
+  if (!NOINDEX)
+    close(table);
   close(output);
   exit (0);
 }
