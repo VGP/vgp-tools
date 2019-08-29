@@ -2,7 +2,7 @@
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Date: February 18-22, 2019
-### Last Update: March 8, 2019
+### Last Update: August 25, 2019
 
 <br>
 <br>
