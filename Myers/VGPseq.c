@@ -1703,6 +1703,11 @@ int main(int argc, char *argv[])
 { Fast_Input  input1,  input2;
   Header_Info stats1,  stats2;
   int         ispair;
+  int         Oargc;
+  char      **Oargv;
+
+  Oargc = argc;
+  Oargv = argv;
 
   //  Parse command line options
 
@@ -1801,7 +1806,7 @@ int main(int argc, char *argv[])
 
   //  Output .irp header
 
-  { int    i, clen, optl, len, idout;
+  { int    i, clen, len, idout;
     char   buffer[5000];
     char   date[20];
     time_t seconds;
@@ -1815,28 +1820,15 @@ int main(int argc, char *argv[])
         write(idout,buffer,len);
       }
 
-    optl = VERBOSE + !QVS_OUT + GROUP;
-    if (optl == 0)
-      clen = -1;
-    else
-      clen = optl+1;
-    for (i = 1; i < argc; i++)
-      clen += strlen(argv[i])+1;
+    clen = -1;
+    for (i = 1; i < Oargc; i++)
+      clen += strlen(Oargv[i])+1;
     seconds = time(NULL);
     strftime(date,20,"%F_%T",localtime(&seconds));
 
     len = sprintf(buffer,"! 6 VGPseq 3 1.0 %d",clen);
-    if (optl)
-      { len += sprintf(buffer+len," -");
-        if (VERBOSE)
-          len += sprintf(buffer+len,"v");
-        if (!QVS_OUT)
-          len += sprintf(buffer+len,"s");
-        if (GROUP)
-          len += sprintf(buffer+len,"g");
-      }
-    for (i = 1; i < argc; i++)
-      len += sprintf(buffer+len," %s",argv[i]);
+    for (i = 1; i < Oargc; i++)
+      len += sprintf(buffer+len," %s",Oargv[i]);
     len += sprintf(buffer+len," 19 %s\n",date);
     write(idout,buffer,len);
 

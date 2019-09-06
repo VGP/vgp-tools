@@ -1371,7 +1371,12 @@ typedef struct
   } File_Object;
 
 int main(int argc, char* argv[])
-{ 
+{ int    Oargc;
+  char **Oargv; 
+
+  Oargc = argc;
+  Oargv = argv;
+
   //  Process command line arguments
 
   { int   i, j, k;
@@ -1616,15 +1621,19 @@ int main(int argc, char* argv[])
 
       { int   n, i;
         char *out;
-        int    clen, optl, olen;
-        char   date[26];
+        int    clen, olen;
+        char   date[20];
         time_t seconds;
 
         //  Use cumulative metrics to inform 2nd pass
 
-        out = Malloc(NTHREADS*maxout,"Allocating IO_Buffer\n");
+        if (maxout*NTHREADS < 5000)
+          out = Malloc(5000,"Allocating IO_Buffer\n");
+        else
+          out = Malloc(NTHREADS*maxout,"Allocating IO_Buffer\n");
         if (out == NULL)
           exit (1);
+
         for (n = 0; n < NTHREADS; n++)
           { parm[n].maxbp   = maxbp;
             parm[n].maxdata = maxdata;
@@ -1633,19 +1642,23 @@ int main(int argc, char* argv[])
 
         //  Output size headers
 
-        optl = ARROW+UPPER+VERBOSE;
-        if (optl > 0)
-          clen = optl+1;
-        else
-          clen = -1;
-        for (i = 1; i < argc; i++)
-          clen += strlen(argv[i])+1;
-
         olen = sprintf(out,"1 3 seq 1 0\n");
         olen += sprintf(out+olen,"2 3 pbr\n");
+
+        clen = -1;
+        for (i = 1; i < Oargc; i++)
+          clen += strlen(Oargv[i])+1;
+  
+        olen += sprintf(out+olen,"! 9 VGPpacbio 3 1.0 %d",clen);
+        for (i = 1; i < Oargc; i++)
+          olen += sprintf(out+olen," %s",Oargv[i]);
+        seconds = time(NULL);
+        strftime(date,20,"%F_%T",localtime(&seconds));
+        olen += sprintf(out+olen," 19 %s\n",date);
+
         olen += sprintf(out+olen,"# g %d\n",argc-1);
         olen += sprintf(out+olen,"# S %d\n",nread);
-        olen += sprintf(out+olen,"# L %d\n",nread);
+        olen += sprintf(out+olen,"# W %d\n",nread);
         if (ARROW)
           { olen += sprintf(out+olen,"# N %d\n",nread);
             olen += sprintf(out+olen,"# A %d\n",nread);
@@ -1661,7 +1674,7 @@ int main(int argc, char* argv[])
           olen += sprintf(out+olen,"@ A %d\n",maxbp);
   
         olen += sprintf(out+olen,"%% g # S %d\n",rg_nread);
-        olen += sprintf(out+olen,"%% g # L %d\n",rg_nread);
+        olen += sprintf(out+olen,"%% g # W %d\n",rg_nread);
         if (ARROW)
           { olen += sprintf(out+olen,"%% g # N %d\n",rg_nread);
             olen += sprintf(out+olen,"%% g # A %d\n",rg_nread);
@@ -1670,14 +1683,6 @@ int main(int argc, char* argv[])
         olen += sprintf(out+olen,"%% g + S %lld\n",rg_totbp);
         if (ARROW)
           olen += sprintf(out+olen,"%% g + A %lld\n",rg_totbp);
-  
-        olen += sprintf(out+olen,"! 9 VGPpacbio 3 1.0 %d",clen);
-        for (i = 1; i < argc; i++)
-          olen += sprintf(out+olen," %s",argv[i]);
-        seconds = time(NULL);
-        ctime_r(&seconds,date);
-        date[24] = '\0';
-        olen += sprintf(out+olen," 24 %s\n",date);
 
         write(idout,out,olen);
       }
@@ -1695,7 +1700,6 @@ int main(int argc, char* argv[])
               parm[n].isbam = fobj[f].isbam;
             }
           uthreads = n;
-
 
           if (VERBOSE)
             { fprintf(stderr,"  Computing output for file %s\n",fobj[f].fname);

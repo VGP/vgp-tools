@@ -482,8 +482,11 @@ int main(int argc, char *argv[])
     smax >>= 1;
 
     { int    i, clen, optl;
-      char   date[26];
+      char   date[20];
       time_t seconds;
+
+      printf("1 3 aln 1 0\n");
+      printf("2 3 sxs\n");
 
       optl = DOGROUP+DOCOORD+DODIFF+DOTRACE+VERBOSE;
       if (optl > 0)
@@ -492,54 +495,6 @@ int main(int argc, char *argv[])
         clen = -1;
       for (i = 1; i < argc; i++)
         clen += strlen(argv[i])+1;
-
-      printf("1 3 aln 1 0\n");
-      printf("2 3 sxs\n");
-      // printf("# ! 1\n");
-      // printf("# > 2\n");
-      if (DOGROUP)
-        printf("# g %d\n",ngroup);
-      printf("# A %lld\n",novls);
-      if (DOCOORD)
-        printf("# I %lld\n",novls);
-      if (DODIFF)
-        printf("# D %lld\n",novls);
-      if (DOTRACE)
-        printf("# W %lld\n# X %lld\n",novls,novls);
-      printf("# T 1\n");
-
-      // printf("+ ! %d\n",clen+35);
-      // printf("+ > %ld\n",strlen(fname1)+strlen(fname2));
-      if (DOGROUP)
-        printf("+ g %lld\n",gsumlt);
-      if (DOTRACE)
-        printf("+ W %lld\n+ X %lld\n",ttot,ttot);
-
-      // if (clen > 24)
-        // printf("@ ! %d\n",clen);
-      // else
-        // printf("@ ! 24\n");
-      // if (strlen(fname1) > strlen(fname2))
-        // printf("@ > %ld\n",strlen(fname1));
-      // else
-        // printf("@ > %ld\n",strlen(fname2));
-
-      if (DOGROUP)
-        printf("@ g %lld\n",gmaxlt);
-      if (DOTRACE)
-        printf("@ W %lld\n@ X %lld\n",tmax,tmax);
-
-      if (DOGROUP)
-        { printf("%% g # A %lld\n",omax);
-          if (DOCOORD)
-            printf("%% g # I %lld\n",omax);
-          if (DODIFF)
-            printf("%% g # D %lld\n",omax);
-          if (DOTRACE)
-            { printf("%% g # W %lld\n%% g # X %lld\n",omax,omax);
-              printf("%% g + W %lld\n%% g + X %lld\n",smax,smax);
-            }
-        }
 
       printf("! 8 Dazz2sxs 3 1.0 %d",clen);
       if (optl > 0)
@@ -558,9 +513,41 @@ int main(int argc, char *argv[])
       for (i = 1; i < argc; i++)
         printf(" %s",argv[i]);
       seconds = time(NULL);
-      ctime_r(&seconds,date);
-      date[24] = '\0';
-      printf(" 24 %s\n",date);
+      strftime(date,20,"%F_%T",localtime(&seconds));
+      printf(" 19 %s\n",date);
+
+      if (DOGROUP)
+        printf("# g %d\n",ngroup);
+      printf("# A %lld\n",novls);
+      if (DOCOORD)
+        printf("# I %lld\n",novls);
+      if (DODIFF)
+        printf("# D %lld\n",novls);
+      if (DOTRACE)
+        printf("# W %lld\n# X %lld\n",novls,novls);
+      printf("# T 1\n");
+
+      if (DOGROUP)
+        printf("+ g %lld\n",gsumlt);
+      if (DOTRACE)
+        printf("+ W %lld\n+ X %lld\n",ttot,ttot);
+
+      if (DOGROUP)
+        printf("@ g %lld\n",gmaxlt);
+      if (DOTRACE)
+        printf("@ W %lld\n@ X %lld\n",tmax,tmax);
+
+      if (DOGROUP)
+        { printf("%% g # A %lld\n",omax);
+          if (DOCOORD)
+            printf("%% g # I %lld\n",omax);
+          if (DODIFF)
+            printf("%% g # D %lld\n",omax);
+          if (DOTRACE)
+            { printf("%% g # W %lld\n%% g # X %lld\n",omax,omax);
+              printf("%% g + W %lld\n%% g + X %lld\n",smax,smax);
+            }
+        }
 
       printf("< %ld %s %d\n",strlen(fname1),fname1,nread1);
       printf("< %ld %s %d\n",strlen(fname2),fname2,nread2);

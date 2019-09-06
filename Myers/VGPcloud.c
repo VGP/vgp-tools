@@ -261,7 +261,10 @@ static void Uncompress_QV(int len, uint8 *qvec, int qbits, uint8 qmask, uint8 *i
 }
 
 int main(int argc, char *argv[])
-{ FILE *input;
+{ int    Oargc;
+  char **Oargv;
+
+  FILE *input;
   char *fname;        // Input file and name
 
   char *provenance;     // All previous provenance lines
@@ -292,6 +295,8 @@ int main(int argc, char *argv[])
   int   fclen, rclen;   // Length of compressed fields
   int   fqlen, rqlen;
 
+  Oargc = argc;
+  Oargv = argv;
 
   //  Parse command line options
 
@@ -791,35 +796,37 @@ int main(int argc, char *argv[])
 
   //  Output header
 
-  { char   date[26];
+  { char   date[20];
     time_t seconds;
     int    i, clen;
 
-    ndiff >>= 1;
-    seconds = time(NULL);
-    ctime_r(&seconds,date);
-    date[24] = '\0';
-    clen = strlen(argv[1]);
-
     printf("1 3 seq 1 0\n");
     printf("2 3 10x\n");
-    printf("# ! %d\n",nprov+1);
+
+    ndiff >>= 1;
+
+    clen = -1;
+    for (i = 1; i < Oargc; i++)
+      clen += strlen(Oargv[i])+1;
+    seconds = time(NULL);
+    strftime(date,20,"%F_%T",localtime(&seconds));
+
+    for (i = 0; i < nprov; i++)
+      printf("!%s\n",provenance + i*mprov);
+    printf("! 8 VGPcloud 3 1.0 %d",clen);
+    for (i = 1; i < Oargc; i++)
+      printf(" %s",Oargv[i]);
+    printf(" 19 %s\n",date);
+
     printf("# g %d\n",ndiff);
     printf("# P %d\n",nused);
     printf("# S %d\n",2*nused);
     printf("# Q %d\n",2*nused);
 
-    sprov += clen + 35; 
-    printf("+ ! %d\n",sprov);
     printf("+ g %d\n",ndiff*16);
     printf("+ S %d\n",nused*((flen-23)+rlen));
     printf("+ Q %d\n",nused*((flen-23)+rlen));
 
-    if (24 > aprov)
-      aprov = 24;
-    if (clen > aprov)
-      aprov = clen;
-    printf("@ ! %d\n",aprov);
     printf("@ g 16\n");
     if (flen-23 > rlen)
       { printf("@ S %d\n",flen-23);
@@ -835,10 +842,6 @@ int main(int argc, char *argv[])
     printf("%% g # Q %d\n",gmax*2);
     printf("%% g + S %d\n",gmax*((flen-23)+rlen));
     printf("%% g + Q %d\n",gmax*((flen-23)+rlen));
-
-    for (i = 0; i < nprov; i++)
-      printf("!%s\n",provenance + i*mprov);
-    printf("! 8 VGPcloud 3 1.0 %d %s 24 %s\n",clen,argv[1],date);
   }
 
   //  Output clouds
