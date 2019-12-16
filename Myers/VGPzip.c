@@ -11,14 +11,15 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
 #include <time.h>
 #include <fcntl.h>
-#include <zlib.h>
 #include <pthread.h>
 #include <sys/stat.h>
+#include "LIBDEFLATE/libdeflate.h"
 
 #include "gene_core.h"
 
@@ -40,6 +41,7 @@ typedef struct
     int64  seek;   //  Location in file to start next read+compress
     uint32 dlen;   //  Size of compressed block
     int    eof;    //  Hit end of file on last go
+    struct libdeflate_compressor *comp;
   } Deflate_Arg;
 
 static void *deflate_thread(void *arg)
@@ -53,7 +55,8 @@ static void *deflate_thread(void *arg)
   rlen = read(input,in,IN_BLOCK);
   if (rlen > 0)
     { dlen = OUT_BLOCK;
-      if (Gzip_Compress(out,&dlen,in,rlen,CLEVEL) != Z_OK)
+      dlen = libdeflate_gzip_compress(data->comp,in,rlen,out,dlen);
+      if (dlen == 0)
         { fprintf(stderr,"Compression not OK\n");
           exit (1);
         }
@@ -77,7 +80,7 @@ int main(int argc, char *argv[])
     ARG_INIT("VGPzip")
 
     NTHREADS = 4;
-    CLEVEL   = Z_DEFAULT_COMPRESSION;
+    CLEVEL   = 6;
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -91,8 +94,8 @@ int main(int argc, char *argv[])
             break;
           case 'C':
             ARG_NON_NEGATIVE(CLEVEL,"Number of threads")
-            if (CLEVEL < 0 || CLEVEL > 9)
-              { fprintf(stderr,"%s: Compression level must be in [0,9]\n",Prog_Name);
+            if (CLEVEL < 0 || CLEVEL > 12)
+              { fprintf(stderr,"%s: Compression level must be in [0,12]\n",Prog_Name);
                 exit (1);
               }
             break;
@@ -107,6 +110,7 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: Verbose mode, show progress as proceed.\n");
+        fprintf(stderr,"      -x: Do not make an index file.\n");
         fprintf(stderr,"      -T: Number of threads to use\n");
         fprintf(stderr,"      -C: Compression level in [0,9]\n");
         exit (1);
@@ -150,7 +154,11 @@ int main(int argc, char *argv[])
     int64   b, d;
     int     n;
 
-    OUT_BLOCK = Gzip_Compress_Bound(IN_BLOCK);
+    for (n = 0; n < NTHREADS; n++)
+      parm[n].comp = libdeflate_alloc_compressor(CLEVEL);
+
+    OUT_BLOCK = libdeflate_gzip_compress_bound(parm[0].comp,IN_BLOCK);
+
     SEEK_STEP = NTHREADS * IN_BLOCK;
 
     in  = Malloc(IN_BLOCK*NTHREADS,"Allocating input buffer");
@@ -201,6 +209,9 @@ int main(int argc, char *argv[])
 
     for (n = 0; n < NTHREADS; n++)
       close(parm[n].inp);
+
+    for (n = 0; n < NTHREADS; n++)
+      libdeflate_free_compressor(parm[n].comp);
 
     //  Output index
 

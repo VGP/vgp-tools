@@ -137,18 +137,4 @@ void Change_Read(char *s);    //  Convert read from one case to the other
 void Letter_Arrow(char *s);   //  Convert arrow pw's from numbers to uppercase letters (0-3 to 1234)
 void Number_Arrow(char *s);   //  Convert arrow pw string from letters to numbers
 
-/*******************************************************************************************
- *
- *  ROUTINES TO SUPPORT GZIP COMPRESSION
- *
- ********************************************************************************************/
-
-  //  GCB(size) = upper bound on largest gzip block produced on input block of given size.
-  //  GC(d,&D,s,S,l) compresses s[0..S) into d[0..*D) where *D must be size of buffer d on call
-  //  GU(d,&D,s,S,l) uncompresses s[0..S) into d[0..*D) where *D must be size of buffer d on call
-
-uint32 Gzip_Compress_Bound(uint32 size);
-int    Gzip_Compress(uint8 *dest, uint32 *dlenp, uint8 *src, uint32 slen,int level);
-int    Gzip_Uncompress(uint8 *dest, uint32 *dlenp, uint8 *src, uint32 slen);
-
 #endif // _CORE

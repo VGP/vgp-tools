@@ -1,13 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <ctype.h>
 #include <time.h>
-#include <zlib.h>
 #include <pthread.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+
+#include "LIBDEFLATE/libdeflate.h"
 
 #undef   DEBUG_CHECK
 #undef   DEBUG_OUT
@@ -85,6 +87,8 @@ typedef struct
     int    *ngrp;   //  ngrp[n]  = # of groups seen by thread n
     int    *rpt;    //  rpt[n]   = 1st block containing data for thread n
     int64 **gcnt;   //  gcnt[n][i] = # of entries in i'th group processed by thread n
+
+    struct libdeflate_decompressor *decomp;
   } Fast_Input;
 
   // Open a possibly VGPzip'd fasta/q file for parallel reading
@@ -186,6 +190,8 @@ static void Open_Fastq(char *arg, Fast_Input *input)
   input->zgrp = input->zaux  + zsize;
   input->zgct = input->zgrp  + zsize;
 
+  input->decomp = libdeflate_alloc_decompressor();
+
   { int n;
 
     for (n = 0; n < NTHREADS; n++)
@@ -210,6 +216,7 @@ static void Close_Fastq(Fast_Input *input)
   free(input->zoffs);
   free(input->path);
   free(input->root);
+  libdeflate_free_decompressor(input->decomp);
 }
 
 
@@ -306,6 +313,8 @@ static void *check_thread(void *arg)
   int         *baux  = inp->zaux;
   int         *bgrp  = inp->zgrp;
   int         *bgct  = inp->zgct;
+
+  struct libdeflate_decompressor *decomp = inp->decomp;
 
   int     fid;
   int     slen;
@@ -419,16 +428,17 @@ static void *check_thread(void *arg)
 #endif
       if (inp->zipd)
         { uint32 dlen, tlen;
-          int rez;
+          int    rez;
+          size_t x;
 
           dlen = zoffs[beg+1]-zoffs[beg];
           tlen = IO_BLOCK;
           read(fid,zuf,dlen);
-          if ((rez = Gzip_Uncompress(buf,&tlen,zuf,dlen)) != Z_OK)
+          if ((rez = libdeflate_gzip_decompress(decomp,zuf,dlen,buf,tlen,&x)) != 0)
             { fprintf(stderr,"Decompression not OK!\n");
               exit (1);
             }
-          slen = tlen;
+          slen = (int) x;
 #ifdef DEBUG_CHECK
           printf(" %d ->",dlen);
 #endif
@@ -1058,6 +1068,8 @@ static void *output_thread(void *arg)
   int         *bgrp  = inp->zgrp;
   int         *bgct  = inp->zgct;
 
+  struct libdeflate_decompressor *decomp = inp->decomp;
+
   int   b, c, slen;
   int   state, count, grpn, grpc;
   int   blen, extn;
@@ -1068,19 +1080,17 @@ static void *output_thread(void *arg)
   if (inp->zipd)
     { uint32 dlen, tlen;
       int    rez;
+      size_t x;
 
       lseek(fid,zoffs[blk],SEEK_SET);
       dlen = zoffs[blk+1]-zoffs[blk];
-#ifdef DEBUG_OUT
-      printf("Doing block %lld (@ %lld) %d ->",blk,lseek(fid,0,SEEK_CUR),dlen);
-#endif
       tlen = IO_BLOCK;
       read(fid,zuf,dlen);
-      if ((rez = Gzip_Uncompress(buf,&tlen,zuf,dlen)) != Z_OK)
+      if ((rez = libdeflate_gzip_decompress(decomp,zuf,dlen,buf,tlen,&x)) != 0)
         { fprintf(stderr,"Decompression not OK!\n");
           exit (1);
         }
-      slen = tlen;
+      slen = (int) x;
     }
   else
     { lseek(fid,blk*IO_BLOCK,SEEK_SET);

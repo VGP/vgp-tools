@@ -10,15 +10,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <time.h>
-#include <zlib.h>
 #include <pthread.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 
 #include "gene_core.h"
 #include "pb_expr.h"
+
+#include "LIBDEFLATE/libdeflate.h"
+typedef  struct libdeflate_decompressor Depress;
 
 #undef   DEBUG_CORE
 #undef   DEBUG_FIND
@@ -116,6 +119,7 @@ typedef struct
     uint32   bsize;            //  length of compressed bam block
     uint32   ssize;            //  length of uncompressed bam block
     Location loc;              //  current location in bam file
+    Depress *decomp;
   } BAM_FILE;
 
   //  Load next len bytes of uncompressed BAM data into array data
@@ -131,6 +135,7 @@ static void bam_get(BAM_FILE *file, uint8 *data, int len)
     { int    bptr, blen, bsize;
       uint8 *block, *buf;
       uint32 ssize;
+      size_t tsize;
 
 #ifdef DEBUG_CORE
       printf("Move %d bytes to data+%d from bam+%d\n",chk,off,boff);
@@ -177,11 +182,11 @@ static void bam_get(BAM_FILE *file, uint8 *data, int len)
 
       //  Fetch and uncompress next Bam block
 
-      ssize = BAM_BLOCK;
-      if (Gzip_Uncompress(bam,&ssize,block,bsize) != Z_OK)
+      if (libdeflate_gzip_decompress(file->decomp,block,bsize,bam,BAM_BLOCK,&tsize) != 0)
         { fprintf(stderr,"%s: Bad gzip block\n",Prog_Name);
           exit (1);
         }
+      ssize = tsize;
       boff = 0;
 #ifdef DEBUG_CORE
       printf("Loaded gzip block of size %d into %d\n",bsize,ssize);
@@ -308,6 +313,8 @@ typedef struct
     char     *out;      //  Output buffer
     int       olen;     //  Current length of output buffer
     int       head;     //  Should the g line start the output?
+
+    Depress  *decomp;
   } Thread_Arg;
 
   //  Find first record location (skip over header)
@@ -324,6 +331,7 @@ static void *header_thread(void *arg)
 
   //  At start of file so can use BAM stream
 
+  bam->decomp = parm->decomp;
   bam_start(bam,fid,buf,&zero);
 
   bam_get(bam,data,4);
@@ -357,18 +365,21 @@ static void *find_thread(void *arg)
   uint8      *buf  = parm->buf;
   int64       fpos = parm->beg.fpos;
 
+  Depress *decomp = parm->decomp;
+
   uint32 bptr, blen;
   int    last, notfound;
 
   uint8 *block;
   uint32 bsize, ssize;
+  size_t tsize;
 
   BAM_FILE _bam, *bam = &_bam;
 
 #ifdef DEBUG_FIND
   printf("Searching from %lld\n",fpos);
 #endif
-
+ 
   lseek(fid,fpos,SEEK_SET);
   blen = 0;
   bptr = 0;
@@ -452,11 +463,11 @@ static void *find_thread(void *arg)
           isize = getint(block+(bsize-4),4);
           crc   = getint(block+(bsize-8),4);
   
-          ssize = BAM_BLOCK;
-          if (Gzip_Uncompress(bam->bam,&ssize,block,bsize) != Z_OK)
+          if (libdeflate_gzip_decompress(decomp,block,bsize,bam,BAM_BLOCK,&tsize) != 0)
             continue;
+          ssize = tsize;
 
-          if (ssize == isize && crc == crc32(0L,bam->bam,ssize))
+          if (ssize == isize && crc == libdeflate_crc32(0,bam->bam,ssize))
             { bptr -= 3;
               fpos  += bptr;
               notfound = 0;
@@ -481,6 +492,7 @@ static void *find_thread(void *arg)
   bam->ssize    = ssize;
   bam->loc.fpos = fpos;
   bam->loc.boff = 0;
+  bam->decomp   = decomp;
 
   while ( ! bam_eof(bam))
     { int    j, k, beg;
@@ -542,6 +554,7 @@ static void *sam_thread(void *arg)
 
   BAM_FILE _bam, *bam = &_bam;
 
+  bam->decomp = parm->decomp;
   sam_start(bam,fid,buf,&(parm->beg));
 
   sam_getline(bam);
@@ -1132,6 +1145,7 @@ static void *check_thread(void *arg)
   if (parts == NULL)
     exit (1);
 
+  bam->decomp = parm->decomp;
   if (isbam)
     bam_start(bam,fid,buf,&(parm->beg));
   else
@@ -1284,6 +1298,7 @@ static void *output_thread(void *arg)
   if (ARROW)
     theR->arr = theR->seq + parm->maxbp;
 
+  bam->decomp = parm->decomp;
   if (isbam)
     bam_start(bam,fid,buf,&(parm->beg));
   else
@@ -1491,7 +1506,9 @@ int main(int argc, char* argv[])
         }
 
       for (i = 0; i < NTHREADS; i++)
-        parm[i].buf = bf + i*IO_BLOCK;
+        { parm[i].buf = bf + i*IO_BLOCK;
+          parm[i].decomp = libdeflate_alloc_decompressor();
+        }
 
       idout = fileno_unlocked(stdout);   //  Is the unlock helping?
     }
@@ -1759,6 +1776,8 @@ int main(int argc, char* argv[])
           free(fobj[f].parts);
         }
   
+      for (n = 0; n < NTHREADS; n++)
+        libdeflate_free_decompressor(parm[n].decomp);
       free(parm[0].out);
       free(parm[0].buf);
     }
