@@ -2,19 +2,17 @@
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Date: February 18-22, 2019
-### Last Update: August 25, 2019
+### Last Update: January 20, 2020
 
 <br>
 <br>
 
 # 0. Introduction
 
-VGP-Tools is a growing collection of tools that operate on all the forms of data involved in
-a DNA sequencing and assembly project, and a data format framework for all such data called
-VGP-Formats.  The specification of the content of the several types of data files involved, is a very simple ASCII format that is easy for both humans and programs to read and interpret.
-For efficiency, there is an indexedd and compressed binary representation of every file type that the tools operate upon, with a converter to and from the ASCII form when desired.
-The file format allows one to represent source data, process intermediates, and the ultimate reconstructed genome assemblies for a large-scale DNA sequencing project.
+VGP-Tools is a growing collection of tools designed to operate on all the forms of data involved
+in a DNA sequencing and assembly project.   The specification of the content of the several types of data files involved has a very simple ASCII format that is easy for both humans and programs to read and interpret.  Moreover, there is a corresponding compressed and indexed binary representation for each ASCII datum so that production VGP tools are very efficient in time and the size of the data files they manipulate.  A simple converter allows one to move between the ASCII and binary representations of data.
 
+The framework allows one to represent source data, process intermediates, and the ultimate reconstructed genome assemblies for a large-scale DNA sequencing project.
 There are six **primary file types**, one for each of *sequences*, *restriction maps*,
 *alignments*, *links*, *breaks*, and *lists*, that contain a collection of objects of a given type.  Each
 of these primary file types can be specialized as a **secondary file type** that ensures certain
@@ -54,8 +52,8 @@ or dataset2.pbr.
 Every VGP file begins with a header segment followed by a data segment.  Headers, relevant for all
 file types, are described in Chapter 1 following this introduction, and the encoding of the data
 in each file type is documented in a sub-chapter of Chapter 2.
-The formal definition of all currently valid specs is effectively defined by the code for the
-utility program **vgpvalidate** which validates the format of any given file, and which also
+The formal definition of all currently valid file types is effectively defined by the code for
+the utility program **vgpvalidate** which validates the format of any given file, and which also
 can optionally reconstruct a file's header segment given only the data part.
 
 The design of VGP formats is based on the following principles:
@@ -772,7 +770,15 @@ An alternative enabled by having proposed scaffolding operations in VGP formats 
 
 # 4. VGP Tool Manuals
 
-#### <code>4.0. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
+#### <code>4.0. vgpvalidate [-hw] [-o \<name>] [-t <3-code>] \<input:VGP-file></code>
+
+*To be written*
+
+#### <code>4.1. vgpview [-bhHuw] [-o \<name>] [-t <3-code>] [-i \<ranges>] \<input:VGP-file></code>
+
+*To be written*
+
+#### <code>4.2. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
 
 VGPzip compresseses the given file into a blocked gzip file with the name ```<file>.gz``` and
 produces an associated index in ```<file>.vzi``` if the -x option is *not* set.  The ```.gz``` file can be decompressed with ```gunzip``` just like any other gzip file.
@@ -783,22 +789,18 @@ just 2.25 minutes with the 6 cores on my new Mac (at the default compression lev
 
 The other distinguishing feature of ```VGPzip``` is the very large block size (```bgzip``` uses
 64KB blocks).  Our goal is to have a compressed file that can be operated on in several
-large pieces by parallel threads.  For this purpose, small blocks are just a nuisance and make
-the associated ```.vzi``` index excessively large.  All import tools in the VGP repertoire such as **VGPseq** below can perform parallel threaded processing on VGPzip'd files, and thus
-operate much more efficiently.
+large pieces by parallel threads.  For this purpose, small blocks are just a nuisance and would make the associated ```.vzi``` decompression index excessively large.  All import tools in the VGP repertoire such as **VGPseq** below can perform parallel threaded processing on VGPzip'd files, and thus operate much more efficiently.
 
-#### <code>4.1. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> [\<reverse:.fast[aq][.gz]></code>]
+#### <code>4.3. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> ...</code>
 
-VGPseq reads one or possibly two correlated, possibly compressed, fasta or fastq files and outputs the
-single file in .seq format and the file pair in .irp format to the standard output.
-If a pair of files is given then they must both be of the same type, .fasta or fastq, and they both must
-contain the same number of sequence entries.  The output pairs have Q-lines if .fastq is input and the -s
-option is not set, and do not otherwise.  It is preferrable that the inputs if compressed, were compressed
-with VGPzip, as otherwise a temporary uncompressed version of each input must be created in order to
-take advantage of parallel threads.
+VGPseq reads one or more, possibly compressed, fasta or fastq files and outputs a single file in .seq format to the standard output.  If more than one file is given then they must
+all be either .fasta or .fastq files, a mix is not allowed.
+The output has Q-lines if .fastq is input and the -s option is *not* set, and does not otherwise.  It is preferrable that the inputs if compressed, were compressed
+with VGPzip, as otherwise a temporary uncompressed version of each input must be created
+in order to take advantage of parallel threads.
 
 The file names given to VGPseq do not need to have a complete suffix designation, the
-program will find the appropriate extension.  That is, if a user which to refer to a
+program will find the appropriate extension.  That is, if a user wishes to refer to a
 file ```foo.fastq.gz``` then simply saying ```foo``` or ```foo.fastq``` on the command
 line will suffice.
 
@@ -807,17 +809,14 @@ with the -T parameter.
 
 The -v option asks VGPseq to output information on its progress to the standard error output.
 The -s option asks VGPseq to *not* output the quality values or Q-lines, if present, but just the
-forward and reverse sequences in S-lines.
+sequences in S-lines.
 The -g option asks VGPseq to group the data into lanes.  In this case the files must
 have been produced by standard Illumina software from their more basic .bcl files, and
 therefore the .fastq headers encode the instrument, flow cell, lane, etc. in fields
 between :'s where the data is in order of flow cell and lane.  VGPseq uses this
 information to group reads into lanes.
 
-VGPseq checks the syntax of the input files but does not verify that the DNA and QV
-strings are over the appropriate symbols.
-
-#### <code>4.2. VGPpacbio [-va] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> . . .</code>
+#### <code>4.4. VGPpacbio [-va] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> ...</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
 binary VGP .pbr file to
@@ -828,9 +827,10 @@ runs about 5.5 times faster than with only one.
 
 The -v option asks VGPpacbio to output information on its progress to the standard error output.
 The -a option asks VGPpacbio to  output the arrow information in N- and A-lines per read bundle,
-the default is to not output this information.  The reads are grouped into SMRT cells.
+the default is to not output this information.  The reads are grouped into SMRT cells where each
+input file is assumed to contain the data produced by a single cell.
 
-#### <code>4.3. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<source:.irp></code>
+#### <code>4.5. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<source:.irp></code>
 
 *Still under development but operational*
 
@@ -845,18 +845,16 @@ The -v option asks VGPcloud to output information on its progress to the standar
 The sorts of VGPcloud are threaded and the -T option specifies how many threads to use (4 by
 default).
 
-#### <code>4.4. VGPbionano [-v] \<source:.bnx></code>
+#### <code>4.6. VGPbionano [-v] \<source:.bnx></code>
 
 *Not yet.*
 
-#### <code>4.5. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db> . . .</code>
+#### <code>4.7. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db\></code>
 
 Dazz2pbr takes a Dazzler database of a Pacbio long read data set and outputs
-a compressed, binary encording of a VGO .pbr file to the standard output of its contents
-modulated by the option flags.
-As usual, suffixes are added as necessary to the command line arguments.  Moreover,
-the Dazzler '@' notation in file names is supported.  The -T argument specifies the
-number of threads to use.
+a compressed, binary encoding of a VGP .pbr file to the standard output whose contents
+are modulated by the option flags.
+As usual, suffixes are added as necessary to the command line arguments.   The -T argument specifies the number of threads to use.
 
 The -v option asks Dazz2pbr to output information on its progress to the standard error output.
 The -a option asks Dazz2pbr to output the arrow information in N- and A-lines per read bundle.
@@ -868,13 +866,13 @@ consideration all reads less than a given threshold length, and optionally to ta
 one (the longest) read from a given well.  This is the trimmed data set that is by default
 output by Dazz2pbr.
 
-#### <code>4.6. Dazz2sxs [-vidtg] [-T\<int(4)\>] \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> . . .</code>
+#### <code>4.8. Dazz2sxs [-vidtg] [-T\<int(4)\>] \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
 
-Dazz2sxs takes a Dazzler .las file encoding a collection of local alignments found by daligner
-and outputs an equivalent compressed, binary VGP .sxs file to the standard output.  To do so, it also needs .pbr
+Dazz2sxs takes one or more Dazzler .las file encoding a collection of local alignments found by daligner
+and outputs a single compressed, binary VGP .sxs file to the standard output.  To do so, it also needs .pbr
 files containing the A- and B-collections of reads that were compared, presumably produced
 by Dazz2pbr above.  If the comparison is symmetric then only one .pbr file need be given.
-As usual all .suffix extensions are auto-completed by the program as necessary. Moreover,
+As usual all suffix extensions are auto-completed by the program as necessary. Moreover,
 the Dazzler '@' notation in the .las file names is supported.
 
 The -v option asks Dazz2sxs to output information on its progress to the standard error output.
