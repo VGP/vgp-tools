@@ -1,3 +1,4 @@
+
 /*******************************************************************************************
  *
  *  Display a portion of the data-base and selected information in 1-code format.
@@ -12,18 +13,18 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <pthread.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "gene_core.h"
+#include "../Durbin/vgprd.h"
 
-#define HIDE_FILES
-
-#ifdef HIDE_FILES
 #define PATHSEP "/."
-#else
-#define PATHSEP "/"
-#endif
 
-static char *Usage = "[-aguU] <path:db|dam>";
+#define IO_BLOCK 10000000
+
+static char *Usage = "[-agu] [-T<int(4)>] <path:db>";
 
 
 /*******************************************************************************************
@@ -119,12 +120,13 @@ static DAZZ_ARROW *Arrow_Ptr;               //    Becomes invalid after closing
 
 static int Open_DB(char* path, DAZZ_DB *db)
 { DAZZ_DB dbcopy;
-  char   *root, *pwd, *bptr, *fptr, *cat;
+  char   *root, *pwd, *bptr, *fptr;
   int     nreads;
   FILE   *index, *dbvis, *bases;
   int     status, plen, isdam;
   int     part, cutoff, all;
   int     ufirst, tfirst, ulast, tlast;
+  char   *name;
 
   status = -1;
   dbcopy = *db;
@@ -154,13 +156,17 @@ static int Open_DB(char* path, DAZZ_DB *db)
   else
     part = 0;
 
+  name = Malloc(strlen(pwd)+strlen(root)+10,"Allocating name string");
+  if (name == NULL)
+    exit (1);
+
   if (isdam > 0)
-    cat = Catenate(pwd,"/",root,".dam");
+    sprintf(name,"%s/%s.dam",pwd,root);
   else
-    cat = Catenate(pwd,"/",root,".db");
-  if (cat == NULL)
+    sprintf(name,"%s/%s.db",pwd,root);
+  if (name == NULL)
     return (-1);
-  if ((dbvis = fopen(cat,"r")) == NULL)
+  if ((dbvis = fopen(name,"r")) == NULL)
     { if (isdam < 0)
         { fprintf(stderr,"%s: Could not open DB %s\n",Prog_Name,path);
           exit (1);
@@ -169,10 +175,10 @@ static int Open_DB(char* path, DAZZ_DB *db)
         { fprintf(stderr,"%s: Could not open DAM %s\n",Prog_Name,path);
           exit (1);
         }
-      cat = Catenate(pwd,"/",root,".dam");
-      if (cat == NULL)
+      sprintf(name,"%s/%s.dam",pwd,root);
+      if (name == NULL)
         return (-1);
-      if ((dbvis = fopen(cat,"r")) == NULL)
+      if ((dbvis = fopen(name,"r")) == NULL)
         { fprintf(stderr,"%s: Could not open %s as a DB or a DAM\n",Prog_Name,path);
           exit (1);
         }
@@ -181,8 +187,9 @@ static int Open_DB(char* path, DAZZ_DB *db)
   if (isdam < 0)
     isdam = 0;
 
-  if ((index = fopen(Catenate(pwd,PATHSEP,root,".idx"),"r")) == NULL)
-    { fprintf(stderr,"%s: Cannot open %s for reading\n",Prog_Name,Catenate(".",root,".idx",""));
+  sprintf(name,"%s/.%s.idx",pwd,root);
+  if ((index = fopen(name,"r")) == NULL)
+    { fprintf(stderr,"%s: Cannot open .%s.idx for reading\n",Prog_Name,root);
       exit (1);
     }
   if (fread(db,sizeof(DAZZ_DB),1,index) != 1)
@@ -274,6 +281,7 @@ static int Open_DB(char* path, DAZZ_DB *db)
       reads += 1;
 
       fseeko(index,sizeof(DAZZ_READ)*ufirst,SEEK_CUR);
+      if (fread(reads,sizeof(DAZZ_READ),nreads,index) != (size_t) nreads)
         { fprintf(stderr,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
           exit (1);
         }
@@ -296,12 +304,14 @@ static int Open_DB(char* path, DAZZ_DB *db)
   ((int *) (db->reads))[-2] = tlast - tfirst;
 
   db->nreads = nreads;
-  db->path   = Strdup(Catenate(pwd,PATHSEP,root,""),"Allocating Open_DB path");
+  sprintf(name,"%s/.%s",pwd,root);
+  db->path   = Strdup(name,"Allocating Open_DB path");
   if (db->path == NULL)
     exit (1);
-  bases = fopen(Catenate(db->path,"","",".bps"),"r");
+  sprintf(name,"%s/.%s.bps",pwd,root);
+  bases = fopen(name,"r");
   if (bases == NULL)
-    { fprintf(stderr,"%s: Cannot open %s for reading\n",Prog_Name,Catenate(db->path,".bps","",""));
+    { fprintf(stderr,"%s: Cannot open %s/.%s.bps for reading\n",Prog_Name,pwd,root);
       exit (1);
     }
   db->bases = (void *) bases;
@@ -312,6 +322,7 @@ static int Open_DB(char* path, DAZZ_DB *db)
   if (bptr != NULL)
     *bptr = '.';
 
+  free(name);
   free(pwd);
   free(root);
 
@@ -435,7 +446,7 @@ static char *New_Read_Buffer(DAZZ_DB *db)
   return (read+1);
 }
 
-static void Load_Read(DAZZ_DB *db, int i, char *read, int ascii)
+static void Load_Read(DAZZ_DB *db, int i, char *read)
 { FILE      *bases  = (FILE *) db->bases;
   int64      off;
   int        len, clen;
@@ -449,31 +460,9 @@ static void Load_Read(DAZZ_DB *db, int i, char *read, int ascii)
   if (db->loaded)
     { len = r[i].rlen;
       strncpy(read,(char *) bases + r[i].boff,len);
-      if (ascii == 0)
-        { if (*read < 4)
-            read[-1] = read[len] = 4;
-          else
-            { read[len] = '\0';
-              Number_Read(read);
-              read[-1] = 4;
-            }
-        }
-      else
-        { if (*read < 4)
-            { read[len] = 4;
-              if (ascii == 1)
-                Lower_Read(read);
-              else
-                Upper_Read(read);
-              read[-1] = '\0';
-            }
-          else
-            { read[len] = '\0';
-              if ((ascii == 1) != islower(*read))
-                Change_Read(read);
-            }
-          read[-1] = '\0';
-        }
+      read[len] = 4;
+      Lower_Read(read);
+      read[-1] = '\0';
       return;
     }
 
@@ -490,16 +479,8 @@ static void Load_Read(DAZZ_DB *db, int i, char *read, int ascii)
         } 
     }   
   Uncompress_Read(len,read);
-  if (ascii == 1)
-    { Lower_Read(read);
-      read[-1] = '\0';
-    } 
-  else if (ascii == 2)
-    { Upper_Read(read);
-      read[-1] = '\0';
-    } 
-  else
-    read[-1] = 4;
+  Lower_Read(read);
+  read[-1] = '\0';
 } 
 
 static void Open_Arrow(DAZZ_DB *db)
@@ -508,9 +489,14 @@ static void Open_Arrow(DAZZ_DB *db)
   FILE       *afile;
   DAZZ_READ  *reads;
   int         i, nreads;
+  char       *name;
 
   if (db->tracks != NULL && db->tracks->name == atrack_name)
     return;
+
+  name = Malloc(strlen(db->path)+10,"Allocating name string");
+  if (name == NULL)
+    exit (1);
 
   if ((db->allarr & DB_ARROW) == 0)
     { fprintf(stderr,"%s: The DB is not an Arrow database (Open_Arrow)\n",Prog_Name);
@@ -522,9 +508,10 @@ static void Open_Arrow(DAZZ_DB *db)
       exit (1);
     }
 
-  afile = fopen(Catenate(db->path,"","",".arw"),"r");
+  sprintf(name,"%s.arw",db->path);
+  afile = fopen(name,"r");
   if (afile == NULL)
-    { fprintf(stderr,"%s: Cannot open %s for reading\n",Prog_Name,Catenate(db->path,".arw","",""));
+    { fprintf(stderr,"%s: Cannot open %s.arw for reading\n",Prog_Name,db->path);
       exit (1);
     }
 
@@ -550,7 +537,7 @@ static void Open_Arrow(DAZZ_DB *db)
     avector[i] = reads[i].boff;
 }
 
-static int Load_Arrow(DAZZ_DB *db, int i, char *arrow, int ascii)
+static int Load_Arrow(DAZZ_DB *db, int i, char *arrow)
 { FILE      *afile;
   int64      off;
   int        len, clen;
@@ -583,49 +570,173 @@ static int Load_Arrow(DAZZ_DB *db, int i, char *arrow, int ascii)
         }
     }
   Uncompress_Read(len,arrow);
-  if (ascii == 1)
-    { Letter_Arrow(arrow);
-      arrow[-1] = '\0';
-    }
-  else
-    arrow[-1] = 4;
+  Letter_Arrow(arrow);
+  arrow[-1] = '\0';
   return (0);
 }
 
 
 /*******************************************************************************************
  *
- *  The main code
+ *  Data output thread
+ *
+ ********************************************************************************************/
+
+static int         DOARW, DOGRP, TRIM;
+static char      **fhead = NULL;
+static int        *findx = NULL;
+
+typedef struct
+  { VgpFile     *vf;       //  VgpFile for output
+    int          beg;      //  Range of reads to output
+    int          end;
+    char        *arg;
+  } Thread_Arg;
+
+  //  Output reads [beg,end) as per the options into the VgpFile for
+  //     the thread.
+
+static void *output_thread(void *arg)
+{ Thread_Arg *parm = (Thread_Arg *) arg;
+  VgpFile    *vf   = parm->vf;
+  int         beg  = parm->beg;
+  int         end  = parm->end;
+
+  DAZZ_DB    _db, *db = &_db;
+  DAZZ_READ  *reads;
+  char       *read, *arrow;
+  int         i;
+  int         map;
+
+  Open_DB(parm->arg,db);
+
+  if (DOARW)
+    Open_Arrow(db);
+
+  if (TRIM)
+    Trim_DB(db);
+
+  read = New_Read_Buffer(db);
+  if (DOARW)
+    arrow = New_Read_Buffer(db);
+  else
+    arrow = NULL;
+
+  map = -1;
+  while (findx[map+1] == 0)
+    map += 1;
+  while (beg > findx[map])
+    map += 1;
+  reads  = db->reads;
+
+  for (i = beg; i < end; i++)
+    { int         len;
+      DAZZ_READ  *r;
+
+      r   = reads + i;
+      len = r->rlen;
+
+      if (DOGRP && i == findx[map])
+        { map += 1;
+          vgpInt(vf,0) = 0;
+          vgpInt(vf,1) = strlen(fhead[map]);
+          vgpWriteLine(vf,'g',fhead[map]);
+        }
+
+      Load_Read(db,i,read);
+      if (DOARW)
+        Load_Arrow(db,i,arrow);
+
+      vgpInt(vf,0) = len;
+      vgpWriteLine(vf,'S',read);
+      
+      vgpInt(vf,0) = r->origin;
+      vgpInt(vf,1) = r->fpulse;
+      vgpInt(vf,2) = r->fpulse+len;
+      vgpReal(vf,3) = (r->flags & DB_QV) / 1000.;
+      vgpWriteLine(vf,'W',NULL);
+
+      if (DOARW)
+        { int   j, snr[4];
+          int64 big;
+
+          big = *((uint64 *) &(r->coff));
+          for (j = 0; j < 4; j++)
+            { snr[3-j] = (big & 0xffff);
+              big >>= 16;
+            }
+          vgpReal(vf,0) = snr[0] / 100.;
+          vgpReal(vf,1) = snr[1] / 100.;
+          vgpReal(vf,2) = snr[2] / 100.;
+          vgpReal(vf,3) = snr[3] / 100.;
+          vgpWriteLine(vf,'N',NULL);
+
+          vgpInt(vf,0) = len;
+          vgpWriteLine(vf,'A',arrow);
+        }
+    }
+
+  Close_DB(db);
+
+  return (NULL);
+}
+
+
+/*******************************************************************************************
+ *
+ *  Main
  *
  ********************************************************************************************/
 
 int main(int argc, char *argv[])
-{ DAZZ_DB    _db, *db = &_db;
-  int         Arrow_DB;
-  int         FirstRead;
-  int         maxgrp = 0;
-  int64      *gcount = NULL;
-
+{ int         hasArrow;
+  char       *command;
   int         nfiles;
-  char      **fhead = NULL;
-  int        *findx = NULL;
+  int64       nreads;
+  int         NTHREADS;
+  DAZZ_DB    _db, *db = &_db;
 
-  int         TRIM, UPPER;
-  int         DOARW, DOGRP;
+  //  Capture command line for provenance
+
+  { int   n, i;
+    char *c;
+
+    n = -1;
+    for (i = 1; i < argc; i++)
+      n += strlen(argv[i])+1;
+
+    command = Malloc(n+1,"Allocating command string");
+    if (command == NULL)
+      exit (1);
+
+    c = command;
+    if (argc >= 1)
+      { c += sprintf(c,"%s",argv[1]);
+        for (i = 2; i < argc; i++)
+          c += sprintf(c," %s",argv[i]);
+      }
+    *c = '\0';
+  }
 
   //  Process arguments
 
   { int  i, j, k;
     int  flags[128];
+    char *eptr;
 
     ARG_INIT("Dazz2pbr")
+
+    NTHREADS = 4;
 
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("aguU")
+            ARG_FLAGS("agu")
+            break;
+          case 'T':
+            ARG_POSITIVE(NTHREADS,"Number of threads")
             break;
         }
       else
@@ -633,7 +744,6 @@ int main(int argc, char *argv[])
     argc = j;
 
     TRIM  = 1-flags['u'];
-    UPPER = flags['U'];
     DOARW = flags['a'];
     DOGRP = flags['g'];
 
@@ -647,7 +757,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"      -g: g # # string - cell size and name\n");
         fprintf(stderr,"\n");
         fprintf(stderr,"      -u: Export untrimmed DB (default is trimmed DB).\n");
-        fprintf(stderr,"      -U: Output base pairs in upper case letters\n");
+        fprintf(stderr,"      -T: Number of threads to use\n");
         exit (1);
       }
   }
@@ -664,9 +774,9 @@ int main(int argc, char *argv[])
         exit (1);
       }
 
-    Arrow_DB = ((db->allarr & DB_ARROW) != 0);
+    hasArrow = ((db->allarr & DB_ARROW) != 0);
     if (DOARW)
-      { if (!Arrow_DB)
+      { if (!hasArrow)
           { fprintf(stderr,"%s: -a option set but no Arrow data in DB\n",Prog_Name);
             exit (1);
           }
@@ -678,7 +788,7 @@ int main(int argc, char *argv[])
   if (DOARW)
     Open_Arrow(db);
 
-  //  If get prolog and file names and index ranges from the .db or .dam file 
+  //  Get SMRT cell names from the .db prolog
 
   { char *pwd, *root;
     FILE *dstub;
@@ -746,235 +856,54 @@ int main(int argc, char *argv[])
               }
             findx[i] = nid;
           }
+        nreads = nid;
       }
 
     else if (db->part > 0)
       { for (i = 0; i < nfiles; i++)
           findx[i] -= db->ufirst;
-      }
-  }
-
-  if (TRIM)
-    { Trim_DB(db);
-      FirstRead = db->tfirst;
-    }
-  else
-    FirstRead = db->ufirst;
-
-  //  Scan to count the size of things
-
-  { DAZZ_READ  *reads;
-    int         i, map;
-    int64       noreads, ngroup;
-    int64       seqmax, seqtot;
-    int64       gmxread, gmxtot;
-    int64       gtotc, gmaxc;
-    int64       gread, gtotbp;
-
-    map    = 0;
-    reads  = db->reads;
-
-    noreads = 0;
-    seqmax  = 0;
-    seqtot  = 0;
-    ngroup  = 0;
-    gmxread = 0;
-    gmxtot  = 0;
-    gtotc   = 0;
-    gmaxc   = 0;
-
-    gread   = 0;
-    gtotbp  = 0;
-    map     = -1;
-
-    for (i = 0; i < db->nreads; i++)
-      { int         len;
-        DAZZ_READ  *r;
-
-        r   = reads + i;
-        len = r->rlen;
-
-        noreads += 1;
-        if (len > seqmax)
-          seqmax = len;
-        seqtot += len;
-
-        if (DOGRP && i+FirstRead >= findx[map])
-          { if (gread > 0)
-              { if (gread > gmxread)
-                  gmxread = gread;
-                if (gtotbp > gmxtot)
-                  gmxtot = gtotbp;
-                if (ngroup >= maxgrp)
-                  { maxgrp = 1.2*ngroup + 100;
-                    gcount = Realloc(gcount,sizeof(int64)*maxgrp,"Allocating count vector");
-                  }
-                gcount[ngroup++] = gread;
-              }
-
-            gread  = 1;
-            gtotbp = len;
-            map   += 1;
-
-            len = strlen(fhead[map]);
-            gtotc += len;
-            if (len > gmaxc)
-              gmaxc = len; 
-          }
-        else
-          { gread  += 1;
-            gtotbp += len;
-          }
-      }
-    if (gread > 0)
-      { if (gread > gmxread)
-          gmxread = gread;
-        if (gtotbp > gmxtot)
-          gmxtot = gtotbp;
-        if (ngroup >= maxgrp)
-          { maxgrp = 1.2*ngroup + 100;
-            gcount = Realloc(gcount,sizeof(int64)*maxgrp,"Allocating count vector");
-          }
-        gcount[ngroup++] = gread;
+        nreads = db->nreads;
       }
 
-    //  Output file type and provenance
-
-    { int    clen, optl;
-      char   date[20];
-      time_t seconds;
-
-      printf("1 3 seq 1 0\n");
-      printf("2 3 pbr\n");
-
-      optl = (1-TRIM) + UPPER + DOGRP + DOARW;
-      if (optl == 0)
-        clen = -1;
-      else
-        clen = optl+1;
-      for (i = 1; i < argc; i++)
-        clen += strlen(argv[i])+1;
-
-      printf("! 8 Dazz2pbr 3 1.0 %d",clen);
-      if (optl > 0)
-        { printf(" -");
-          if (DOARW)
-            printf("a");
-          if (DOGRP)
-            printf("g");
-          if (!TRIM)
-            printf("u");
-          if (UPPER)
-            printf("U");
-        }
-      for (i = 1; i < argc; i++)
-        printf(" %s",argv[i]);
-      seconds = time(NULL);
-      strftime(date,20,"%F_%T",localtime(&seconds));
-      printf(" 19 %s\n",date);
-
-      if (DOGRP)
-        printf("# g %lld\n",ngroup);
-      printf("# S %lld\n",noreads);
-      printf("# W %lld\n",noreads);
-      if (DOARW)
-        { printf("# A %lld\n",noreads);
-          printf("# N %lld\n",noreads);
-        }
-
-      if (DOGRP)
-        printf("+ g %lld\n",gtotc);
-      printf("+ S %lld\n",seqtot);
-      if (DOARW)
-        printf("+ A %lld\n",seqtot);
-
-      if (DOGRP)
-        printf("@ g %lld\n",gmaxc);
-      printf("@ S %lld\n",seqmax);
-      if (DOARW)
-        printf("@ A %lld\n",seqmax);
-
-      if (DOGRP)
-        { printf("%% g # S %lld\n",gmxread);
-          printf("%% g # W %lld\n",gmxread);
-          if (DOARW)
-            printf("%% g # A %lld\n",gmxread);
-          printf("%% g + S %lld\n",gmxtot);
-          if (DOARW)
-            printf("%% g + A %lld\n",gmxtot);
-        }
-    }
-  }
-
-  //  Display each read (and/or QV streams) in the active DB according to the
-  //    range pairs in pts[0..reps) and according to the display options.
-
-  { DAZZ_READ  *reads;
-    char       *read, *arrow;
-    int         i;
-    int         map, ngroup;
-
-    read = New_Read_Buffer(db);
-    if (DOARW)
-      arrow = New_Read_Buffer(db);
     else
-      arrow = NULL;
-    UPPER += 1;
-
-    map    = -1;
-    ngroup = 0;
-    reads  = db->reads;
-
-    for (i = 0; i < db->nreads; i++)
-      { int         len;
-        int         flags, qv;
-        DAZZ_READ  *r;
-
-        r   = reads + i;
-        len = r->rlen;
-        flags = r->flags;
-        qv    = (flags & DB_QV);
-
-        if (DOGRP && i+FirstRead >= findx[map])
-          { printf("g %lld %ld %s\n",gcount[ngroup++],strlen(fhead[map+1]),fhead[map+1]);
-            map += 1;
-          }
-
-        Load_Read(db,i,read,UPPER);
-        if (DOARW)
-          Load_Arrow(db,i,arrow,1);
-
-        printf("S %d ",len);
-        printf("%.*s\n",len,read);
-        printf("W %d %d %d 0.%03d\n",r->origin,r->fpulse,r->fpulse+len,qv);
-
-        if (DOARW)
-          { int   j, snr[4];
-            int64 big;
-
-            big = *((uint64 *) &(r->coff));
-            for (j = 0; j < 4; j++)
-              { snr[3-j] = (big & 0xffff);
-                big    >>= 16;
-              }
-            printf("N %d %d %d %d\n",snr[0],snr[1],snr[2],snr[3]);
-            printf("A %d ",len);
-            printf("%.*s\n",len,arrow);
-          }
-      }
+      nreads = db->nreads;
   }
 
-  fclose(stdout);
+  Close_DB(db);
 
-  { int i;
+  //  Setup a VgpFile for each thread, put the header in the first one
+
+  { VgpFile   *vf;
+    Thread_Arg parm[NTHREADS];
+    pthread_t  threads[NTHREADS];
+    int        i;
+
+    vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
+    vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+    vgpWriteHeader(vf);
+
+    for (i = 0; i < NTHREADS; i++)
+      { parm[i].vf = vf+i;
+        parm[i].beg = (nreads * i) / NTHREADS;
+        parm[i].end = (nreads * (i+1)) / NTHREADS;
+        parm[i].arg = argv[1];
+      }
+
+    //  Generate the data lines in parallel threads
+
+    for (i = 0; i < NTHREADS; i++)
+      pthread_create(threads+i,NULL,output_thread,parm+i);
+
+    for (i = 0; i < NTHREADS; i++)
+      pthread_join(threads[i],NULL);
+
+    vgpFileClose(vf);
 
     for (i = 0; i < nfiles; i++)
       free(fhead[i]);
     free(fhead);
     free(findx-1);
   }
-
-  Close_DB(db);
 
   exit (0);
 }

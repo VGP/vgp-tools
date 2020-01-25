@@ -102,7 +102,7 @@ int main (int argc, char **argv)
   
   if (argc != 1) die ("can currently only take one input file") ;
 
-  VgpFile *vfIn = vgpFileOpenRead (*argv, fileType) ; /* reads the header */
+  VgpFile *vfIn = vgpFileOpenRead (*argv, fileType, 1) ; /* reads the header */
   if (!vfIn) die ("failed to open vgp file %s", *argv) ;
   
   if (isUsage)
@@ -132,7 +132,7 @@ int main (int argc, char **argv)
 	if (usage[i]) printf ("usage line type %c bytes %lld\n", (char)i, usage[i]) ;
      }
   else
-    { VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, isBinary) ;
+    { VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, FALSE, isBinary, 1) ;
       if (!vfOut) die ("failed to open output file %s", outFileName) ;
 
       if (isHeaderOnly)
@@ -152,7 +152,7 @@ int main (int argc, char **argv)
 		  if (!vgpReadLine (vfIn)) die ("can't read object %lld", objList->i0) ;
 		  for (i = objList->i0 ; i < objList->iN ; ) // conditional increment end of loop
 		    { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
-		      vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
+		      vgpWriteLine (vfOut, vfIn->lineType, NULL) ;
 		      if (!vgpReadLine (vfIn)) break ;
 		      if (vfIn->lineType == vfIn->objectType) ++i ;
 		    }
@@ -162,11 +162,11 @@ int main (int argc, char **argv)
 	  else
 	    while (vgpReadLine (vfIn))
 	      { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
-		vgpWriteLine (vfOut, vfIn->lineType, vfIn->lineInfo[vfIn->lineType]->buffer) ;
+		vgpWriteLine (vfOut, vfIn->lineType, NULL) ;
 	      }
 	}
       
-      vgpClose (vfOut) ;
+      vgpFileClose (vfOut) ;
     }
 
   timeTotal (stderr) ;

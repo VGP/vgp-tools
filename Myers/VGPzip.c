@@ -109,7 +109,6 @@ int main(int argc, char *argv[])
     if (argc != 2)
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
-        fprintf(stderr,"      -v: Verbose mode, show progress as proceed.\n");
         fprintf(stderr,"      -x: Do not make an index file.\n");
         fprintf(stderr,"      -T: Number of threads to use\n");
         fprintf(stderr,"      -C: Compression level in [0,9]\n");

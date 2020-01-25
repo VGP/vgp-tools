@@ -9,9 +9,12 @@
 
 # 0. Introduction
 
-VGP-Tools is a collection of tools that operate on DNA sequencing data encoded in a collection
-of file formats called collectively VGP-Formats.  The encodings include descriptions of source
-data, process intermediates, and the ultimate reconstructed genome assemblies.
+VGP-Tools is a growing collection of tools that operate on all the forms of data involved in
+a DNA sequencing and assembly project, and a data format framework for all such data called
+VGP-Formats.  The specification of the content of the several types of data files involved, is a very simple ASCII format that is easy for both humans and programs to read and interpret.
+For efficiency, there is an indexedd and compressed binary representation of every file type that the tools operate upon, with a converter to and from the ASCII form when desired.
+The file format allows one to represent source data, process intermediates, and the ultimate reconstructed genome assemblies for a large-scale DNA sequencing project.
+
 There are six **primary file types**, one for each of *sequences*, *restriction maps*,
 *alignments*, *links*, *breaks*, and *lists*, that contain a collection of objects of a given type.  Each
 of these primary file types can be specialized as a **secondary file type** that ensures certain
@@ -83,7 +86,7 @@ object of a given type is referred to by the number n in any future context with
 where each tool application is described by its name, version number, command line applied,
 and date & time performed. 
 
-Syntactically, a VGP formatted file should be readable by a simple parser that can
+Syntactically, an ASCII VGP file should be readable by a simple parser that can
 (a) read the next integer, (b) read the next real number, (c) read the next n symbols, and
 (d) skip to the next line, where each item can begin with single white space character.
 Moreover, any program reading in VGP data should never require dynamic memory
@@ -162,6 +165,7 @@ is defined by the rule:
 
 The first line of any header must be the primary file type declaration that has
 the synatx:
+
 ```
     <version_header> = 1 <string:file_type> <int:major> <int:minor>
 ```
@@ -170,12 +174,14 @@ where the initial ```1``` indicates that this is a "1-code" file (as well as thi
 and ```<file_type>``` is one of the five 3-letter file suffixes given at the start.
 
 The initial header line can be followed by an optional subtype line
+
 ```
     <subtype_header> = 2 <string:file_subtype>
 ```
 where now file type is one of the suffixes above for a secondary file type.
 
 Next there are three header line types - #, +, and @ - that allow one to specify the number, total size, and maximum size of objects across a file.  These all have the syntax:
+
 ```
     <size_header> = [#+@] <symbol:S> <int>
 ```
@@ -185,7 +191,7 @@ sites, a +-line tells you the total number of items in all the lists in the file
 e.g. "<code>+ S 26</code>" in the example above indicates that altogether the sequences in the
 file total 26 bases.  Similarly, an @-line indicates the length of the largest list that
 occurs in any given line of the specified type.
-These ``limit'' lines are only present for line types that occur in the body and not lines
+These "limit" lines are only present for line types that occur in the body and not lines
 that occur in the header itself.  In almost all cases there is only one list object
 per line type, however, a notable exception is the restriction site line (see 2.2), which has
 a variable number of strings in a line.  In such cases, ```+``` is the sum of all of the list
@@ -199,6 +205,7 @@ For a group, one would like to know the maximum number of items of a given type 
 and the maximum size needed to contain all the list objects occurring in any group.  So in the
 header, a ```%``` designator indicates the maximum number of objects or maximum total size of
 list objects within any given group type.  The syntax for these lines is:  
+
 ```
     <group_header> = % <symbol:g> [#+] <symbol:S> <int>
 ```
@@ -209,7 +216,7 @@ Another important header line type indicates that references in this file are ma
 in another file. This has the syntax:
 
 ```
-    <reference_header> = '<' <string:file_name> <int:nx>
+    <reference_header> = < <string:file_name> <int:nx>
 ```
 All the objects (all of the same type) in the specified file are available and
 and ```nx``` indicates the number of these items in the file (hence
@@ -219,8 +226,9 @@ to sequence objects designated by S-lines in another file.
 A related concept is to refer to another file upon which the objects in the current file depend.
 We denote these with a '>'-line that has the opposite direction to the '<' of the reference line
 above.
+
 ```
-    <forward_header> = '>' <string:file_name>
+    <forward_header> = > <string:file_name>
 ```
 In this case there is no need to indicate the number of objects in the file, since the current
 file will not refer to them.
@@ -229,14 +237,16 @@ The final header line type is the provenance or !-line that records a processing
 was involved in producing the current file.  Each line contains four strings giving (a) the
 program name, (b) the version of that program as a string, (c) the command line that was executed,
 and (d) the date and time it was run.
+
 ```
-    <provenance_step> = <string:name> <string:version> <string:command> <string:date>
+    <provenance_step> = ! <string:name> <string:version> <string:command> <string:date>
 ```
 
 In summary, every VGP formatted file begins with a header.  Every header starts with a version
 line optionally followed by a subtype line.  Then ensue a number of size lines for every relevant
 data line of the primary file type.  An finally at the end, any relevant reference-, forward-
 and provenance lines.  In a rule:
+
 ```
     <header> = <version_header> [<subtype_header>] (<size_header>|<group_header>)+
                    (<reference_header>|<forward_header>|<provenance_step>)+
@@ -290,6 +300,7 @@ for read groups in primary Illumina data and for read clouds in 10X Genomics dat
 latter case the group_name field is the barcode sequence defining the cloud.
 
 The syntax of the data portion of a .seq-file can be summarized as follows:
+
 ```
   <seq_data>  = (<g-line> <seq_datum>^ng) + | <seq_datum> +
   <seq_datum> = <P-line> (<S-line> | <S-line> <Q-line>)^2 | <S-line> [<Q-line>]
@@ -301,7 +312,7 @@ We introduce the 4 secondary specializations of sequence files below.
 This subtype of .seq-files requires that all sequences and their associated QV's if present
 are organized in read-pairs with P-lines.  If group lines are present then they should
 correspond to sequencing lanes or the equivalent, as in SAM read groups.  For these files,
-#S = 2 #P and #Q = #S or #Q = 0.  See the documentation of **VGPseq** in Chapter 4 for an example
+\#S = 2 #P and #Q = #S or #Q = 0.  See the documentation of **VGPseq** in Chapter 4 for an example
 of a simple tool that can produce a .irp file from a pair of possibly gzip'd .fasta or .fastq files.
 
 ### 2.1.2. 10X Genomics read clouds, .10x
@@ -320,6 +331,7 @@ Pacific Biosciences.  P- and Q-lines do not occur and the S-lines are grouped ac
 SMRT cell that produced them, where the group name is the designation for
 the given cell.  Each S-line must have accompanying well, pulse, and score information encoded in
 an ensuing W-line with the following syntax:
+
 ```
   W <int:well> <int:1st_pulse> <int:last_pulse> <real:score>    read well, pulse range, and score
 ```
@@ -329,6 +341,7 @@ There can optionally be two additional lines giving the channel SNR and pulse wi
 information needed by the consensus tool **Arrow**.  This information has been found by the
 Pacbio software team to be the most informative indicators of read quality and could potentially
 be used by a custom consensus or polishing algorithm.
+
 ```
   N <real:A> <real:C> <real:G> <real:T>   SNR in each base channel for read
   A <string>                              capped pulse widths
@@ -341,6 +354,7 @@ units long is almost certainly a good call or a homopolymer run.  The A string m
 same length as the S string for a given read .
 
 The syntax of a sequence datum/object for .pbr-files is as follows:
+
 ```
   <seq_datum> = <S-line> <W-line> [ <N-line> <A-line> ]
 ```
@@ -369,7 +383,7 @@ This file type encodes restriction maps, potentially with multiple enzymes with
 distinct recognition sites. 
 
 ```
-  r <int:nr> <int:s> <string:site>^s the next nr maps are over the set of s recognition sites listed
+  r <int:nr> <int:s> <string:site>^s the next nr maps are over the s recognition sites listed
   R <int:len> <int:n> <int>^n        length of source seq. and list of site locations (in bp's)
   E <int:n> <int:[1,s]>^n            list of corresponding enzyme type per site (from 1..s)
 ```
@@ -384,6 +398,7 @@ recognition sites for its r-group.  The list length of the E-line, if present, m
 be the same as the R-line it is associated with.
 
 The syntax of the data portion of a .rmp-file can be summarized as follows:
+
 ```
   <rm_data>  = (<r-line> <rm_daumt>^nr )+
   <rm_datum> = <R-line> (<E-line> if s > 1)
@@ -442,6 +457,7 @@ typical in the first step of assembly.
 ```
 The series of alignments in the data segment are encoded with the following lines where
 only the initial A-line is mandatory:
+
 ```
   A <int:a> <int:b>                       indexes of aligned sequences
   I <int:as> <int:ae> <int:alen>
@@ -522,6 +538,7 @@ A-object trace points to occur at every coordinate that is 0 (modulo t) for some
 For the B-partition one can more tersely encode the distance between the trace-points rather
 than their absolute location.  This is encoded in specialized T- and W-lines with the syntax
 below.
+
 ```
   T <int:t>                             globally set implicit trace points in a
   W <int:u+1> <int>^u+1                 list of trace point spacing in b
@@ -591,8 +608,8 @@ putative joins to create scaffolds (see .scf file type below).
 
 J <int:seq_a> <int:pos_a> [se] <int:seq_b> <int:pos_b> [se]   potential join link
 Q <int:Phred_confidence>                                      score of confidence in the join
-X <int:k> <int:n> <int:a>^n                                   source k alignment objects evidencing the join
-G <int:mean> <int:std. deviation>                             mean & standard deviation of gap estimate
+X <int:k> <int:n> <int:a>^n                    source k alignment objects evidencing the join
+G <int:mean> <int:std. deviation>              mean & standard deviation of gap estimate
 ```
 A J-line encodes a possible join between two contig sequences.
 It asserts that there is evidence that the coordinate ```pos_a``` on sequence ```seq_a```
@@ -630,7 +647,7 @@ collectively "link" files.  A .brk file consists of all the same lines as a .jns
 that J-lines are replaced by B-lines, and G-lines do not occur.
 
 ```
-B <int:seq> <int:start> <int:end>                             potential break in contig between start and end
+B <int:seq> <int:start> <int:end>         potential break in contig between start and end
 ```
 
 A B-line explicitly indicates a potential breaks.  The meaning is that there is evidence that
@@ -757,20 +774,17 @@ An alternative enabled by having proposed scaffolding operations in VGP formats 
 
 #### <code>4.0. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
 
-VGPzip compresses the given file into a blocked gzip file with the name ```<file>.gz``` and
-associate index in ```<file>.vzi``` if the -x option is *not* set.  The ```.gz``` file can be
-decompressed with ```gunzip``` just like any other gzip file.
-The file is compressed in 10MB blocks save for the
-last.  This program is like ```bgzip``` except that it parallelizes the compression with threads,
-either 4 by default or the number requested by the ```-T``` option.  This saves a great deal of
-waiting around: compressing a 40GB file with ```gzip``` takes over an hour, but VGPzip takes just
-11 minutes with the 6 cores on my new Mac.
+VGPzip compresseses the given file into a blocked gzip file with the name ```<file>.gz``` and
+produces an associated index in ```<file>.vzi``` if the -x option is *not* set.  The ```.gz``` file can be decompressed with ```gunzip``` just like any other gzip file.
+The file is compressed in 10MB blocks save for the last.   This program is like ```bgzip``` except that it parallelizes the compression with threads,
+either 4 by default or the number requested by the ```-T``` option, and employes the much speedier LIBDEFLATE library as opposed to zlib.  This saves a great deal of
+waiting around: compressing a 35GB file with ```gzip``` takes over an hour, but VGPzip takes
+just 2.25 minutes with the 6 cores on my new Mac (at the default compression levels).
 
 The other distinguishing feature of ```VGPzip``` is the very large block size (```bgzip``` uses
-64KB blocks).  Our goal is to have a compressed file that can be operated on several
+64KB blocks).  Our goal is to have a compressed file that can be operated on in several
 large pieces by parallel threads.  For this purpose, small blocks are just a nuisance and make
-the associated ```.vzi``` index excessively large.  Various tools in the VGP repertoire are
-such as **VGPseq** below can perform parallel threaded processing on VGPzip'd files, and thus
+the associated ```.vzi``` index excessively large.  All import tools in the VGP repertoire such as **VGPseq** below can perform parallel threaded processing on VGPzip'd files, and thus
 operate much more efficiently.
 
 #### <code>4.1. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> [\<reverse:.fast[aq][.gz]></code>]
@@ -803,9 +817,10 @@ information to group reads into lanes.
 VGPseq checks the syntax of the input files but does not verify that the DNA and QV
 strings are over the appropriate symbols.
 
-#### <code>4.2. VGPpacbio [-vaU] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> . . .</code>
+#### <code>4.2. VGPpacbio [-va] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> . . .</code>
 
-VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a .pbr file to
+VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
+binary VGP .pbr file to
 standard output.  As is typical for Myers' tools, the suffixes may be dropped on the command
 line and the tool will find and add them.  The program is threaded, by default with 4 threads,
 but the number can be explicitly set with the -T option.  For example, with six threads the program
@@ -813,10 +828,9 @@ runs about 5.5 times faster than with only one.
 
 The -v option asks VGPpacbio to output information on its progress to the standard error output.
 The -a option asks VGPpacbio to  output the arrow information in N- and A-lines per read bundle,
-the default is to not output this information.  The -U option requests that the DNA sequences
-are in upper case (the default is lower case).  The reads are grouped into SMRT cells.
+the default is to not output this information.  The reads are grouped into SMRT cells.
 
-#### <code>4.3. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<source:.irp[.gz]></code>
+#### <code>4.3. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<source:.irp></code>
 
 *Still under development but operational*
 
@@ -835,12 +849,14 @@ default).
 
 *Not yet.*
 
-#### <code>4.5. Dazz2pbr [-vaguU] \<dazzler:.db> . . .</code>
+#### <code>4.5. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db> . . .</code>
 
-Dazz2pbr takes a Dazzler suite database of a Pacbio long read data set and outputs
-a .pbr file to the standard output of its contents modulated by the option flags.
+Dazz2pbr takes a Dazzler database of a Pacbio long read data set and outputs
+a compressed, binary encording of a VGO .pbr file to the standard output of its contents
+modulated by the option flags.
 As usual, suffixes are added as necessary to the command line arguments.  Moreover,
-the Dazzler '@' notation in file names is supported.
+the Dazzler '@' notation in file names is supported.  The -T argument specifies the
+number of threads to use.
 
 The -v option asks Dazz2pbr to output information on its progress to the standard error output.
 The -a option asks Dazz2pbr to output the arrow information in N- and A-lines per read bundle.
@@ -850,14 +866,13 @@ of the trimmed data set.  The Dazzler suite encodes the set of all reads output 
 instrument for a given project, but then allows a user to effectively remove from further
 consideration all reads less than a given threshold length, and optionally to take only
 one (the longest) read from a given well.  This is the trimmed data set that is by default
-output by Dazz2pbr.  Lastly, the -U option asks Dazz2pbr to output the read sequences in
-upper case, rather than the default lower case.
+output by Dazz2pbr.
 
-#### <code>4.6. Dazz2sxs [-vidtg] \<src1:.pbr[.gz]> [\<src2:.pbr[.gz]>] <dazzler:.las> . . .</code>
+#### <code>4.6. Dazz2sxs [-vidtg] [-T\<int(4)\>] \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> . . .</code>
 
 Dazz2sxs takes a Dazzler .las file encoding a collection of local alignments found by daligner
-and output an equivalent .sxs file to the standard output.  To do so, it also needs .pbr
-files containing the A- and B-collections of reads that were comparied, presumably produced
+and outputs an equivalent compressed, binary VGP .sxs file to the standard output.  To do so, it also needs .pbr
+files containing the A- and B-collections of reads that were compared, presumably produced
 by Dazz2pbr above.  If the comparison is symmetric then only one .pbr file need be given.
 As usual all .suffix extensions are auto-completed by the program as necessary. Moreover,
 the Dazzler '@' notation in the .las file names is supported.
@@ -868,3 +883,9 @@ The -d option asks Dazz2sxs to output D-lines.
 The -t option asks Dazz2sxs to output alignment information using T-, R- and Q-lines.
 The -g option asks Dazz2sxs to output the alignments grouped according to the A-read
 (facilitating the Dazzler concept of a read pile).
+
+
+
+
+
+

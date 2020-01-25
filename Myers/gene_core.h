@@ -88,14 +88,13 @@ void *Malloc(int64 size, char *mesg);                    //  Guarded versions of
 void *Realloc(void *object, int64 size, char *mesg);     //  and strdup, that output "mesg" to
 char *Strdup(char *string, char *mesg);                  //  stderr if out of memory
 
-FILE *Fzopen(char *path, char *mode);    // Open file path for "mode", will directly read .gz
 char *PathTo(char *path);                // Return path portion of file name "path"
 char *Root(char *path, char *suffix);    // Return the root name, excluding suffix, of "path"
 
 #define OPEN(arg,pwd,root,input,suffix,nsuf)                    \
   for (i = 0; i < nsuf; i++)                                    \
     { root  = Root(arg,suffix[i]);                              \
-      input = Fzopen(Catenate(pwd,"/",root,suffix[i]),"r");     \
+      input = fopen(Catenate(pwd,"/",root,suffix[i]),"r");      \
       if (input != NULL) break;                                 \
       free(root);                                               \
     }

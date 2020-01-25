@@ -14,23 +14,53 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <zlib.h>
 #include <time.h>
 #include <limits.h>
 
 #include "gene_core.h"
+#include "../Durbin/vgprd.h"
+
+#define  DEBUG_FIND
+#undef  DEBUG_OUT
+
+#define IO_BLOCK  100000
+
+static int     VERBOSE;
+static int     NTHREADS;
+static int     DOGROUP;
+static int     DOCOORD;
+static int     DODIFF;
+static int     DOTRACE; 
+
+static int     NREAD1;
+static int     NREAD2;
+static int     RMAX1;
+static int     RMAX2;
+static int    *RLEN1;
+static int    *RLEN2;
+
+static int     TSPACE;
+static int     TBYTES;
 
 static char *Usage =
-    " [-vidtg] <src1:.pbr[.gz]> [<src2:.pbr[.gz]>] <align:las> ...";
+    " [-vidtg] [-T<int(4)>] <src1:.pbr> [<src2:.pbr>] <align:las> ...";
+
+typedef struct
+  { char      *fname;   //  Full path name of file
+    int64      fsize;   //  size of file
+  } File_Object;
 
 
-/****************************************************************************************\
-*                                                                                        *
-*  Daligner codes needed to make this module stand alone                                 *
-*                                                                                        *
-\****************************************************************************************/
+/****************************************************************************************
+ *                                                                                      
+ *  Daligner codes needed to make this module stand alone                               
+ *                                                                                      
+ ****************************************************************************************/
 
 #define TRACE_XOVR  125
 #define BLOCK_SYMBOL '@'
@@ -54,31 +84,42 @@ typedef struct {
 } Overlap;
 
 static int64 PtrSize   = sizeof(void *);
+static int64 OvlSize   = sizeof(Overlap);
 static int64 OvlIOSize = sizeof(Overlap) - sizeof(void *);
 
-static int Read_Overlap(FILE *input, Overlap *ovl)
+static int64 Read_Overlap(FILE *input, Overlap *ovl)
 { if (fread( ((char *) ovl) + PtrSize, OvlIOSize, 1, input) != 1)
-    return (1);
-  return (0);
+    return (-1);
+  return (OvlIOSize);
 }
 
-static int Read_Trace(FILE *input, Overlap *ovl, int tbytes)
+static int64 Read_Trace(FILE *input, Overlap *ovl, int tbytes)
 { if (tbytes > 0 && ovl->path.tlen > 0)
     { if (fread(ovl->path.trace, tbytes*ovl->path.tlen, 1, input) != 1)
-        return (1);
+        return (-1);
     }
-  return (0);
+  return (tbytes*ovl->path.tlen);
 }
 
-void Decompress_TraceTo16(Overlap *ovl)
+void Decompress_Trace8(Overlap *ovl, int64 *bdels, int64 *diffs)
+{ uint8  *t8  = (uint8 *) ovl->path.trace;
+  int     i, j;
+
+  for (i = j = 0; j < ovl->path.tlen; j += 2, i += 1)
+    { diffs[i] = t8[j];
+      bdels[i] = t8[j+1];
+    }
+}
+
+void Decompress_Trace16(Overlap *ovl, int64 *bdels, int64 *diffs)
 { uint16 *t16 = (uint16 *) ovl->path.trace;
-  uint8  *t8  = (uint8  *) ovl->path.trace;
-  int     j;
+  int     i, j;
 
-  for (j = ovl->path.tlen-1; j >= 0; j--)
-    t16[j] = t8[j];
+  for (i = j = 0; j < ovl->path.tlen; j += 2, i += 1)
+    { diffs[i] = t16[j];
+      bdels[i] = t16[j+1];
+    }
 }
-
 
 typedef struct
   { int first, last, next;
@@ -177,13 +218,14 @@ FILE *Next_Block_Arg(Block_Looper *parse)
   return (input);
 }
 
-static char *Block_Arg_Root(Block_Looper *parse)
-{ char *name;
+static char *Block_Arg_Name(Block_Looper *parse)
+{ char *name, *disp;
 
   if (parse->next < 0)
-    name = parse->root;
+    disp = parse->root;
   else
-    name = Numbered_Suffix(parse->root,parse->next,parse->ppnt);
+    disp = Numbered_Suffix(parse->root,parse->next,parse->ppnt);
+  name = Catenate(parse->pwd,"/",disp,".las");
   return (Strdup(name,"Allocating block root"));
 }
 
@@ -195,88 +237,370 @@ static void Free_Block_Arg(Block_Looper *parse)
 }
 
 
-/****************************************************************************************\
-*                                                                                        *
-*  Main code for the program proper                                                      *
-*                                                                                        *
-\****************************************************************************************/
+/****************************************************************************************
+ *                                                                                        
+ *  Code for creating a read length vector                                                
+ *                                                                                        
+ *****************************************************************************************/
 
-static int Header[128] =
-  { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
-    0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0,
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-  };
+typedef struct
+  { VgpFile     *vf;       //  VgpFile for input
+    int          beg;      //  Range of reads to process
+    int          end;
+    int         *len;
+  } Vector_Arg;
 
-int *Fetch_Length_Vector(FILE *input, int *nread, char *fname)
-{ int *rlen, nr;
-  char code, which;
+  //  Display each read (and/or QV streams) in the active DB according to the
+  //    range pairs in pts[0..reps) and according to the display options.
 
-  fscanf(input,"1 %d",&nr);
-  { char type[nr+1];
+static void *fetch_thread(void *arg)
+{ Vector_Arg *parm = (Vector_Arg *) arg;
+  int         end  = parm->end;
+  VgpFile    *vf   = parm->vf;
+  int        *len  = parm->len;
+  int         i;
 
-    fscanf(input," %s",type);
-    if (strcmp(type,"seq") != 0)
-      { fprintf(stderr,"%s: File %s is not a .seq 1-code file\n",Prog_Name,fname);
-        exit (1);
-      }
-  }
-  fscanf(input,"%*[^\n]\n");
+  for (i = parm->beg; i < end; i++) 
+    { vgpGotoObject(vf,i);
+      vgpReadLine(vf);
+      len[i] = vgpLen(vf,0);
+    }
 
-  while (fscanf(input,"%c",&code) == 1)
-    if (Header[(int) code])
-      { if (code == '#')
-          { fscanf(input," %c",&which);
-            if (which == 'S')
-              { fscanf(input," %d",nread);
-                break;
-              }
-          }
-        fscanf(input,"%*[^\n]\n");
-      }
-    else
-      ungetc(code,input);
+  return (NULL);
+}
+       
+int *Fetch_Length_Vector(char *fname, int *nread, int *rmax)
+{ int       *rlen, i;
+  VgpFile   *vf;
+  int64      nreads;
+  Vector_Arg parm[NTHREADS];
+  pthread_t  threads[NTHREADS];
 
-  rlen = (int *) Malloc(sizeof(int)*(*nread),"Allocating read length vector");
+  vf     = vgpFileOpenRead(fname,SEQ,NTHREADS);
+  nreads = vf->lineInfo['S']->given.count;
+  rlen   = (int *) Malloc(sizeof(int)*nreads,"Allocating read length vector");
   if (rlen == NULL)
     exit (1);
 
-  nr = 0;
-  while (fscanf(input,"%c",&code) == 1)
-    { if (code == 'S')
-        fscanf(input," %d",rlen+nr++);
-      fscanf(input,"%*[^\n]\n");
+  for (i = 0; i < NTHREADS; i++)
+    { parm[i].beg = (nreads * i) / NTHREADS;
+      parm[i].end = (nreads * (i+1)) / NTHREADS;
+      parm[i].len = rlen;
+      parm[i].vf  = vf+i;
+      pthread_create(threads+i,NULL,fetch_thread,parm+i);
     }
 
-  *nread = nr;
+  for (i = 0; i < NTHREADS; i++)
+    pthread_join(threads[i],NULL);
+
+  vgpFileClose(vf);
+
+  *rmax  = vf->lineInfo['S']->given.max;
+  *nread = (int) nreads;
   return (rlen);
 }
 
+
+
+/****************************************************************************************
+ *                                                                                        
+ *  Find the nearest overlap record after point beg, return the file offset or -1 if not found.
+ *                                                                                        
+ ****************************************************************************************/
+
+static int64 find_nearest(int fid, uint8 *buf, int64 beg, int *alast)
+{ Overlap *ovl;
+  Path    *path;
+  uint8   *ouf, *trace8;
+  uint16  *trace16;
+  int64    pos, rb, x;
+  int      bact, dact, tln;
+  int      i, blen, diff;
+
+#ifdef DEBUG_FIND
+  fprintf(stderr,"\nFind starting at %lld\n",beg);
+#endif
+
+  lseek(fid,beg,SEEK_SET);
+  rb  = read(fid,buf,IO_BLOCK);
+  pos = OvlIOSize;
+  ouf = buf-OvlSize;   
+  while (pos < rb)
+    { ovl  = (Overlap *) (ouf+pos);
+      path = (Path *) ovl;
+      tln  = path->tlen;
+
+      if (ovl->aread >= NREAD1 || ovl->bread >= NREAD2 || tln <= 0)
+        tln = 1;
+      else if (path->aepos > RMAX1 || path->bepos > RMAX2)
+        tln = 1;
+      else if (path->abpos >= path->aepos || path->bbpos >= path->bepos)
+        tln = 1;
+      else if (tln != 2*((path->aepos + (TSPACE-1))/TSPACE - path->abpos/TSPACE))
+        tln = 1;
+
+      if (pos + tln*TBYTES > rb)
+        { x = pos - OvlIOSize;
+          beg += x;
+          rb  -= x;
+          memcpy(buf,buf+x,rb);
+          rb += read(fid,buf+rb,IO_BLOCK-rb);
+          pos = OvlIOSize;
+
+          if (tln == 1)
+            { if (pos > rb)
+                return (-1);
+            }
+          else 
+            { if (pos + tln*TBYTES > rb)
+                { pos += 1;
+                  if (pos > rb)
+                    return (-1);
+                }
+            }
+
+          continue;
+        }
+
+      if (tln == 1)
+        { pos += 1;
+          continue;
+        }
+
+#ifdef DEBUG_FIND
+      fprintf(stderr,"\n%lld: %d[%d..%d] vs %d[%d..%d] tln = %d\n",pos,
+                     ovl->aread,path->abpos,path->aepos,ovl->bread,path->bbpos,path->bepos,tln);
+#endif
+
+      bact = path->bepos - path->bbpos;
+      dact = path->diffs;
+
+      if (TBYTES == 1)
+        { trace8 = (uint8 *) buf+pos;
+          diff  = 0;
+          blen  = 0;
+          for (i = 0; i < tln; i += 2)
+            { if (blen > bact)
+                break;
+              if (diff > dact)
+                break;
+              diff += trace8[i];
+              blen += trace8[i+1];
+            }
+        }
+      else
+        { trace16 = (uint16 *) buf+pos;
+          diff  = 0;
+          blen  = 0;
+          for (i = 0; i < tln; i += 2)
+            { if (blen > bact)
+                break;
+              if (diff > dact)
+                break;
+              diff += trace16[i];
+              blen += trace16[i+1];
+            }
+        }
+
+#ifdef DEBUG_FIND
+      fprintf(stderr,"   trace %d of %d: %d vs %d and %d vs %d\n",i,tln,blen,bact,diff,dact);
+#endif
+
+      if (i >= tln && blen == bact && diff == dact)
+        if (path->aepos <= RLEN1[ovl->aread] && path->bepos <= RLEN2[ovl->bread])
+          { *alast = ovl->aread;
+            return ((beg+pos)+tln*TBYTES);
+          }
+
+      pos += 1;
+    }
+
+  return (-1);
+}
+
+
+/*******************************************************************************************
+ *
+ *  Parallel:  Each thread processes is a contiguous stripe across the .las input files
+ *               sending the compressed binary data lines to their assigned VgpFile.
+ *
+ ********************************************************************************************/
+
+typedef struct
+  { File_Object *fobj;     //  Reference to array of file objects
+    uint8       *buf;      //  IO buffer for this thread
+    VgpFile     *vf;       //  VgpFile for output
+    int          bidx;     //  Scan range is [bidx:beg,eidx:end)
+    int64        beg;
+    int          eidx;
+    int64        end;
+    int          alast;
+  } Thread_Arg;
+
+  //  Write alignment records in relevant partition
+
+static void *output_thread(void *arg)
+{ Thread_Arg  *parm  = (Thread_Arg *) arg;
+  File_Object *fobj  = parm->fobj;
+  VgpFile     *vf    = parm->vf;
+
+  void        (*decon)(Overlap *, int64 *, int64 *);
+  int          trmax;
+  int64        epos, pos;
+  FILE        *fid;
+  int          f, al;
+  Overlap     _ovl, *ovl = &_ovl;
+  int64       *trace, *bdels, *diffs;
+
+  if (TBYTES == sizeof(uint8))
+    decon  = Decompress_Trace8;
+  else
+    decon  = Decompress_Trace16;
+
+  trmax = 10000;
+  trace = Malloc(3*trmax*sizeof(int64),"Allocating trace vector");
+  if (trace == NULL)
+    exit (1);
+  bdels = trace + trmax;
+  diffs = bdels + trmax;
+
+  //  Do relevant section of each file assigned to this thread in sequence
+
+  al = parm->alast;
+  for (f = parm->bidx; f <= parm->eidx; f++)
+    { fid = fopen(fobj[f].fname,"r");
+fprintf(stderr,"Opening %s\n",fobj[f].fname);
+      if (f < parm->eidx)
+        epos = fobj[f].fsize;
+      else
+        epos = parm->end;
+      if (f > parm->bidx || parm->beg == 0)
+        parm->beg = sizeof(int) + sizeof(int64);
+
+#ifdef DEBUG_OUT
+      fprintf(stderr,"Block: %12lld to %12lld --> %8lld\n",parm->beg,epos,epos - parm->beg);
+      fflush(stdout);
+#endif
+
+      pos = parm->beg;
+      fseek(fid,pos,SEEK_SET); 
+      while (pos < epos)
+        { int      ar;
+          int      blen;
+          char     groupno[25];
+
+          //  Read it in
+
+          pos += Read_Overlap(fid,ovl);
+          if (ovl->path.tlen > trmax)
+            { trmax = 1.2*ovl->path.tlen + 1000;
+              trace = Realloc(trace,3*trmax*sizeof(int64),"Reallocating trace vector");
+              if (trace == NULL)
+                exit (1);
+              bdels = trace + trmax;
+              diffs = bdels + trmax;
+            }
+          ovl->path.trace = (void *) trace;
+          pos += Read_Trace(fid,ovl,TBYTES);
+
+          //  Write requested lines to VgpFile
+
+          ar = ovl->aread;
+          if (ar != al)
+            { if (DOGROUP)
+                { vgpInt(vf,0) = 0;
+                  vgpInt(vf,1) = sprintf(groupno,"%d",ar+1);
+                  vgpWriteLine(vf,'g',groupno);
+                }
+              al = ar;
+            }
+
+          vgpInt(vf,0) = ar+1;
+          vgpInt(vf,1) = ovl->bread+1;
+          vgpWriteLine(vf,'A',NULL);
+
+          blen = RLEN2[ovl->bread];
+          if (DOCOORD)
+            { vgpInt(vf,0) = ovl->path.abpos;
+              vgpInt(vf,1) = ovl->path.aepos;
+              vgpInt(vf,2) = RLEN1[ar];
+              if (COMP(ovl->flags))
+                { vgpInt(vf,3) = ovl->path.bepos;
+                  vgpInt(vf,4) = ovl->path.bbpos;
+                }
+              else
+                { vgpInt(vf,3) = ovl->path.bbpos;
+                  vgpInt(vf,4) = ovl->path.bepos;
+                }
+              vgpInt(vf,5) = blen;
+              vgpWriteLine(vf,'I',NULL);
+            }
+  
+          if (DODIFF)
+            { vgpInt(vf,0) = ovl->path.diffs;
+              vgpWriteLine(vf,'D',NULL);
+            }
+  
+          if (DOTRACE)
+            { int tlen = ovl->path.tlen;
+  
+              decon(ovl,bdels,diffs);
+           
+              vgpInt(vf,0) = tlen>>1;
+              vgpWriteLine(vf,'W',bdels);
+              vgpWriteLine(vf,'X',diffs);
+            }
+        }
+    }
+
+  free(trace);
+  return (NULL);
+}
+
+
+/****************************************************************************************
+ *                                                                                     
+ *  The top-level program                                                              
+ *                                                                                     
+ ****************************************************************************************/
+
 int main(int argc, char *argv[])
-{ int       nread1, nread2;
-  int      *rlen1,  *rlen2;
-  char     *fname1, *fname2;
-  Overlap   _ovl, *ovl = &_ovl;
+{ char     *fname1, *fname2;
+  char     *command;
+  int       nfiles;
+  int       ISTWO;
 
-  FILE   *input;
-  int     tspace, tbytes, small;
-  int     trmax;
-  int     ngroup, gmax;
-  int    *gcount;
+  //  Capture command line for provenance
 
-  int     ISTWO, VERBOSE;
-  int     DOGROUP, DOCOORD, DODIFF, DOTRACE; 
+  { int   n, i;
+    char *c;
+
+    n = -1;
+    for (i = 1; i < argc; i++)
+      n += strlen(argv[i])+1;
+
+    command = Malloc(n+1,"Allocating command string");
+    if (command == NULL)
+      exit (1);
+
+    c = command;
+    if (argc >= 1)
+      { c += sprintf(c,"%s",argv[1]);
+        for (i = 2; i < argc; i++)
+          c += sprintf(c," %s",argv[i]);
+      }
+    *c = '\0';
+  }
 
   //  Process options
 
   { int    i, j, k;
     int    flags[128];
+    char  *eptr;
 
     ARG_INIT("Dazz2sxs")
+
+    NTHREADS = 4;
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -284,6 +608,9 @@ int main(int argc, char *argv[])
         switch (argv[i][1])
         { default:
             ARG_FLAGS("vidtg")
+            break;
+          case 'T':
+            ARG_POSITIVE(NTHREADS,"Number of threads")
             break;
         }
       else
@@ -314,15 +641,15 @@ int main(int argc, char *argv[])
       }
   }
 
-  //  Get read lengths and # of reads from sequence files
+  //  Get read lengths and # of reads from sequence files in fnameA, rlenA, nreadA where A = 1,2
 
   { char *pwd, *root;
     int   i;
     FILE *input;
-    char *suffix[3] = { ".pbr.gz", ".pbr", ".gz" };
+    char *suffix[1] = { ".pbr" };
 
     pwd    = PathTo(argv[1]);
-    OPEN(argv[1],pwd,root,input,suffix,3)
+    OPEN(argv[1],pwd,root,input,suffix,1)
     if (input == NULL)
       { fprintf(stderr,"%s: Cannot open %s\n",Prog_Name,argv[1]);
         exit (1);
@@ -330,23 +657,26 @@ int main(int argc, char *argv[])
     fname1 = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating first sequence file");
     free(root);
     free(pwd);
+    fclose(input);
 
     if (VERBOSE)
       { fprintf(stderr,"  Scanning sequence file %s\n",fname1);
         fflush(stderr);
       }
 
-    rlen1 = Fetch_Length_Vector(input,&nread1,fname1);
-    fclose(input);
+    RLEN1 = Fetch_Length_Vector(fname1,&NREAD1,&RMAX1);
 
     pwd = PathTo(argv[2]);
-    OPEN(argv[2],pwd,root,input,suffix,3)
+    OPEN(argv[2],pwd,root,input,suffix,1)
     if (input == NULL)
-      ISTWO = 0;
+      { ISTWO  = 0;
+        fname2 = fname1;
+      }
     else
-      { ISTWO = 1;
+      { ISTWO  = 1;
         fname2 = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating second sequence file");
         free(root);
+        fclose(input);
       }
     free(pwd);
 
@@ -355,300 +685,277 @@ int main(int argc, char *argv[])
           { fprintf(stderr,"  Scanning sequence file %s\n",fname2);
             fflush(stderr);
           }
-        rlen2 = Fetch_Length_Vector(input,&nread2,fname2);
-        fclose(input);
+        RLEN2 = Fetch_Length_Vector(fname2,&NREAD2,&RMAX2);
       }
     else
-      { rlen2  = rlen1;
-        nread2 = nread1;
+      { RLEN2  = RLEN1;
+        NREAD2 = NREAD1;
+        RMAX2  = RMAX1;
 	fname2 = fname1;
-      }
+     }
+
   }
 
-  { int   c, j, al, ar, alen, tlen;
-    int64 novls, odeg, omax, sdeg, smax, tmax, ttot;
-    int64 gmaxlt, gsumlt;
+  //  Determine number of .las files, nfiles
 
-    //  For each record do
+  { int           c;
+    Block_Looper *parse;
+    FILE         *input;
 
-    novls = omax = smax = ttot = tmax = 0;
-    sdeg  = odeg = 0;
-    gmaxlt = gsumlt = 0;
-
-    ngroup = 0;
-    gmax   = 0;
-    gcount = NULL;
-
-    tspace = -1;
+    nfiles = 0;
     for (c = 2+ISTWO; c < argc; c++)
-      { Block_Looper *parse;
-
-        parse = Parse_Block_LAS_Arg(argv[c]);
-
+      { parse = Parse_Block_LAS_Arg(argv[c]);
         while ((input = Next_Block_Arg(parse)) != NULL)
-          { int64 no;
-            int   mspace;
-
-            //  Initiate file reading
-  
-            if (VERBOSE)
-              { fprintf(stderr,"  Scanning %s.las for header info\n",Block_Arg_Root(parse));
-                fflush(stderr);
-              }
-
-            if (fread(&no,sizeof(int64),1,input) != 1)
-              { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);
-                exit (1);
-              }
-            if (fread(&mspace,sizeof(int),1,input) != 1)
-              { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);
-                exit (1);
-              }
-
-            if (tspace < 0)
-              { tspace = mspace; 
-                if (tspace <= TRACE_XOVR && tspace != 0)
-                  { small  = 1;
-                    tbytes = sizeof(uint8);
-                  }
-                else
-                  { small  = 0;
-                    tbytes = sizeof(uint16);
-                  }
-              }
-            else if (mspace != tspace)
-              { fprintf(stderr,"%s: Input .las files have different trace spacing!\n",Prog_Name);
-                exit (1);
-              }
-
-            al = -1;
-            for (j = 0; j < no; j++)
-              { Read_Overlap(input,ovl);
-                tlen = ovl->path.tlen;
-                fseeko(input,tlen*tbytes,SEEK_CUR);
-
-                ar = ovl->aread;
-                if (ar != al)
-                  { if (sdeg > smax)
-                      smax = sdeg;
-                    if (odeg > omax)
-                      omax = odeg;
-                    novls += odeg;
-                    ttot  += sdeg;
-                    if (al >= 0)
-                      { if (ngroup >= gmax)
-                          { gmax = 1.2*ngroup + 1000;
-                            gcount = Realloc(gcount,sizeof(int)*gmax,
-                                            "Reallocating group count vector");
-                          }
-                        gcount[ngroup++] = odeg;
-                      }
-                    sdeg = odeg = 0;
-
-                    al = ar;
-                    alen = Number_Digits((int64) (ar+1));
-                    if (alen > gmaxlt)
-                      gmaxlt = alen;
-                    gsumlt += alen;
-                  }
-
-                odeg  += 1;
-                sdeg  += tlen;
-                if (tlen > tmax)
-                  tmax = tlen;
-              }
-
-            if (sdeg > smax)
-              smax = sdeg;
-            if (odeg > omax)
-              omax = odeg;
-            novls += odeg;
-            ttot  += sdeg;
-            if (ngroup > gmax)
-              { gmax = 1.2*ngroup + 1000;
-                gcount = Realloc(gcount,sizeof(int)*gmax,"Reallocating group count vector");
-              }
-            gcount[ngroup] = odeg;
-            ngroup += 1;
-
+          { nfiles += 1;
             fclose(input);
           }
         Free_Block_Arg(parse);
       }
 
-    trmax = tmax;
-    tmax >>= 1;
-    ttot >>= 1;
-    smax >>= 1;
+    if (VERBOSE)
+      { fprintf(stderr,"  Partitioning %d .las files into %d parts\n",nfiles,NTHREADS);
+        fflush(stderr);
+      }
+  }
 
-    { int    i, clen, optl;
-      char   date[20];
-      time_t seconds;
+  //  Find partition points dividing data in all files into NTHREADS roughly equal parts
+  //    and then in parallel threads produce the output for each part.
 
-      printf("1 3 aln 1 0\n");
-      printf("2 3 sxs\n");
+  { File_Object fobj[nfiles];
+    Thread_Arg  parm[NTHREADS];
 
-      optl = DOGROUP+DOCOORD+DODIFF+DOTRACE+VERBOSE;
-      if (optl > 0)
-        clen = optl+1;
-      else
-        clen = -1;
-      for (i = 1; i < argc; i++)
-        clen += strlen(argv[i])+1;
+#ifndef DEBUG_OUT
+    pthread_t   threads[NTHREADS];
+#endif
 
-      printf("! 8 Dazz2sxs 3 1.0 %d",clen);
-      if (optl > 0)
-        { printf(" -");
-          if (VERBOSE)
-            printf("v");
-          if (DOCOORD)
-            printf("i");
-          if (DODIFF)
-            printf("d");
-          if (DOTRACE)
-            printf("t");
-          if (DOGROUP)
-            printf("g");
+    { uint8        *bf;
+      int           f, i, c;
+      int64         b, work, wper;
+      int           mspace;
+      Block_Looper *parse;
+      FILE         *input;
+
+      //  Allocate IO buffer space for threads
+
+      bf = Malloc(NTHREADS*IO_BLOCK,"Allocating IO_Buffer\n");
+      if (bf == NULL)
+        exit (1);
+
+      //  Get name and size of each file in 'fobj[]', determin trace spacing and
+      //    byte size of elements.-        
+
+      TSPACE = -1;
+      work   = 0;
+      f      = 0;
+      for (c = 2+ISTWO; c < argc; c++)
+        { parse = Parse_Block_LAS_Arg(argv[c]);
+          while ((input = Next_Block_Arg(parse)) != NULL)
+            { struct stat info;
+              int64       no;
+
+              fobj[f].fname = Block_Arg_Name(parse);
+
+              if (stat(fobj[f].fname, &info) == -1)
+                { fprintf(stderr,"%s: Cannot get stats for %s\n",Prog_Name,fobj[f].fname);
+                  exit (1);
+                }
+
+              fobj[f].fsize = info.st_size;
+              work += info.st_size - (sizeof(int) + sizeof(int64));
+
+              if (fread(&no,sizeof(int64),1,input) != 1)
+                { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);
+                  exit (1);
+                }
+              if (fread(&mspace,sizeof(int),1,input) != 1)
+                { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);
+                  exit (1);
+                }
+
+              if (TSPACE < 0)
+                TSPACE = mspace;
+              else if (mspace != TSPACE)
+                { fprintf(stderr,"%s: Input .las files have different trace spacing!\n",Prog_Name);
+                  exit (1);
+                }
+
+              f += 1;
+              fclose(input);
+            }
+          Free_Block_Arg(parse);
         }
-      for (i = 1; i < argc; i++)
-        printf(" %s",argv[i]);
-      seconds = time(NULL);
-      strftime(date,20,"%F_%T",localtime(&seconds));
-      printf(" 19 %s\n",date);
 
-      if (DOGROUP)
-        printf("# g %d\n",ngroup);
-      printf("# A %lld\n",novls);
-      if (DOCOORD)
-        printf("# I %lld\n",novls);
-      if (DODIFF)
-        printf("# D %lld\n",novls);
-      if (DOTRACE)
-        printf("# W %lld\n# X %lld\n",novls,novls);
-      printf("# T 1\n");
+      if (TSPACE <= TRACE_XOVR && TSPACE != 0)
+        TBYTES = sizeof(uint8);
+      else
+        TBYTES = sizeof(uint16);
 
-      if (DOGROUP)
-        printf("+ g %lld\n",gsumlt);
-      if (DOTRACE)
-        printf("+ W %lld\n+ X %lld\n",ttot,ttot);
+      //  Allocate work evenly amongst threads, setting up search start
+      //    point for each thread.  Also find the beginning of data in
+      //    each file that a thread will start in (place in end.fpos)
 
-      if (DOGROUP)
-        printf("@ g %lld\n",gmaxlt);
-      if (DOTRACE)
-        printf("@ W %lld\n@ X %lld\n",tmax,tmax);
+      wper = work / NTHREADS;
 
-      if (DOGROUP)
-        { printf("%% g # A %lld\n",omax);
-          if (DOCOORD)
-            printf("%% g # I %lld\n",omax);
-          if (DODIFF)
-            printf("%% g # D %lld\n",omax);
-          if (DOTRACE)
-            { printf("%% g # W %lld\n%% g # X %lld\n",omax,omax);
-              printf("%% g + W %lld\n%% g + X %lld\n",smax,smax);
+      f = 0;
+      b = 0;
+      work = fobj[f].fsize;
+      for (i = 0; i < NTHREADS; i++)
+        { parm[i].fobj   = fobj;
+          parm[i].buf    = bf + i*IO_BLOCK;
+
+          if (b != 0)
+            parm[i].end = sizeof(int) + sizeof(int64);
+          else
+            parm[i].end = 0;
+
+#ifdef DEBUG_FIND
+          fprintf(stderr," %2d: %1d %10lld (%10lld)\n",i,f,b,parm[i].end);
+          fflush(stdout);
+#endif
+
+          parm[i].beg  = b;
+          parm[i].bidx = f;
+
+          work -= wper;
+          while (work < .01*IO_BLOCK)
+            { if (f == nfiles-1)
+                { NTHREADS = i+1;
+                  break;
+                }
+              work += fobj[++f].fsize;
+            }
+          b = fobj[f].fsize - work;
+          if (b < 0)
+            { work += b;
+              b = 0;
             }
         }
+    }
 
-      printf("< %ld %s %d\n",strlen(fname1),fname1,nread1);
-      printf("< %ld %s %d\n",strlen(fname2),fname2,nread2);
+    { int i, f, fid;
+
+      //  For each non-zero start point find synchronization point in
+      //    bam/sam file.  If can't find it then start at beginning of
+      //    next file, and if at or before first data line then signal
+      //    start at beginning by zero'ing the synch point.
+
+      for (i = 0; i < NTHREADS; i++)
+        { if (parm[i].beg != 0)
+            { fid = open(fobj[parm[i].bidx].fname,O_RDONLY);
+              parm[i].beg = find_nearest(fid,parm[i].buf,parm[i].beg,&(parm[i].alast));
+              if (parm[i].beg < 0 || parm[i].beg >= fobj[parm[i].bidx].fsize)
+                { parm[i].beg   = 0;
+                  parm[i].bidx += 1;
+                }
+              else if (parm[i].beg <= parm[i].end)
+                parm[i].beg = 0;
+              close(fid);
+            }
+          if (parm[i].beg == 0)
+            parm[i].alast = -1;
+        }
+
+      //  Paranoid: if one thread's synch point overtakes the next one (will almost
+      //    certainly never happen unless files very small and threads very large),
+      //    remove the redundant threads.
+
+      f = 0;
+      for (i = 1; i < NTHREADS; i++)
+        if (parm[i].bidx > parm[f].bidx || parm[i].beg > parm[f].beg)
+          parm[++f] = parm[i];
+      NTHREADS = f+1;
+
+      //  Develop end points of each threads work using the start point of the next thread
+
+      for (i = 1; i < NTHREADS; i++)
+        if (parm[i].beg == 0)
+          { parm[i-1].end  = fobj[parm[i].bidx-1].fsize;
+            parm[i-1].eidx = parm[i].bidx-1;
+          }
+        else
+          { parm[i-1].end  = parm[i].beg;
+            parm[i-1].eidx = parm[i].bidx;
+          }
+      parm[NTHREADS-1].end  = fobj[nfiles-1].fsize;
+      parm[NTHREADS-1].eidx = nfiles-1;
+
+#if defined(DEBUG_FIND) || defined(DEBUG_OUT)
+      fprintf(stderr,"\nPartition:\n");
+      for (i = 0; i < NTHREADS; i++)
+        { fprintf(stderr," %2d: %2d / %12lld",i,parm[i].bidx,parm[i].beg);
+          fprintf(stderr,"  -  %2d / %12lld\n",parm[i].eidx,parm[i].end);
+        }
+      fflush(stdout);
+#endif
+    }
+
+    //  Produce output in parallel threads based on partition
+
+    { VgpFile *vf;
+      int      i;
+
+      vf = vgpFileOpenWriteNew("-",ALN,SXS,TRUE,NTHREADS);
+
+      vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+      vgpAddReference(vf,fname1,NREAD1);
+      vgpAddReference(vf,fname2,NREAD2);
+
+      vgpWriteHeader(vf);
+
+      vgpInt(vf,0) = TSPACE;
+      vgpWriteLine(vf,'T',NULL);
+
+#ifdef DEBUG_OUT
+      fprintf(stderr,"Opened\n");
+      fflush(stdout);
+#endif
+
+      if (VERBOSE)
+        { fprintf(stderr,"  Producing .sxs segements in parallel\n");
+          fflush(stderr);
+        }
+
+      //  Generate the data lines in parallel threads
+
+#ifdef DEBUG_OUT
+      for (i = 0; i < NTHREADS; i++)
+        { parm[i].vf = vf+i;
+          output_thread(parm+i);
+        }
+#else
+      for (i = 0; i < NTHREADS; i++)
+        { parm[i].vf = vf+i;
+          pthread_create(threads+i,NULL,output_thread,parm+i);
+        }
+
+      for (i = 0; i < NTHREADS; i++)
+        pthread_join(threads[i],NULL);
+#endif
+
+      vgpFileClose(vf);
+    }
+
+    //  Free everything as a matter of good form
+
+    { int f;
+
+      free(fname1);
+      free(RLEN1);
+      if (ISTWO)
+        { free(fname2);
+          free(RLEN2);
+        }
+      for (f = 0; f < nfiles; f++)
+        free(fobj[f].fname);
+      free(parm[0].buf);
+      free(command);
     }
   }
 
-  //  Read the files and display records
-  
-  { int     c, j, k;
-    int     ar, al, ng;
-    int     blen;
-    uint16 *trace;
-
-    trace = (uint16 *) Malloc(sizeof(uint16)*trmax,"Allocating trace vector");
-    if (trace == NULL)
-      exit (1);
-        
-    printf("T %d\n",tspace);
-
-    al = -1;
-    ng = 0;
-    for (c = 2+ISTWO; c < argc; c++)
-      { Block_Looper *parse;
-
-        parse = Parse_Block_LAS_Arg(argv[c]);
-
-        while ((input = Next_Block_Arg(parse)) != NULL)
-          { int64 no;
-            int   mspace;
-
-            //  Initiate file reading
-  
-            if (VERBOSE)
-              { fprintf(stderr,"  Scanning %s.las for conversion\n",Block_Arg_Root(parse));
-                fflush(stderr);
-              }
-
-            fread(&no,sizeof(int64),1,input);
-            fread(&mspace,sizeof(int),1,input);
-
-            //  For each record do
-
-            for (j = 0; j < no; j++)
-
-               //  Read it in
-
-              { Read_Overlap(input,ovl);
-                ovl->path.trace = (void *) trace;
-                Read_Trace(input,ovl,tbytes);
-
-                //  Determine if it should be displayed
-
-                ar = ovl->aread;
-                if (ar != al)
-                  { if (DOGROUP)
-                      printf("g %d %d %d\n",gcount[ng++],Number_Digits((int64) (ar+1)),ar+1);
-                    al = ar;
-                  }
-
-                //  Display it
-            
-                printf("A %d %d\n",ar+1,ovl->bread+1);
-
-                blen = rlen2[ovl->bread];
-                if (DOCOORD)
-                  { if (COMP(ovl->flags))
-                      printf("I %d %d %d %d %d %d\n",
-                             ovl->path.abpos,ovl->path.aepos,rlen1[ar],
-                             ovl->path.bepos, ovl->path.bbpos,blen);
-                    else
-                      printf("I %d %d %d %d %d %d\n",
-                             ovl->path.abpos,ovl->path.aepos,rlen1[ar],
-                             ovl->path.bbpos,ovl->path.bepos,blen);
-                  }
-        
-                if (DODIFF)
-                  printf("D %d\n",ovl->path.diffs);
-        
-                if (DOTRACE)
-                  { int tlen  = ovl->path.tlen;
-        
-                    if (small)
-                      Decompress_TraceTo16(ovl);
-                 
-                    printf("W %d",tlen>>1);
-                    for (k = 0; k < tlen; k += 2)
-                      printf(" %d",trace[k+1]);
-                    printf("\n");
-        
-                    printf("X %d",tlen>>1);
-                    for (k = 0; k < tlen; k += 2)
-                      printf(" %d",trace[k]);
-                    printf("\n");
-                  }
-              }
-            fclose(input);
-          }
-        Free_Block_Arg(parse);
-      }
-    free(trace);
-  }
+  if (VERBOSE)
+    { fprintf(stderr,"  Done\n");
+      fflush(stderr);
+    }
 
   exit (0);
 }

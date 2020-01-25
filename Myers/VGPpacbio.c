@@ -19,20 +19,16 @@
 
 #include "gene_core.h"
 #include "pb_expr.h"
+#include "../Durbin/vgprd.h"
 
 #include "LIBDEFLATE/libdeflate.h"
-typedef  struct libdeflate_decompressor Depress;
+
+typedef  struct libdeflate_decompressor Deflator;
 
 #undef   DEBUG_CORE
 #undef   DEBUG_FIND
-#undef   DEBUG_CHECK
 #undef   DEBUG_RECORDS
-#undef   DEBUG_PART
 #undef   DEBUG_OUT
-
-#define LOWER_OFFSET 32
-#define INT_MAXLEN   10
-#define FLOAT_MAXLEN 11
 
 #define IO_BLOCK  10000000
 #define BAM_BLOCK  0x10000
@@ -43,11 +39,16 @@ typedef  struct libdeflate_decompressor Depress;
 static int     VERBOSE;
 static int     NTHREADS;
 static int     ARROW;           //  Output arrow/A lines?
-static int     UPPER;           //  Output in upper case?
 static Filter *EXPR;            //  Filter expression
 static int     IS_BIG_ENDIAN;   //  Is machine big-endian?
 
-static char *Usage = "[-vaU] [-e<expr(ln>=500 && rq>=750)> [-T<int(4)>] <input:pacbio> ...";
+static char *Usage = "[-va] [-e<expr(ln>=500 && rq>=750)> [-T<int(4)>] <input:pacbio> ...";
+
+typedef struct
+  { char      *fname;   //  Full path name of file
+    int64      fsize;   //  size of file
+    int        isbam;   //  bam or sam?
+  } File_Object;
 
 static int DNA[256] =
   { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -106,20 +107,20 @@ static inline int valid_name(char *name, int len)
 
 typedef struct
   { int64  fpos;   //  offset in compressed file of desired bam block
-    uint32 boff;   //  offset within bam block of desired record
+    uint32 boff;   //  offset within uncompressed bam block of desired record
   } Location;
 
 typedef struct
-  { int      fid;              //  file descriptor
-    int      last;             //  last block of data in file has been read
-    uint8   *buf;              //  IO buffer (of IO_BLOCK bytes, supplied by caller)
-    int      blen;             //  # of bytes currently in IO buffer
-    int      bptr;             //  start of next BAM block in IO buffer
-    uint8    bam[BAM_BLOCK+1]; //  uncompressed bam block
-    uint32   bsize;            //  length of compressed bam block
-    uint32   ssize;            //  length of uncompressed bam block
-    Location loc;              //  current location in bam file
-    Depress *decomp;
+  { int       fid;              //  file descriptor
+    int       last;             //  last block of data in file has been read
+    uint8    *buf;              //  IO buffer (of IO_BLOCK bytes, supplied by caller)
+    int       blen;             //  # of bytes currently in IO buffer
+    int       bptr;             //  start of next BAM block in IO buffer
+    uint8     bam[BAM_BLOCK+1]; //  uncompressed bam block
+    uint32    bsize;            //  length of compressed bam block
+    uint32    ssize;            //  length of uncompressed bam block
+    Location  loc;              //  current location in bam file
+    Deflator *decomp;
   } BAM_FILE;
 
   //  Load next len bytes of uncompressed BAM data into array data
@@ -295,44 +296,40 @@ static void sam_start(BAM_FILE *file, int fid, uint8 *buf, Location *loc)
  ********************************************************************************************/
 
 typedef struct
-  { int       fid;      //  File id (distinct for each thread)
-    uint8    *buf;      //  IO buffer for this thread
-    int       isbam;    //  Is a bam file (vs. sam file)
-    Location  beg;      //  Scan range is [beg,end)
-    Location  end;
-                      //  Outputs from first pass
-    int       hlen;     //  length of SMRT cell name
-    int       nr;       //  # of reads
-    int64     bp;       //  # of base pairs
-    int       maxbp;    //  length of longest read
-    int64     maxout;   //  Largest possible VGP output for a second pass thread interval
-    int       maxdata;  //  Maximum bam entry data block
-    int       nparts;   //  Number of ~10Mb intervals for second scan
-    Location *parts;    //  Start point of each interval for second scan
-                      //  Outputs from second pass
-    char     *out;      //  Output buffer
-    int       olen;     //  Current length of output buffer
-    int       head;     //  Should the g line start the output?
-
-    Depress  *decomp;
+  { File_Object *fobj;     //  Reference to array of file objects
+    uint8       *buf;      //  IO buffer for this thread
+    Deflator    *decomp;   //  Decompression codec (LIBDEFLATE)
+    VgpFile     *vf;       //  VgpFile for output
+    BAM_FILE     bam;
+    int          fid;      //  fid of fobj[bidx].fname
+    int          bidx;     //  Scan range is [bidx:beg,eidx:end)
+    Location     beg;
+    int          eidx;
+    Location     end;
+    int          ok;
   } Thread_Arg;
 
-  //  Find first record location (skip over header)
+  //  Find first record location (skip over header) in parm->fid
+  //    Return value is in parm->beg
 
-static void *header_thread(void *arg)
-{ Thread_Arg *parm = (Thread_Arg *) arg;
-  int         fid  = parm->fid;
-  uint8      *buf  = parm->buf;
+static void skip_header(Thread_Arg *parm)
+{ uint8    *buf = parm->buf;
+  BAM_FILE *bam = &(parm->bam);
+  int       fid = parm->fid;
 
-  Location zero = { 0ll, 0 };
-  BAM_FILE _bam, *bam = &_bam;
-  uint8    data[4];
-  int      i, ntxt, ncnt, nlen;
+  Location  zero = { 0ll, 0 };
+  uint8     data[4];
+  int       i, ntxt, ncnt, nlen;
 
   //  At start of file so can use BAM stream
 
   bam->decomp = parm->decomp;
   bam_start(bam,fid,buf,&zero);
+
+#ifdef DEBUG_FIND
+  printf("Header seek\n");
+  fflush(stdout);
+#endif
 
   bam_get(bam,data,4);
   if (memcmp(data,"BAM\1",4) != 0)
@@ -354,18 +351,21 @@ static void *header_thread(void *arg)
 
   parm->beg = bam->loc;
 
-  return (NULL);
+#ifdef DEBUG_FIND
+  printf("  Begin @ %lld\n",parm->beg.fpos);
+  fflush(stdout);
+#endif
 }
 
-  //  Find next identifiable entry location forward of data->fpos in data->fid
+  //  Find next identifiable entry location forward of parm->fpos in parm->fid
+  //    Return value is in parm->beg
 
-static void *find_thread(void *arg)
-{ Thread_Arg *parm = (Thread_Arg *) arg;
-  int         fid  = parm->fid;
-  uint8      *buf  = parm->buf;
-  int64       fpos = parm->beg.fpos;
-
-  Depress *decomp = parm->decomp;
+static void find_nearest(Thread_Arg *parm)
+{ uint8       *buf  = parm->buf;
+  BAM_FILE    *bam  = &(parm->bam);
+  int          fid  = parm->fid;
+  Deflator    *decomp = parm->decomp;
+  int64        fpos = parm->beg.fpos;
 
   uint32 bptr, blen;
   int    last, notfound;
@@ -374,12 +374,11 @@ static void *find_thread(void *arg)
   uint32 bsize, ssize;
   size_t tsize;
 
-  BAM_FILE _bam, *bam = &_bam;
-
 #ifdef DEBUG_FIND
   printf("Searching from %lld\n",fpos);
+  fflush(stdout);
 #endif
- 
+
   lseek(fid,fpos,SEEK_SET);
   blen = 0;
   bptr = 0;
@@ -405,6 +404,7 @@ static void *find_thread(void *arg)
             last = 1;
 #ifdef DEBUG_FIND
           printf("Loading %d(last=%d)\n",blen,last);
+          fflush(stdout);
 #endif
           bptr = 0;
         }
@@ -423,6 +423,7 @@ static void *find_thread(void *arg)
   
 #ifdef DEBUG_FIND
           printf("  Putative header @ %d\n",bptr-3);
+          fflush(stdout);
 #endif
 
           if (bptr + 12 > blen)
@@ -434,7 +435,7 @@ static void *find_thread(void *arg)
   
           j = bptr+9;
           if (buf[j] != 66)
-            continue;
+		  continue;
           j += 1;
           if (buf[j] != 67)
             continue;
@@ -458,12 +459,13 @@ static void *find_thread(void *arg)
 
 #ifdef DEBUG_FIND
           printf("    Putative Extra %d\n",bsize);
+          fflush(stdout);
 #endif
   
           isize = getint(block+(bsize-4),4);
           crc   = getint(block+(bsize-8),4);
   
-          if (libdeflate_gzip_decompress(decomp,block,bsize,bam,BAM_BLOCK,&tsize) != 0)
+          if (libdeflate_gzip_decompress(decomp,block,bsize,bam->bam,BAM_BLOCK,&tsize) != 0)
             continue;
           ssize = tsize;
 
@@ -474,8 +476,9 @@ static void *find_thread(void *arg)
 
 #ifdef DEBUG_FIND
               printf("    First block at %lld (%d)\n",fpos,ssize);
+              fflush(stdout);
 #endif
-              break;
+	      break;
             }
         }
     }
@@ -507,14 +510,14 @@ static void *find_thread(void *arg)
       for (j = HEADER_LEN; j < (int) 10000; j++)
         if (DNA[block[j]])
           { if (out && j >= run+SEQ_RUN)
-              {
-#ifdef DEBUG_FIND
-                printf("Possible start @ %d (%d)\n",run+1,run-MAX_PREFIX);
-#endif
-                if (run < MAX_PREFIX)
+              { if (run < MAX_PREFIX)
                   beg = 0;
                 else
                   beg = run-MAX_PREFIX;
+#ifdef DEBUG_FIND
+                printf("      Possible seq @ %d (%d)\n",run+1,beg);
+                fflush(stdout);
+#endif
                 for (k = run-(HEADER_LEN-1); k >= beg; k--)
                   { ldata  = getint(block+k,4);
                     lname  = block[k+12];
@@ -525,9 +528,13 @@ static void *find_thread(void *arg)
                         { parm->beg.fpos = bam->loc.fpos;
                           parm->beg.boff = k;
 #ifdef DEBUG_FIND
-                          printf("  Found '%s':%d at %d\n",block+(k+36),lseq,k);
+                          printf("      Found @ %d: '%s':%d\n",k,block+(k+36),lseq);
+                          fflush(stdout);
 #endif
-                          return (NULL);
+
+                          close(fid);
+
+                          return;
                         }
                   }
                 out = 0;
@@ -541,18 +548,17 @@ static void *find_thread(void *arg)
       bam_get(bam,NULL,ssize);
     }
 
-  fprintf(stderr,"%s: Could not find bam record structure!\n",Prog_Name);
-  exit (1);
+  close(fid);
+  parm->beg.fpos = -1;
 }
 
-  //  Find next identifiable sam entry location forward of data->fpos in data->fid
+  //  Find next identifiable sam entry location forward of parm->fpos in parm->fid
+  //    Return location is in parm->beg.  NB: works to skip sam header as well
 
-static void *sam_thread(void *arg)
-{ Thread_Arg *parm = (Thread_Arg *) arg;
-  int         fid  = parm->fid;
-  uint8      *buf  = parm->buf;
-
-  BAM_FILE _bam, *bam = &_bam;
+static void sam_nearest(Thread_Arg *parm)
+{ uint8       *buf  = parm->buf;
+  BAM_FILE    *bam  = &(parm->bam);
+  int          fid  = parm->fid;
 
   bam->decomp = parm->decomp;
   sam_start(bam,fid,buf,&(parm->beg));
@@ -564,13 +570,13 @@ static void *sam_thread(void *arg)
     }
   parm->beg = bam->loc;
 
-  return (NULL);
+  close(fid);
 }
 
 
 /*******************************************************************************************
  *
- *  Routines to scan and parse a bam entry
+ *  Routines to scan and parse bam and sam entries
  *
  ********************************************************************************************/
 
@@ -680,10 +686,10 @@ static void flip_auxilliary(uint8 *s, uint8 *e)
 
   //  Scan next bam entry and load PacBio info in record 'theR'
  
-static void bam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
+static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
 { int ldata, lname, lseq, aux;
 
-  { uint8  x[36];     //  Process 36 byte header, if pass2 get sequence
+  { uint8  x[36];     //  Process 36 byte header
     char  *eoh;
 
     bam_get(sf,x,36);
@@ -701,6 +707,14 @@ static void bam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
     if (aux > ldata)
       { fprintf(stderr,"%s: Non-sensical BAM record, file corrupted?\n",Prog_Name);
         exit (1);
+      }
+
+    if (lseq > theR->lmax)
+      { theR->lmax = 1.2*lseq + 1000;
+        theR->seq  = (char *) Realloc(theR->seq,2*theR->lmax,"Reallocating sequence buffer");
+        if (theR->seq == NULL)
+          exit (1);
+        theR->arr  = theR->seq + theR->lmax;
       }
 
     if (ldata > theR->dmax)
@@ -723,23 +737,22 @@ static void bam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
     if (eoh != NULL)
       *eoh = 0;
 
-    if (pass2)
-      { uint8 *t;
-        char  *s;
-        int    i, e;
+    { uint8 *t;
+      char  *s;
+      int    i, e;
 
-        e = getint(x+16,2);
-        t = theR->data + (lname + (e<<2));
-        s = theR->seq;
-        lseq -= 1;
-        for (e = i = 0; i < lseq; e++)
-          { s[i++] = INT_2_IUPAC[t[e] >> 4];
-            s[i++] = INT_2_IUPAC[t[e] & 0xf];
-          }
-        if (i <= lseq)
-          s[i] = INT_2_IUPAC[t[e] >> 4];
-        lseq += 1;
-      }
+      e = getint(x+16,2);
+      t = theR->data + (lname + (e<<2));
+      s = theR->seq;
+      lseq -= 1;
+      for (e = i = 0; i < lseq; e++)
+        { s[i++] = INT_2_IUPAC[t[e] >> 4];
+          s[i++] = INT_2_IUPAC[t[e] & 0xf];
+        }
+      if (i <= lseq)
+        s[i] = INT_2_IUPAC[t[e] >> 4];
+      lseq += 1;
+    }
   }
 
 #define PULSES(type)                    \
@@ -782,7 +795,7 @@ for (i = 0; i < len; i++, p += size)    \
   { int      size, len;    //  Get sn, pw, bc, bq, zm, qs, qe, rq, and np from auxilliary tags
     uint8   *p, *e;
     char    *arr;
-    int      i;
+    int      i, alines;
 
     arr = theR->arr;
     p = theR->data + aux;
@@ -791,6 +804,7 @@ for (i = 0; i < len; i++, p += size)    \
     if (IS_BIG_ENDIAN)
       flip_auxilliary(p,e);
 
+    alines = 0;
     while (p < e)
       { switch (*p)
         { case 's':
@@ -800,13 +814,12 @@ for (i = 0; i < len; i++, p += size)    \
                   { fprintf(stderr,"%s: sn-tag does not have 4 floats\n",Prog_Name);
                     exit (1);
                   }
-                if (pass2)
-                  { theR->snr[0] = *((float *) (p+8));
-                    theR->snr[1] = *((float *) (p+12));
-                    theR->snr[2] = *((float *) (p+16));
-                    theR->snr[3] = *((float *) (p+20));
-                  }
+                theR->snr[0] = *((float *) (p+8));
+                theR->snr[1] = *((float *) (p+12));
+                theR->snr[2] = *((float *) (p+16));
+                theR->snr[3] = *((float *) (p+20));
                 p += 24;
+                alines += 1;
                 continue;
               }
             break;
@@ -822,22 +835,19 @@ for (i = 0; i < len; i++, p += size)    \
                     exit (1);
                   }
                 size = bam_tag_size[p[3]];
-                if (pass2)
-                  { p += 8;
-                    switch (size)
-                    { case 1:
-                        PULSES(uint8)
-                        break;
-                      case 2:
-                        PULSES(uint16)
-                        break;
-                      case 4:
-                        PULSES(uint32)
-                        break;
-                    }
-                  }
-                else
-                  p += 8 + size*len;
+                p += 8;
+                switch (size)
+                { case 1:
+                    PULSES(uint8)
+                    break;
+                  case 2:
+                    PULSES(uint16)
+                    break;
+                  case 4:
+                    PULSES(uint32)
+                    break;
+                }
+                alines += 1;
                 continue;
               }
             break;
@@ -915,7 +925,11 @@ for (i = 0; i < len; i++, p += size)    \
             p += 8 + size*len;
           }
       }
+    if (ARROW && alines < 2)
+      return (1);
   }
+
+  return (0);
 }
 
   //  Scan next bam entry and load PacBio info in record 'theR'
@@ -947,7 +961,7 @@ static char  IUPAC_2_DNA[256] =
   *e = 0;                                               \
 }
 
-static void sam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
+static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 { char      *p;
   int        qlen;
 
@@ -981,19 +995,18 @@ static void sam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
     CHECK (*q == '*', "No sequence for read?");
 
     theR->len = qlen;
-    if (pass2)
-      { seq = theR->seq;
-        for (i = 0; i < qlen; i++)
-          seq[i] = IUPAC_2_DNA[(int) (*q++)];
-      }
+    seq = theR->seq;
+    for (i = 0; i < qlen; i++)
+      seq[i] = IUPAC_2_DNA[(int) (*q++)];
 
     p = index(p+1,'\t');  // Skip qual
     CHECK( p == NULL, "No auxilliary tags in SAM record, file corrupted?")
   }
 
   { char *q, *arr;       //  Get zm, qs, qe, rq, sn, and pw from auxilliary tags
-    int   x, cnt;
+    int   x, cnt, aline;
 
+    aline = 0;
     arr = theR->arr;
     while (*p++ == '\t')
       { switch (*p)
@@ -1006,6 +1019,7 @@ static void sam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
                   }
                 CHECK ( *p == ',' || cnt < 4, "Expecting 4 snr values")
                 CHECK ( *p != '\t' && *p != '\n', "Cannot parse snr values")
+                aline += 1;
                 continue;
               }
             break;
@@ -1016,21 +1030,16 @@ static void sam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
                     exit (1);
                   }
                 p += 6;
-                if (pass2)
-                  for (cnt = 0; *p == ',' && cnt < qlen; cnt++)
-                    { x = strtol(q=p+1,&p,0);
-                      CHECK( p == q, "Cannot parse pulse width value")
-                      if (x >= 5)
-                        x = 4;
-                      arr[cnt] = x + '0';
-                    }
-                else
-                  for (cnt = 0; *p == ',' && cnt < qlen; cnt++)
-                    { x = strtol(q=p+1,&p,0);
-                      CHECK( p == q, "Cannot parse pulse width value")
-                    }
+                for (cnt = 0; *p == ',' && cnt < qlen; cnt++)
+                  { x = strtol(q=p+1,&p,0);
+                    CHECK( p == q, "Cannot parse pulse width value")
+                    if (x >= 5)
+                      x = 4;
+                    arr[cnt] = x + '0';
+                  }
                 CHECK ( *p == ',' || cnt < qlen, "pulse width arraw has different length than read")
                 CHECK ( *p != '\t' && *p != '\n', "Cannot parse pulse width values")
+                aline += 1;
                 continue;
               }
             break;
@@ -1102,172 +1111,17 @@ static void sam_record_scan(BAM_FILE *sf, samRecord *theR, int pass2)
         while (*p != '\t' && *p != '\n')
           p += 1;
       }
+    if (ARROW && aline < 2)
+      return (1);
   }
-}
 
+  return (0);
+}
 
 /*******************************************************************************************
  *
- *  Pass 1: In NTHREAD partition of bam file, check record and collect information of second pass
- *
- ********************************************************************************************/
-
-static void *check_thread(void *arg)
-{ Thread_Arg  *parm  = (Thread_Arg *) arg;
-  int          fid   = parm->fid;
-  uint8       *buf   = parm->buf;
-  int64        epos  = parm->end.fpos;
-  uint32       eoff  = parm->end.boff;
-  int          isbam = parm->isbam;
-
-  BAM_FILE     _bam, *bam = &_bam;
-  samRecord    _theR, *theR = &_theR;
-
-  Location lpos, ldiv, *parts;
-  int64    divpt, lbp, maxout;
-  int      lnr, nparts, npmax;
-
-  int   nr, maxbp, hlen, first; 
-  int64 bp;
-
-  theR->dmax = 0;
-  theR->data = NULL;
-
-  nr    = 0;
-  bp    = 0;
-  first = 1;
-  maxbp = 0;
-
-  maxout = 0;
-  nparts = 0;
-  npmax  = 1.2 * ((epos - parm->beg.fpos) / (IO_BLOCK - BAM_BLOCK)) + 100;
-  parts  = (Location *) Malloc(sizeof(Location)*npmax,"Allocating location array");
-  if (parts == NULL)
-    exit (1);
-
-  bam->decomp = parm->decomp;
-  if (isbam)
-    bam_start(bam,fid,buf,&(parm->beg));
-  else
-    sam_start(bam,fid,buf,&(parm->beg));
-
-#ifdef DEBUG_CHECK
-  printf("\nStart: %lld %d to %lld %d (%d)\n",bam->loc.fpos,bam->loc.boff,epos,eoff,npmax);
-#endif
-
-  lnr  = 0;
-  lbp  = 0;
-  ldiv = parm->beg;
-#ifdef DEBUG_PART
-  printf("  Divpt @  %12lld\n",ldiv.fpos);
-#endif
-  divpt = ldiv.fpos + IO_BLOCK;
-  parts[nparts++] = ldiv;
-  lpos = parm->beg;
-
-  while (bam->loc.fpos != epos || bam->loc.boff != eoff)
-    { if (isbam)
-        bam_record_scan(bam,theR,0);
-      else
-        sam_record_scan(bam,theR,0);
-
-      if (bam->loc.fpos > divpt)
-        { int64 dnr, dbp, omax;
-
-          if (nr == lnr)
-            { dnr = 1;
-              dbp = (bp-lbp)+theR->len;
-#ifdef DEBUG_PART
-              printf("  Divpt+ @ %12lld   s=%lld r=%lld bp=%lld\n",
-                     bam->loc.fpos+bam->loc.boff,bam->loc.fpos-ldiv.fpos,dnr,dbp);
-#endif
-              lnr  = nr+1;
-              lbp  = bp+theR->len;
-              ldiv = bam->loc;
-            }
-          else
-            { dnr = nr-lnr;
-              dbp = bp-lbp;
-#ifdef DEBUG_PART
-              printf("  Divpt  @ %12lld   s=%lld r=%lld bp=%lld\n",
-                     bam->loc.fpos+bam->loc.boff,bam->loc.fpos-ldiv.fpos,dnr,dbp);
-#endif
-              lnr = nr;
-              lbp = bp;
-              ldiv = lpos;
-            }
-          divpt = ldiv.fpos + IO_BLOCK;
-
-          if (nparts >= npmax)
-            { npmax = 1.2*nparts + 100;
-              parts  = (Location *)
-                          Realloc(parts,sizeof(Location)*npmax,"Allocating location array");
-              if (parts == NULL)
-                exit (1);
-            }
-          parts[nparts++] = ldiv;
-
-          omax = dnr*(15 + 4*INT_MAXLEN) + dbp;
-          if (ARROW)
-            omax += dnr*(10 + INT_MAXLEN + 4*FLOAT_MAXLEN) + dbp;
-          if (omax > maxout)
-            maxout = omax;
-        }
-      lpos = bam->loc;
-
-      if ( ! evaluate_bam_filter(EXPR,theR))
-        continue;
-
-      if (first)
-        { first = 0;
-          hlen  = strlen(theR->header);
-        }
-
-      nr += 1;
-      bp += theR->len;
-      if (theR->len > maxbp)
-        maxbp = theR->len;
-    }
-
-  if (nr > lnr)
-    { int64 dnr, dbp, omax;
-
-      dnr = nr-lnr;
-      dbp = bp-lbp;
-      omax = dnr*(15 + 4*INT_MAXLEN) + dbp;
-      if (ARROW)
-        omax += dnr*(10 + INT_MAXLEN + 4*FLOAT_MAXLEN) + dbp;
-      if (omax > maxout)
-        maxout = omax;
-    }
-  else
-    nparts -= 1;
-
-  if (isbam)
-    free(theR->data);
-
-#ifdef DEBUG_CHECK
-  printf("  nr = %d bp = %lld maxbp = %d\n",nr,bp,maxbp);
-  printf("  parts = %d   max = %lld\n",nparts,maxout);
-#endif
-
-  parm->nr      = nr;
-  parm->bp      = bp;
-  parm->hlen    = hlen;
-  parm->maxbp   = maxbp;
-  parm->maxout  = maxout;
-  parm->maxdata = theR->dmax;
-  parm->nparts  = nparts;
-  parm->parts   = parts;
-
-  return (NULL);
-}
-
-
-/*******************************************************************************************
- *
- *  Pass 2: Produe the data NTHREAD "blocks" at a time in buffer in parallel and then
- *             stream the buffer to standard out serially.
+ *  Parallel:  Each thread processes a contiguous stripe across the input files
+ *               sending the compressed binary data lines to their assigned VgpFile.
  *
  ********************************************************************************************/
 
@@ -1275,95 +1129,127 @@ static void *check_thread(void *arg)
 
 static void *output_thread(void *arg)
 { Thread_Arg  *parm  = (Thread_Arg *) arg;
-  int          fid   = parm->fid;
+  File_Object *fobj  = parm->fobj;
   uint8       *buf   = parm->buf;
-  int          isbam = parm->isbam;
-  int64        epos  = parm->end.fpos;
-  uint32       eoff  = parm->end.boff;
-  char        *out   = parm->out;
-  int          head  = parm->head;
+  BAM_FILE    *bam   = &(parm->bam);
+  VgpFile     *vf    = parm->vf;
 
-  BAM_FILE     _bam, *bam = &_bam;
   samRecord    _theR, *theR = &_theR;
 
-  int          i, olen;
+  int64        epos;
+  uint32       eoff;
+  int          head, isbam;
+  int          f, fid;
 
   //  Know the max size of sequence and data from pass 1, so set up accordingly
 
-  theR->dmax = parm->maxdata;
+  theR->dmax = 50000;
   theR->data = Malloc(theR->dmax,"Allocating sequence array");
-  theR->seq  = Malloc((1+ARROW)*parm->maxbp,"Allocating sequence array");
+  theR->lmax = 75000;
+  theR->seq  = Malloc(2*theR->lmax,"Allocating sequence array");
   if (theR->seq == NULL || theR->data == NULL)
     exit (1);
-  if (ARROW)
-    theR->arr = theR->seq + parm->maxbp;
+  theR->arr = theR->seq + theR->lmax;
 
   bam->decomp = parm->decomp;
-  if (isbam)
-    bam_start(bam,fid,buf,&(parm->beg));
-  else
-    sam_start(bam,fid,buf,&(parm->beg));
+
+  parm->ok = 0;
+
+  for (f = parm->bidx; f <= parm->eidx; f++)
+    { fid   = open(fobj[f].fname,O_RDONLY);
+      isbam = fobj[f].isbam;
+      if (f < parm->eidx)
+        { epos = fobj[f].fsize;
+          eoff = 0;
+        }
+      else 
+        { epos = parm->end.fpos;
+          eoff = parm->end.boff;
+        }
+      if (f > parm->bidx || parm->beg.fpos == 0)
+        { head = 1;
+          parm->beg.fpos = 0;
+          parm->fid = fid;
+          if (isbam)
+            skip_header(parm);
+          else
+            sam_nearest(parm);
+        }
+      else
+        head = 0;
+      if (isbam)
+        bam_start(bam,fid,buf,&(parm->beg));
+      else
+        sam_start(bam,fid,buf,&(parm->beg));
 
 #ifdef DEBUG_OUT
-  printf("Block: %12lld / %5d to %12lld / %5d --> %8lld\n",bam->loc.fpos,bam->loc.boff,epos,eoff,
-                                                           epos - bam->loc.fpos);
-  fflush(stdout);
+      printf("Block: %12lld / %5d to %12lld / %5d --> %8lld\n",bam->loc.fpos,bam->loc.boff,
+                                                               epos,eoff,epos - bam->loc.fpos);
+      fflush(stdout);
 #endif
 
-
-  olen = 0;
-  while (bam->loc.fpos != epos || bam->loc.boff != eoff)
-    { if (isbam)
-        bam_record_scan(bam,theR,1);
-      else
-        sam_record_scan(bam,theR,1);
-
+      while (bam->loc.fpos != epos || bam->loc.boff != eoff)
+        { if (isbam)
+            { if (bam_record_scan(bam,theR))
+                return (NULL);
+            }
+          else
+            { if (sam_record_scan(bam,theR))
+                return (NULL);
+            }
+    
 #ifdef DEBUG_RECORDS
-      printf("S = '%s'\n",theR->seq);
-      printf("A = '%s'\n",theR->arr);
-      printf("zm = %d\n",theR->well);
-      printf("ln = %d\n",theR->len);
-      printf("rq = %g\n",theR->qual);
-      printf("bc1 = %d\n",theR->bc[0]);
-      printf("bc2 = %d\n",theR->bc[1]);
-      printf("bq = %d\n",theR->bqual);
-      printf("np = %d\n",theR->nump);
-      printf("qs = %d\n",theR->beg);
-      printf("qe = %d\n",theR->end);
+          fprintf(stderr,"S = '%s'\n",theR->seq);
+          fprintf(stderr,"A = '%s'\n",theR->arr);
+          fprintf(stderr,"zm = %d\n",theR->well);
+          fprintf(stderr,"ln = %d\n",theR->len);
+          fprintf(stderr,"rq = %g\n",theR->qual);
+          fprintf(stderr,"bc1 = %d\n",theR->bc[0]);
+          fprintf(stderr,"bc2 = %d\n",theR->bc[1]);
+          fprintf(stderr,"bq = %d\n",theR->bqual);
+          fprintf(stderr,"np = %d\n",theR->nump);
+          fprintf(stderr,"qs = %d\n",theR->beg);
+          fprintf(stderr,"qe = %d\n",theR->end);
 #endif
-
-      if (head > 0)
-        { int len = strlen(theR->header);
-          olen += sprintf(out+olen,"g %d %d %.*s\n",head,len,len,theR->header);
-          head = 0;
-        }
-
-      if ( ! evaluate_bam_filter(EXPR,theR))
-        continue;
-
-      if (UPPER)
-        { if (islower(theR->seq[0]))
-            for (i = 0; i < theR->len; i++)
-              theR->seq[i] -= LOWER_OFFSET;
-        }
-      else
-        { if (isupper(theR->seq[0]))
-            for (i = 0; i < theR->len; i++)
-              theR->seq[i] += LOWER_OFFSET;
-        }
     
-      olen += sprintf(out+olen,"S %d %.*s\n",theR->len,theR->len,theR->seq);
-      olen += sprintf(out+olen,"W %d %d %d 0.%0d\n",
-                               theR->well,theR->beg,theR->end,(int) (theR->qual*1000.));
+          if (head)
+            { int len = strlen(theR->header);
     
-      if (ARROW)
-        { olen += sprintf(out+olen,"N %.2f %.2f %.2f %.2f\n",
-                                   theR->snr[0],theR->snr[1],theR->snr[2],theR->snr[3]);
-          olen += sprintf(out+olen,"A %d %.*s\n",theR->len,theR->len,theR->arr);
+              vgpInt(vf,0) = 0;     //  don't actually know, OK for binary
+              vgpInt(vf,1) = len;
+              vgpWriteLine(vf,'g',theR->header);
+              head = 0;
+            }
+    
+          if ( ! evaluate_bam_filter(EXPR,theR))
+            continue;
+    
+          vgpInt(vf,0) = theR->len;
+          vgpWriteLine(vf,'S',theR->seq);
+    
+          vgpInt(vf,0) = theR->well;
+          vgpInt(vf,1) = theR->beg;
+          vgpInt(vf,2) = theR->end;
+          vgpReal(vf,3) = theR->qual;
+          vgpWriteLine(vf,'W',NULL);
+    
+          if (ARROW)
+            { vgpInt(vf,0) = theR->len;
+              vgpWriteLine(vf,'A',theR->arr);
+
+              vgpReal(vf,0) = theR->snr[0];
+              vgpReal(vf,1) = theR->snr[1];
+              vgpReal(vf,2) = theR->snr[2];
+              vgpReal(vf,3) = theR->snr[3];
+              vgpWriteLine(vf,'N',NULL);
+            }
         }
+
+      close(fid);
     }
 
-  parm->olen = olen;
+  parm->ok = 1;
+
   return (NULL);
 }
 
@@ -1376,21 +1262,30 @@ static void *output_thread(void *arg)
 
   //  Main
 
-typedef struct
-  { char      *fname;   //  Full path name of file
-    int64      fsize;   //  size of file
-    int        isbam;   //  bam or sam?
-    int        nread;   //  number of reads in this file
-    int       *nparts;  //  partition and location point computed in pass 1 for pass 2
-    Location **parts;
-  } File_Object;
-
 int main(int argc, char* argv[])
-{ int    Oargc;
-  char **Oargv; 
+{ char *command; 
 
-  Oargc = argc;
-  Oargv = argv;
+  //  Capture command line for provenance
+
+  { int   n, i;
+    char *c;
+
+    n = -1;
+    for (i = 1; i < argc; i++)
+      n += strlen(argv[i])+1;
+
+    command = Malloc(n+1,"Allocating command string");
+    if (command == NULL)
+      exit (1);
+
+    c = command;
+    if (argc >= 1)
+      { c += sprintf(c,"%s",argv[1]);
+        for (i = 2; i < argc; i++)
+          c += sprintf(c," %s",argv[i]);
+      }
+    *c = '\0';
+  }
 
   //  Process command line arguments
 
@@ -1424,7 +1319,6 @@ int main(int argc, char* argv[])
 
     VERBOSE = flags['v'];
     ARROW   = flags['a'];
-    UPPER   = flags['U'];
 
     if (EXPR == NULL)
       EXPR = parse_filter("ln>=500 && rq>=750");
@@ -1434,7 +1328,7 @@ int main(int argc, char* argv[])
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: verbose mode, output progress as proceed\n");
         fprintf(stderr,"      -a: extract Arrow information on N- and A-lines.\n");
-        fprintf(stderr,"      -U: use upper-case for DNA, default is lower-case\n");
+        fprintf(stderr,"      -T: Number of threads to use\n");
         fprintf(stderr,"\n");
         fprintf(stderr,"      -e: subread selection expression.  Possible variables are:\n");
         fprintf(stderr,"           zm  - well number\n");
@@ -1452,29 +1346,26 @@ int main(int argc, char* argv[])
     IS_BIG_ENDIAN = ( *((char *) (&one)) == 0);
   }
 
-  //  Begin main code block
+  { File_Object fobj[10];
+    Thread_Arg  parm[NTHREADS];
 
-  { File_Object fobj[argc-1];
-    int         idout;
-
-#if ! defined(DEBUG_CORE) || ! defined(DEBUG_FIND) || ! defined(DEBUG_CHECK)
-    pthread_t  threads[NTHREADS];
+#if ! defined(DEBUG_CORE) || ! defined(DEBUG_FIND)
+    pthread_t   threads[NTHREADS];
 #endif
-    Thread_Arg parm[NTHREADS];
 
-    //  Setup the initial file objects for each file and thread IO buffers
+    { uint8 *bf;
+      int    f, i;
+      int64  b, work, wper;
 
-    { int       *np;
-      Location **pt;
-      uint8     *bf;
-      int        f, i;
+      //  Allocate IO buffer space for threads
 
-      np = (int *) Malloc((argc-1)*NTHREADS*sizeof(int),"Allocating part vector");
-      pt = (Location **) Malloc((argc-1)*NTHREADS*sizeof(Location *),"Allocating part vector");
       bf = Malloc(NTHREADS*IO_BLOCK,"Allocating IO_Buffer\n");
-      if (np == NULL || pt == NULL || bf == NULL)
+      if (bf == NULL)
         exit (1);
 
+      //  Get name, size, and type (sam or bam) of each file in 'fobj[]'
+
+      work = 0;
       for (f = 0; f < argc-1; f++)
         { struct stat stats;
           char *suffix[4] = { ".subreads.bam", ".bam", ".subreads.sam", ".sam" };
@@ -1496,272 +1387,168 @@ int main(int argc, char* argv[])
 
           fobj[f].fname  = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating full path name");
           fobj[f].fsize  = stats.st_size;
-          fobj[f].nparts = np + f*NTHREADS;
-          fobj[f].parts  = pt + f*NTHREADS;
           fobj[f].isbam  = (i < 2);
+
+          work += stats.st_size;
 
           free(pwd);
           free(root);
           close(fid);
         }
 
+      //  Allocate work evenly amongst threads, setting up search start
+      //    point for each thread.  Also find the beginning of data in
+      //    each file that a thread will start in (place in end.fpos)
+
+      wper = work / NTHREADS;
+      
+      f = 0;
+      b = 0;
+      work = fobj[f].fsize;
       for (i = 0; i < NTHREADS; i++)
-        { parm[i].buf = bf + i*IO_BLOCK;
+        { parm[i].fobj   = fobj;
+          parm[i].buf    = bf + i*IO_BLOCK;
           parm[i].decomp = libdeflate_alloc_decompressor();
-        }
 
-      idout = fileno_unlocked(stdout);   //  Is the unlock helping?
-    }
-
-    //  First pass, find valid locations for first pass NTHREAD partition, and then perform
-    //    scan checking syntax, accumulating statistics, and recording valid locations for
-    //    finer grained second pass.
-
-    { int      nread, rg_nread, gmaxc;
-      int64    totbp, rg_totbp, gtotc;
-      int      maxbp, maxdata, maxout;
-
-      int      f, i;
-
-      totbp    = 0;
-      nread    = 0;
-      rg_nread = 0;
-      rg_totbp = 0;
-      gtotc    = 0;
-      gmaxc    = 0;
-      maxbp    = 0;
-      maxout   = 0;
-      maxdata  = 0;
-      for (f = 0; f < argc-1; f++)
-        { if (VERBOSE)
-            { fprintf(stderr,"  Checking syntax of file %s\n",fobj[f].fname);
-              fflush(stderr);
-            }
-
-          for (i = 0; i < NTHREADS; i++)
-            { parm[i].beg.fpos = (fobj[f].fsize*i)/NTHREADS;
-              parm[i].fid      = open(fobj[f].fname,O_RDONLY);
-              parm[i].isbam    = fobj[f].isbam;
-            }
-
-          //  Find valid locations for each thread
-
-          if (fobj[f].isbam)
-            { for (i = 1; i < NTHREADS; i++)
-#ifdef DEBUG_FIND
-                find_thread(parm+i);
-#else
-                pthread_create(threads+i,NULL,find_thread,parm+i);
-#endif
-              header_thread(parm);
+          if (b != 0)
+            { parm[i].fid      = open(fobj[f].fname,O_RDONLY);
+              parm[i].beg.fpos = 0;
+              if (fobj[f].isbam)
+                skip_header(parm+i);
+              else
+                sam_nearest(parm+i);
+              parm[i].end = parm[i].beg;
             }
           else
-            { for (i = 1; i < NTHREADS; i++)
-#ifdef DEBUG_FIND
-                sam_thread(parm+i);
-#else
-                pthread_create(threads+i,NULL,sam_thread,parm+i);
-#endif
-              sam_thread(parm);
-            }
-#ifndef DEBUG_FIND
-          for (i = 1; i < NTHREADS; i++)
-            pthread_join(threads[i],NULL);
-#endif
-
-          for (i = 1; i < NTHREADS; i++)
-            { parm[i-1].end.fpos = parm[i].beg.fpos;
-              parm[i-1].end.boff = parm[i].beg.boff;
-            }
-          parm[NTHREADS-1].end.fpos = fobj[f].fsize;
-          parm[NTHREADS-1].end.boff = 0;
+            parm[i].end.fpos = 0;
 
 #ifdef DEBUG_FIND
-          for (i = 0; i < NTHREADS; i++)
-            printf(" %2d: %12lld / %5d\n",i,parm[i].beg.fpos,parm[i].beg.boff);
-          printf(" %2d: %12lld / %5d\n",i,parm[NTHREADS-1].end.fpos,parm[NTHREADS-1].end.boff);
+          printf(" %2d: %1d %10lld (%10lld)\n",i,f,b,parm[i].end.fpos);
+          fflush(stdout);
 #endif
 
-          //  Perform first pass scans between valid locations just found
+          parm[i].beg.fpos = b;
+          parm[i].bidx     = f;
 
-          for (i = 1; i < NTHREADS; i++)
-#ifdef DEBUG_CHECK
-            check_thread(parm+i);
-#else
-            pthread_create(threads+i,NULL,check_thread,parm+i);
-#endif
-          check_thread(parm);
-#ifndef DEBUG_CHECK
-          for (i = 1; i < NTHREADS; i++)
-            pthread_join(threads[i],NULL);
-#endif
-
-          //  Record valid block locations for second pass in per file object
-
-          for (i = 0; i < NTHREADS; i++)
-            { fobj[f].nparts[i] = parm[i].nparts;
-              fobj[f].parts[i]  = parm[i].parts;
-              close(parm[i].fid);
-            }
-
-          //  Accumulate stats for VGP header
-
-          { int   fnr;
-            int64 fbp; 
-
-            fnr = 0;
-            fbp = 0;
-            for (i = 0; i < NTHREADS; i++)
-              { fnr += parm[i].nr;
-                fbp += parm[i].bp;
-                if (parm[i].maxbp > maxbp)
-                  maxbp = parm[i].maxbp;
-                if (parm[i].maxout > maxout)
-                  maxout = parm[i].maxout;
-                if (parm[i].maxdata > maxdata)
-                  maxdata = parm[i].maxdata;
-              }
-
-            fobj[f].nread = fnr;
-   
-            nread += fnr;
-            totbp += fbp;
-            gtotc += parm[0].hlen;
-            if (parm[0].hlen > gmaxc)
-              gmaxc = parm[0].hlen;
-            if (fnr > rg_nread)
-              rg_nread = fnr;
-            if (fbp > rg_totbp)
-              rg_totbp = fbp;
-          }
-        }
-
-      { int   n, i;
-        char *out;
-        int    clen, olen;
-        char   date[20];
-        time_t seconds;
-
-        //  Use cumulative metrics to inform 2nd pass
-
-        if (maxout*NTHREADS < 5000)
-          out = Malloc(5000,"Allocating IO_Buffer\n");
-        else
-          out = Malloc(NTHREADS*maxout,"Allocating IO_Buffer\n");
-        if (out == NULL)
-          exit (1);
-
-        for (n = 0; n < NTHREADS; n++)
-          { parm[n].maxbp   = maxbp;
-            parm[n].maxdata = maxdata;
-            parm[n].out = out + n*maxout;
-          }
-
-        //  Output size headers
-
-        olen = sprintf(out,"1 3 seq 1 0\n");
-        olen += sprintf(out+olen,"2 3 pbr\n");
-
-        clen = -1;
-        for (i = 1; i < Oargc; i++)
-          clen += strlen(Oargv[i])+1;
-  
-        olen += sprintf(out+olen,"! 9 VGPpacbio 3 1.0 %d",clen);
-        for (i = 1; i < Oargc; i++)
-          olen += sprintf(out+olen," %s",Oargv[i]);
-        seconds = time(NULL);
-        strftime(date,20,"%F_%T",localtime(&seconds));
-        olen += sprintf(out+olen," 19 %s\n",date);
-
-        olen += sprintf(out+olen,"# g %d\n",argc-1);
-        olen += sprintf(out+olen,"# S %d\n",nread);
-        olen += sprintf(out+olen,"# W %d\n",nread);
-        if (ARROW)
-          { olen += sprintf(out+olen,"# N %d\n",nread);
-            olen += sprintf(out+olen,"# A %d\n",nread);
-          }
-        olen += sprintf(out+olen,"+ g %lld\n",gtotc);
-        olen += sprintf(out+olen,"+ S %lld\n",totbp);
-        if (ARROW)
-          olen += sprintf(out+olen,"+ A %lld\n",totbp);
-
-        olen += sprintf(out+olen,"@ g %d\n",gmaxc);
-        olen += sprintf(out+olen,"@ S %d\n",maxbp);
-        if (ARROW)
-          olen += sprintf(out+olen,"@ A %d\n",maxbp);
-  
-        olen += sprintf(out+olen,"%% g # S %d\n",rg_nread);
-        olen += sprintf(out+olen,"%% g # W %d\n",rg_nread);
-        if (ARROW)
-          { olen += sprintf(out+olen,"%% g # N %d\n",rg_nread);
-            olen += sprintf(out+olen,"%% g # A %d\n",rg_nread);
-          }
-  
-        olen += sprintf(out+olen,"%% g + S %lld\n",rg_totbp);
-        if (ARROW)
-          olen += sprintf(out+olen,"%% g + A %lld\n",rg_totbp);
-
-        write(idout,out,olen);
-      }
-    }
-  
-    //  Second pass: Scan files and output .pbr
-
-    { int   f, i, p, n;
-      int   uthreads;
-
-      for (f = 0; f < argc-1; f++)
-        { for (n = 0; n < NTHREADS; n++)
-            { parm[n].fid   = open(fobj[f].fname,O_RDONLY);
-              parm[n].head  = 0;
-              parm[n].isbam = fobj[f].isbam;
-            }
-          uthreads = n;
-
-          if (VERBOSE)
-            { fprintf(stderr,"  Computing output for file %s\n",fobj[f].fname);
-              fflush(stderr);
-            }
- 
-          parm[0].head = fobj[f].nread;
-          i = 0;
-          p = 0;
-          while (i < NTHREADS)
-            { for (n = 0; n < NTHREADS; n++)
-                { parm[n].beg = fobj[f].parts[i][p];
-                  p += 1;
-                  if (p >= fobj[f].nparts[i])
-                    { p = 0;
-                      i += 1;
-                      if (i >= NTHREADS)
-                        { parm[n].end.fpos = fobj[f].fsize;
-                          parm[n].end.boff = 0;
-                          uthreads = n+1;
-                          break;
-                        }
-                    }
-                  parm[n].end = fobj[f].parts[i][p];
+          work -= wper;
+          while (work < 2*BAM_BLOCK)
+            { if (f == argc-2)
+                { NTHREADS = i+1;
+                  break;
                 }
+              work += fobj[++f].fsize;
+            }
+          b = fobj[f].fsize - work;
+          if (b < 0)
+            { work += b;
+              b = 0;
+            }
+        }
+    }
+
+    { int i, f;
+
+      //  For each non-zero start point find synchronization point in
+      //    bam/sam file.  If can't find it then start at beginning of
+      //    next file, and if at or before first data line then signal
+      //    start at beginning by zero'ing the synch point.
+
+      for (i = 0; i < NTHREADS; i++)
+        if (parm[i].beg.fpos != 0)
+          { if (fobj[parm[i].bidx].isbam)
+              find_nearest(parm+i);
+            else
+              sam_nearest(parm+i);
+            if (parm[i].beg.fpos < 0)
+              { parm[i].beg.fpos = 0;
+                parm[i].bidx    += 1;
+              }
+            else if (parm[i].beg.fpos <= parm[i].end.fpos)
+              parm[i].beg.fpos = 0;
+            close(parm[i].fid);
+          }
+
+      //  Paranoid: if one thread's synch point overtakes the next one (will almost
+      //    certainly never happen unless files very small and threads very large),
+      //    remove the redundant threads.
+
+      f = 0;
+      for (i = 1; i < NTHREADS; i++)
+        if (parm[i].bidx > parm[f].bidx || parm[i].beg.fpos > parm[f].beg.fpos
+            || parm[i].beg.boff > parm[f].beg.boff)
+          parm[++f] = parm[i];
+        else
+          libdeflate_free_decompressor(parm[i].decomp);
+      NTHREADS = f+1;
+
+      //  Develop end points of each threads work using the start point of the next thread
+
+      for (i = 1; i < NTHREADS; i++)
+        if (parm[i].beg.fpos == 0)
+          { parm[i-1].end.fpos = fobj[parm[i].bidx-1].fsize;
+            parm[i-1].end.boff = 0;
+            parm[i-1].eidx     = parm[i].bidx-1;
+          }
+        else
+          { parm[i-1].end.fpos = parm[i].beg.fpos;
+            parm[i-1].end.boff = parm[i].beg.boff;
+            parm[i-1].eidx     = parm[i].bidx;
+          }
+      parm[NTHREADS-1].end.fpos = fobj[argc-2].fsize;
+      parm[NTHREADS-1].end.boff = 0;
+      parm[NTHREADS-1].eidx     = argc-2;
+
+#if defined(DEBUG_FIND) || defined(DEBUG_OUT)
+      for (i = 0; i < NTHREADS; i++)
+        { printf(" %2d: %2d / %12lld / %5d",i,parm[i].bidx,parm[i].beg.fpos,parm[i].beg.boff);
+          printf("  -  %2d / %12lld / %5d\n",parm[i].eidx,parm[i].end.fpos,parm[i].end.boff);
+        }
+      fflush(stdout);
+#endif
+    }
+
+    //  Setup a VgpFile for each thread, put the header in the first one
+
+    { VgpFile *vf;
+      int      i, ok;
+
+      vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
+      vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+      vgpWriteHeader(vf);
+#ifdef DEBUG_OUT
+      printf("Opened\n");
+      fflush(stdout);
+#endif
+
+      //  Generate the data lines in parallel threads
 
 #ifdef DEBUG_OUT
-              for (n = 0; n < uthreads; n++)
-                output_thread(parm+n);
-#else
-              for (n = 1; n < uthreads; n++)
-                pthread_create(threads+n,NULL,output_thread,parm+n);
-              output_thread(parm);
-
-              for (n = 0; n < uthreads; n++)
-                { pthread_join(threads[n],NULL);
-                  write(idout,parm[n].out,parm[n].olen);
-                }
-#endif
-              parm[0].head = 0;
-            }
-
-          for (n = 0; n < NTHREADS; n++)
-            close(parm[n].fid);
+      for (i = 0; i < NTHREADS; i++)
+        { parm[i].vf = vf+i;
+          output_thread(parm+i);
         }
+#else
+      for (i = 0; i < NTHREADS; i++)
+        { parm[i].vf = vf+i;
+          pthread_create(threads+i,NULL,output_thread,parm+i);
+        }
+
+      for (i = 0; i < NTHREADS; i++)
+        pthread_join(threads[i],NULL);
+#endif
+
+      //  If asked for arrow vectors but not in input, then ok will be 0.
+
+      ok = 1;
+      for (i = 0; i < NTHREADS; i++)
+        if ( ! parm[i].ok)
+          ok = 0;
+
+      if (!ok)
+        fprintf(stderr,"%s: Bam file does not contain pulse information for -a option\n",
+                       Prog_Name);
+
+      vgpFileClose(vf);
     }
 
     //  Free everything as a matter of good form
@@ -1769,17 +1556,13 @@ int main(int argc, char* argv[])
     { int f, n;
 
       for (f = 0; f < argc-1; f++)
-        { free(fobj[f].fname);
-          free(fobj[f].nparts);
-          for (n = 0; n < NTHREADS; n++)
-            free(fobj[f].parts[n]);
-          free(fobj[f].parts);
-        }
-  
+        free(fobj[f].fname);
+
       for (n = 0; n < NTHREADS; n++)
         libdeflate_free_decompressor(parm[n].decomp);
-      free(parm[0].out);
       free(parm[0].buf);
+
+      free(command);
     }
   }
 

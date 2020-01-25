@@ -117,7 +117,7 @@ VGPcodec *vcCreate()
 void vcDestroy(VGPcodec *vc)
 { _VGPcodec *v = (_VGPcodec *) vc;
   if (vc != DNAcodec)
-  free(v);
+    free(v);
 }
 
   //  Add the frequencies of bytes in bytes[0..len) to vc's histogram
@@ -125,15 +125,34 @@ void vcDestroy(VGPcodec *vc)
 
 void vcAddToTable(VGPcodec *vc, int len, char *bytes)
 { _VGPcodec *v = (_VGPcodec *) vc;
+  uint8 *data = (uint8 *) bytes;
+  int i;
+
+  for (i = 0; i < len; i++)
+    v->hist[(int) data[i]] += 1;
+  if (v->state < FILLED)
+    v->state = FILLED;
+}
+
+  //  Add the frequencies of bytes in bytes[0..len) to vc's histogram
+  //    State becomes FILLED
+
+void vcAddHistogram(VGPcodec *vc, VGPcodec *vh)
+{ _VGPcodec *v = (_VGPcodec *) vc;
+  _VGPcodec *h = (_VGPcodec *) vh;
   int i;
 
   if (v->state >= CODED_WITH)
-    { fprintf(stderr,"vcAddToTable: Compressor already has a codec\n");
+    { fprintf(stderr,"vcAddHistogram: Compressor already has a codec\n");
+      exit (1);
+    }
+  if (h->state == CODED_READ)
+    { fprintf(stderr,"vcAddHistogram: Source compressor doesn't have a histogram\n");
       exit (1);
     }
 
-  for (i = 0; i < len; i++)
-    v->hist[(int) bytes[i]] += 1;
+  for (i = 0; i < 256; i++)
+    v->hist[i] += h->hist[i];
   v->state = FILLED;
 }
 
@@ -191,13 +210,16 @@ void vcCreateCodec(VGPcodec *vc, int partial)
       }
   dcode = 2*ncode;
 
+  if (ecode < 0)
+    partial = 0;
+
   HIST = hist;
   qsort(code,ncode,sizeof(int),HSORT);
 
 #ifdef DEBUG
-  printf("\nSorted Codes %d:\n",ncode);
+  fprintf(stderr,"\nSorted Codes %d:\n",ncode);
   for (i = 0; i < ncode; i++)
-    printf(" %3d: %3d %10llu\n",i,code[i],hist[code[i]]);
+    fprintf(stderr," %3d: %3d %10llu\n",i,code[i],hist[code[i]]);
 #endif
 
   { uint8   matrix[HUFF_CUTOFF][dcode];
@@ -212,11 +234,11 @@ void vcCreateCodec(VGPcodec *vc, int partial)
       }
 
 #ifdef DEBUG
-    printf("\nCoin Filter:\n");
-    printf("  Row %2d:",HUFF_CUTOFF);
+    fprintf(stderr,"\nCoin Filter:\n");
+    fprintf(stderr,"  Row %2d:",HUFF_CUTOFF);
     for (n = 0; n < ncode; n++)
-      printf(" %lld*",countb[n]);
-    printf("\n");
+      fprintf(stderr," %lld*",countb[n]);
+    fprintf(stderr,"\n");
 #endif
 
     lcnt = count1;
@@ -243,10 +265,10 @@ void vcCreateCodec(VGPcodec *vc, int partial)
         ccnt = swp;
 
 #ifdef DEBUG
-        printf("  Row %2d:",L);
+        fprintf(stderr,"  Row %2d:",L);
         for (n = 0; n <= llen; n++)
-          printf(" %lld%c",lcnt[n],matrix[L][n]?'*':'+');
-        printf("\n");
+          fprintf(stderr," %lld%c",lcnt[n],matrix[L][n]?'*':'+');
+        fprintf(stderr,"\n");
 #endif
       }
 
@@ -263,23 +285,23 @@ void vcCreateCodec(VGPcodec *vc, int partial)
       leng[n] += 1;
 
 #ifdef DEBUG
-    printf("\nBack Trace:\n");
+    fprintf(stderr,"\nBack Trace:\n");
     span = 2*(ncode-1);
     for (L = 1; L < HUFF_CUTOFF; L++)
       { j = 0;
-        printf("  Row %2d:",L);
+        fprintf(stderr,"  Row %2d:",L);
         for (n = 0; n < span; n++)
           { if (matrix[L][n])
               j += 1;
-            printf(" %c",matrix[L][n]?'*':'+');
+            fprintf(stderr," %c",matrix[L][n]?'*':'+');
           }
-        printf("\n");
+        fprintf(stderr,"\n");
         span = 2*(span-j);
       }
-    printf("  Length:");
+    fprintf(stderr,"  Length:");
     for (n = 0; n < ncode; n++)
-      printf(" %d",leng[n]);
-    printf("\n");
+      fprintf(stderr," %d",leng[n]);
+    fprintf(stderr,"\n");
 #endif
   }
 
@@ -302,13 +324,16 @@ void vcCreateCodec(VGPcodec *vc, int partial)
       }
 
 #ifdef DEBUG
-    printf("\nCodes:\n");
-    for (n = 0; n < ncode; n++)
-      { printf("   %3d: %2d ",code[n],leng[n]);
-        for (j = leng[n]-1; j >= 0; j--)
-          printf("%x",(bits[n]>>j)&0x1);
-        printf("\n");
-      }
+    { int j;
+
+      fprintf(stderr,"\nCodes:\n");
+      for (n = 0; n < ncode; n++)
+        { fprintf(stderr,"   %3d: %2d ",code[n],leng[n]);
+          for (j = leng[n]-1; j >= 0; j--)
+            fprintf(stderr,"%x",(bits[n]>>j)&0x1);
+          fprintf(stderr,"\n");
+        }
+    }
 #endif
   }
 
@@ -348,7 +373,7 @@ void vcCreateCodec(VGPcodec *vc, int partial)
   //  For debug, give a nice print out of the distribution histogram (if present)
   //     and the Huffman codec
 
-void vcPrint(VGPcodec *vc)
+void vcPrint(VGPcodec *vc, FILE *to)
 { _VGPcodec *v = (_VGPcodec *) vc;
 
   uint64  total_bits, ucomp_bits, count;
@@ -360,7 +385,7 @@ void vcPrint(VGPcodec *vc)
   int     i, k;
 
   if (vc == DNAcodec)
-    { printf("    DNAcompressor\n");
+    { fprintf(to,"    DNAcompressor\n");
       return;
     }
 
@@ -382,17 +407,17 @@ void vcPrint(VGPcodec *vc)
       for (i = 0; i < 256; i++)
         count += hist[i];
 
-      printf("\nHistogram:\n");
+      fprintf(to,"\nHistogram:\n");
       for (i = 0; i < 256; i++)
         if (hist[i] > 0)
           { if (isprint(i))
-              printf("      %c: %12llu %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
+              fprintf(to,"      %c: %12llu %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
             else
-              printf("    %3d: %12llu %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
+              fprintf(to,"    %3d: %12llu %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
           }
     }
 
-  printf("\nCode Table:\n");
+  fprintf(to,"\nCode Table:\n");
   for (i = 0; i < 256; i++)
     { clen = lens[i];
       if (i == v->esc_code)
@@ -401,20 +426,20 @@ void vcPrint(VGPcodec *vc)
         { mask = (1 << clen);
           code = bits[i];
           if (isprint(i))
-            printf("   %c: %2d ",i,clen);
+            fprintf(to,"   %c: %2d ",i,clen);
           else
-            printf(" %3d: %2d ",i,clen);
+            fprintf(to," %3d: %2d ",i,clen);
           for (k = 0; k < clen; k++)
             { mask >>= 1;
               if (code & mask)
-                printf("1");
+                fprintf(to,"1");
               else
-                printf("0");
+                fprintf(to,"0");
             }
           if (i == v->esc_code)
-            printf(" ***\n");
+            fprintf(to," ***\n");
           else
-            { printf("\n");
+            { fprintf(to,"\n");
               if (hashist)
                 { total_bits += clen*hist[i];
                   ucomp_bits += (hist[i]<<3);
@@ -423,7 +448,7 @@ void vcPrint(VGPcodec *vc)
         }
     }
   if (hashist)
-    printf("\nTotal Bytes = %lld (%.2f%%)\n",(total_bits-1)/8+1,(100.*total_bits)/ucomp_bits);
+    fprintf(to,"\nTotal Bytes = %lld (%.2f%%)\n",(total_bits-1)/8+1,(100.*total_bits)/ucomp_bits);
 }
 
 
@@ -545,7 +570,8 @@ VGPcodec *vcDeserialize(void *in)
         }
     }
 
-  lens[v->esc_code] = v->esc_len;
+  if (v->esc_code >= 0)
+    lens[v->esc_code] = v->esc_len;
   for (i = 0; i < 256; i++)
     { if (lens[i] > 0)
         { base = (bits[i] << (16-lens[i]));
@@ -554,7 +580,8 @@ VGPcodec *vcDeserialize(void *in)
             look[base+j] = i;
         }
     }
-  lens[v->esc_code] = 0;
+  if (v->esc_code >= 0)
+    lens[v->esc_code] = 0;
 
   return ((VGPcodec *) v);
 }
@@ -693,8 +720,8 @@ int vcEncode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
     }
   
   if (k < ilen)
-    { *obytes++ = 0xff;
-      memcpy(obytes,ibytes,ilen);
+    { *obytes = 0xff;
+      memcpy(obytes+1,ibytes,ilen);
       return (ibits+8);
     }
 
@@ -774,8 +801,8 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
   uint8  *lens, *q;
   uint64  icode, ncode, *p;
   int     rem, nem;
-  char    c, esc, *o;
-  int     n, k, elen, inbig;
+  uint8   c, *o;
+  int     n, k, elen, inbig, esc;
 
   if (vc == DNAcodec)
     return (Uncompress_DNA(ibytes,ilen>>1,obytes));
@@ -852,7 +879,7 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
     }
   else
     icode = *p++;
-  o = obytes;
+  o = (uint8 *) obytes;
   icode <<= 2;
   ilen -= 2;
   rem   = 62;
@@ -874,7 +901,7 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes)
       *o++ = c;
     }
 
-  return (o-obytes);
+  return (o - (uint8 *) obytes);
 }
 
 #ifdef TEST

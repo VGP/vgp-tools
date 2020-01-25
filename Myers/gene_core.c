@@ -54,23 +54,6 @@ char *Strdup(char *name, char *mesg)
   return (s);
 }
 
-FILE *Fzopen(char *name, char *mode)
-{ gzFile zfp;
-
-  if (name == NULL || mode == NULL)
-    return (NULL);
-
-  zfp = gzopen(name,mode);
-  if (zfp == NULL)
-    return fopen(name,mode);
-
-  return funopen(zfp,
-                 (int(*)(void*,char*,int))gzread,
-                 (int(*)(void*,const char*,int))gzwrite,
-                 (fpos_t(*)(void*,fpos_t,int))gzseek,
-                 (int(*)(void*))gzclose);
-}
-
 char *PathTo(char *name)
 { char *path, *find;
 

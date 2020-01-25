@@ -24,11 +24,12 @@ typedef struct
     int    bc[2];
     int    bqual;
     int    nump;
-    char  *header;
+    int    lmax;     //  current size of seq and arr
     char  *seq;
     char  *arr;
     int    dmax;     //  current size of data
     uint8 *data;     //  data buffer
+    char  *header;
   } samRecord;
 
 Filter *parse_filter(char *expr);    //  Not re-entrant

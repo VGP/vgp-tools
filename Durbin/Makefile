@@ -11,16 +11,19 @@ ALL = vgpvalidate vgpview
 all: $(ALL)
 
 clean:
-	$(RM) *.o vgpvalidate
+	$(RM) *.o vgpvalidate vgpview
 	$(RM) -r *.dSYM
 
 install:
 	cp $(ALL) $(DEST_DIR)
 
+package:
+	make clean
+	tar -zcf Durbin.Tools.tar.gz *.c *.h Makefile
+
 vgprd.o: vgprd.h
 
-compression.o: ../Myers/compression.h
-	$(CC) $(CFLAGS) -c ../Myers/compression.c -o ./compression.o
+compression.o: compression.h
 
 ### programs
 

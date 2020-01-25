@@ -33,10 +33,15 @@ void      vcAddToTable(VGPcodec *vc, int len, char *bytes);
 void      vcCreateCodec(VGPcodec *vc, int partial);
 void      vcDestroy(VGPcodec *vc);
 
-  //  A diagnostic routine: shows you the compression scheme and if the distribution
-  //    of the scanned corpus is available, it shows you that too.
+  //  In the instance of accumulating data over multiple threads, vcAddHistogram, will
+  //    add the counts in the table for vh, to the table for vc.
 
-void vcPrint(VGPcodec *vc);
+void      vcAddHistogram(VGPcodec *vc, VGPcodec *vh);
+
+  //  A diagnostic routine: shows you the compression scheme and if the distribution
+  //    of the scanned corpus is available, it shows you that too.  Output to file 'to'.
+
+void vcPrint(VGPcodec *vc, FILE *to);
 
   //  You can encode and decode where ibytes/ilen are the input and the output
   //    is placed at obytes and the length of the compressed/decompressed result
