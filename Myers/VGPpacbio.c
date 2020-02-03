@@ -1353,6 +1353,11 @@ int main(int argc, char* argv[])
     pthread_t   threads[NTHREADS];
 #endif
 
+    if (VERBOSE)
+      { fprintf(stderr,"  Partitioning %d .subreads files into %d parts\n",argc-1,NTHREADS);
+        fflush(stderr);
+      }
+
     { uint8 *bf;
       int    f, i;
       int64  b, work, wper;
@@ -1520,6 +1525,11 @@ int main(int argc, char* argv[])
       fflush(stdout);
 #endif
 
+      if (VERBOSE)
+        { fprintf(stderr,"  Producing .pbr segements in parallel\n");
+          fflush(stderr);
+        }
+
       //  Generate the data lines in parallel threads
 
 #ifdef DEBUG_OUT
@@ -1565,6 +1575,11 @@ int main(int argc, char* argv[])
       free(command);
     }
   }
+
+  if (VERBOSE)
+    { fprintf(stderr,"  Done\n");
+      fflush(stderr);
+    }
 
   exit (0);
 }

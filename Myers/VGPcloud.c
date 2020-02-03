@@ -618,7 +618,7 @@ int main(int argc, char *argv[])
 #endif
     barsort[4] = -1;
 
-    Set_Radix_Params(NTHREADS,VERBOSE);
+    Set_Radix_Params(NTHREADS,VERBOSE,NULL,NULL);
 
     Radix_Sort(nhqbc,count,count+nhqbc,barsort);
 

@@ -17,7 +17,7 @@
 #undef    DEBUG_OUT
 #undef    DEBUG_AUTO
 
-static char *Usage = "[-sg] [-T<int(4)>] <data:fast[aq][.gz]> ...";
+static char *Usage = "[-vsg] [-T<int(4)>] <data:fast[aq][.gz]> ...";
 
 #define IO_BLOCK 10000000ll
 
@@ -697,9 +697,10 @@ int main(int argc, char *argv[])
     QVS_OUT  = ! flags['s'];
     GROUP    = flags['g'];
 
-    if (argc != 2)
+    if (argc < 2)
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
+        fprintf(stderr,"      -v: verbose mode, output progress as proceed\n");
         fprintf(stderr,"      -s: Output sequences only, skip QVs\n");
         fprintf(stderr,"      -g: Output group lanes based on Illumina lanes\n");
         fprintf(stderr,"      -T: Number of threads to use\n");
