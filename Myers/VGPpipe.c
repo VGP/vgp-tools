@@ -1,3 +1,4 @@
+/*  Last edited: Feb  4 11:53 2020 (rd109) */
 /*******************************************************************************************
  *
  *  VGPpipe: Convert VGP files from ASCII to binary or vice versa
@@ -18,7 +19,7 @@
 #include <sys/stat.h>
 
 #include "gene_core.h"
-#include "../Durbin/vgprd.h"
+#include "../Durbin/VGPlib.h"
 
 static char *Usage = "<in >out";
 

@@ -1,13 +1,13 @@
 /*****************************************************************************************
  *
- *  File: vgprd.c
- *    implementation for vgprd.h
+ *  File: VGPlib.c
+ *    implementation for VGPlib.h
  *
  *  Author: Richard Durbin (rd109@cam.ac.uk)
- *  Copyright (C) Richard Durbin, Cambridge University, 2019
+ *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Dec 27 09:46 2019 (gene)
+ * Last edited: Feb  4 11:55 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits + compactify code
  *   * Jul  8 04:28 2019 (rd109): refactored to use lineInfo[]
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
@@ -34,10 +34,11 @@
 #include <zlib.h>
 #endif
 
-#include "vgprd.h"
+#include "VGPlib.h"
+
+#include "compression.c" // directly include compression package - cleaner because only used here
 
 static pthread_mutex_t mutexInit = PTHREAD_MUTEX_INITIALIZER;
-
 
 /***********************************************************************************
  *
@@ -45,7 +46,7 @@ static pthread_mutex_t mutexInit = PTHREAD_MUTEX_INITIALIZER;
  *
  **********************************************************************************/
 
-#include "vgpformat_1_0.h"   //  Inserts code for data line formats
+#include "VGPformat_1_0.h"   //  Inserts code for data line formats
 
 static int listSize[8] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1 };
 
@@ -328,7 +329,7 @@ static inline void updateCountsAndBuffer (VgpFile *vf, char t, I64 size, I64 nSt
     li->accum.max = size;
   size += nStrings;             // need to allocate space for terminal 0s
   if ( ! li->isUserBuf && size > li->bufSize)   // expand buffer
-    { if (li->buffer == NULL) free (li->buffer);
+    { if (li->buffer != NULL) free (li->buffer);
       li->bufSize = size;
       li->buffer  = new (size*li->listByteSize, void);
     }
@@ -373,7 +374,7 @@ static inline void updateGroupCount(VgpFile *vf, BOOL isGroupLine)
  **********************************************************************************/
 
   //  EWM: it did not look like these have been fully debugged.  Logic does not
-  //    accommodate negative numbers, other bits of code lookedd incomplete.  I
+  //    accommodate negative numbers, other bits of code looked incomplete.  I
   //    have heavily rewritten and these need debug.
 
 static char *compactIntList (VgpFile *vf, LineInfo *li, char *buf)
@@ -554,10 +555,7 @@ BOOL vgpReadLine (VgpFile *vf)
     vf->object += 1;
   if (t == vf->groupType)
     updateGroupCount (vf, TRUE);
-
-if (vf->lineInfo[0] != NULL)
-  printf("\nA\n");
-
+  
   if (isAscii)           // read field by field according to ascii spec
     { int     i, j;
       I64    *ilst, len;
@@ -633,7 +631,6 @@ if (vf->lineInfo[0] != NULL)
       ix =  li->listField-1;
       if (ix >= 0)
         { listLen = vgpLen(vf,ix);
-
           li->accum.total += listLen;
           if (listLen > li->accum.max)
             li->accum.max = listLen;
@@ -846,12 +843,12 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
             switch (vf->lineType)
             { case '#':
                 li->given.count = vgpInt(vf,1);
-                if (c == vf->objectType && vf->isBinary)
+                if (c == vf->objectType && vf->isBinary) // allocate space for object index
                   { vf->lineInfo['&']->bufSize = li->given.count;
                     vf->lineInfo['&']->buffer  = new (li->given.count, I64);
                   }
-                if (c == vf->groupType && vf->isBinary)
-                  { vf->lineInfo['*']->bufSize = li->given.count+1;
+                if (c == vf->groupType && vf->isBinary) // allocate space for group index
+                  { vf->lineInfo['*']->bufSize = li->given.count+1; // +1 for end value
                     vf->lineInfo['*']->buffer  = new (li->given.count+1, I64);
                   }
                 break;
@@ -918,7 +915,7 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
             die ("can't seek to final line");
 
           if (fread (&footOff, sizeof(off_t), 1, f) != 1)
-            die ("can't read footer size");
+            die ("can't read footer offset");
 
           if (fseeko (f, footOff, SEEK_SET) != 0)
             die ("can't seek to start of footer");
@@ -1030,7 +1027,7 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void *buffer)
     }
   else
     { if (li->isUserBuf)
-        { li->bufSize = li->given.max;
+        { li->bufSize = li->given.max + 1;
           li->buffer  = new (li->given.max*li->listByteSize, void);
         }
       li->isUserBuf = FALSE;
@@ -1288,7 +1285,7 @@ BOOL vgpAddDeferred (VgpFile *vf, char *filename)
  **********************************************************************************/
 
 void vgpWriteHeader (VgpFile *vf)
-{ int         i, n;
+{ int         i,n;
   Reference  *r;
   Provenance *p;
   LineInfo   *li;
@@ -1338,11 +1335,14 @@ void vgpWriteHeader (VgpFile *vf)
       vf->line += 1;
     }
   else             // write counts based on those supplied in input header
-    { n = vf->groupType;
-      if (n == 0)
-        n = 'Z'; // if no group then upper case only
-      for (i = 'A'; i <= n ; ++i)
-        { li = vf->lineInfo[i];
+    { for (i = 'A'; i <= 'Z'+1 ; i++)
+	{ if (i == 'Z'+1)
+	    { if (vf->groupType) // NB group types are all lower case so > 'Z'+1
+		i = vf->groupType ;
+	      else
+		break ;
+	    }
+	  li = vf->lineInfo[i];
           if (li != NULL && li->given.count > 0)
             { fprintf (vf->f, "\n# %c %lld", i, li->given.count);
               vf->line += 1;
@@ -1355,11 +1355,11 @@ void vgpWriteHeader (VgpFile *vf)
                   vf->line += 1;
                 }
               if (li->given.groupCount > 0)
-                { fprintf (vf->f, "\n%% %c # %c %lld", n, i, li->given.groupCount);
+                { fprintf (vf->f, "\n%% %c # %c %lld", vf->groupType, i, li->given.groupCount);
                   vf->line += 1;
                 }
               if (li->given.groupTotal > 0)
-                { fprintf (vf->f, "\n%% %c + %c %lld", n, i, li->given.groupTotal);
+                { fprintf (vf->f, "\n%% %c + %c %lld", vf->groupType, i, li->given.groupTotal);
                   vf->line += 1;
                 }
             }
@@ -1429,10 +1429,8 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
   if (t == vf->groupType)
     updateGroupCount(vf, TRUE);
 
-  //  printf ("line %lld type %d = %c\n", vf->line, t, t);
-  
   // BINARY - block write and optionally compress
-
+  
   if (vf->isBinary)
     { U8  x, cBits;
       int nField, ix;
@@ -1460,7 +1458,7 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
         { LineInfo *lx;
 
           lx = vf->lineInfo['*'];
-          if (vf->group+1 >= lx->bufSize)
+          if (vf->group >= lx->bufSize) // still room for final value because one ahead here
             { I64  ns, *nb;
 
               ns = (lx->bufSize << 1) + 0x20000;
@@ -1699,10 +1697,9 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
  **********************************************************************************/
 
 static void vgpWriteFooter (VgpFile *vf)
-{ int       i, n;
+{ int       i;
   off_t     footOff;
   LineInfo *li;
-  char     *cbuf;
   
   footOff = ftello (vf->f);
   if (footOff < 0)
@@ -1710,40 +1707,34 @@ static void vgpWriteFooter (VgpFile *vf)
 
   //  first the per-linetype information
 
-  cbuf = new (vcMaxSerialSize(), char);
-  vf->lineInfo[1]->buffer = cbuf;
-  vf->lineInfo[2]->buffer = cbuf;
-
-  n = vf->groupType;
-  if (n == 0)
-    n = 'Z';
-  for (i = 'A'; i <= n; i++)
-    { li = vf->lineInfo[i];
+  for (i = 'A'; i <= 'Z'+1 ; i++)
+    { if (i == 'Z'+1)
+	{ if (vf->groupType) // NB group types are all lower case so > 'Z'+1
+	    i = vf->groupType ;
+	  else
+	    break ;
+	}
+      li = vf->lineInfo[i];
       if (li != NULL && li->accum.count > 0)
         { fprintf (vf->f, "# %c %lld\n", i, li->accum.count);
-          if (li->accum.max > 0)
-            fprintf (vf->f, "@ %c %lld\n", i, li->accum.max);
-          if (li->accum.total > 0)
-            fprintf (vf->f, "+ %c %lld\n", i, li->accum.total);
-          if (li->accum.groupCount > 0)
-            fprintf (vf->f, "%% %c # %c %lld\n", n, i, li->accum.groupCount);
-          if (li->accum.groupTotal > 0)
-            fprintf (vf->f, "%% %c + %c %lld\n", n, i, li->accum.groupTotal);
-
-          if (li->accum.groupCount > 0 && i == vf->groupType)
-            fprintf (vf->f, "%% %c # %c %lld\n", n, i, li->accum.groupCount);
-          if (li->accum.groupTotal > 0 && i == vf->groupType)
-            fprintf (vf->f, "%% %c + %c %lld\n", n, i, li->accum.groupTotal);
-
+	  if (li->listField)
+            { fprintf (vf->f, "@ %c %lld\n", i, li->accum.max);
+	      fprintf (vf->f, "+ %c %lld\n", i, li->accum.total);
+	    }
+	  if (vf->groupType && i != vf->groupType && vf->group > 0)
+	    { fprintf (vf->f, "%% %c # %c %lld\n", vf->groupType, i, li->accum.groupCount);
+	      if (li->listField)
+		fprintf (vf->f, "%% %c + %c %lld\n", vf->groupType, i, li->accum.groupTotal);
+	    }
           if (li->isUseFieldCodec)
             { vgpChar(vf,0) = i;
-              vgpInt(vf,1)  = vcSerialize (li->fieldCodec, cbuf);
-              vgpWriteLine (vf, 1, cbuf);
+              vgpInt(vf,1)  = vcSerialize (li->fieldCodec, vf->lineInfo[1]->buffer);
+              vgpWriteLine (vf, 1, vf->lineInfo[i]->buffer);
             }
           if (li->isUseListCodec && li->listCodec != DNAcodec)
             { vgpChar(vf,0) = i;
-              vgpInt(vf,1)  = vcSerialize (li->listCodec, cbuf);
-              vgpWriteLine (vf, 2, cbuf);
+              vgpInt(vf,1)  = vcSerialize (li->listCodec, vf->lineInfo[2]->buffer);
+              vgpWriteLine (vf, 2, vf->lineInfo[2]->buffer);
             }
         }
     }
@@ -1761,10 +1752,6 @@ static void vgpWriteFooter (VgpFile *vf)
 
   if (fwrite (&footOff, sizeof(off_t), 1, vf->f) != 1)
     die ("failed writing footer offset");
-  
-  vf->lineInfo[1]->buffer = NULL;
-  vf->lineInfo[2]->buffer = NULL;
-  free (cbuf);
 }
 
 void vgpFinalizeCounts(VgpFile *vf)

@@ -1,3 +1,4 @@
+/*  Last edited: Feb  4 11:52 2020 (rd109) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,7 @@
 
 #include "LIBDEFLATE/libdeflate.h"
 #include "gene_core.h"
-#include "../Durbin/vgprd.h"
+#include "../Durbin/VGPlib.h"
 
 #undef   DEBUG_FIND
 #undef    DEBUG_OUT
