@@ -27,10 +27,14 @@ typedef long long     int64;
 
 static int    NTHREADS;
 static int    VERBOSE;        //  Print each byte as it is sorted
+static int   *SEGBEG;
+static int   *SEGLEN;
 
-void Set_Radix_Params(int nthread, int verbose)
+void Set_Radix_Params(int nthread, int verbose, int *seg_beg, int *seg_len)
 { NTHREADS = nthread;
   VERBOSE  = verbose;
+  SEGBEG   = seg_beg;
+  SEGLEN   = seg_len;
 }
 
 //  Global variables for every "lex_thread"
@@ -147,7 +151,13 @@ void *Radix_Sort(int64 len, void *src, void *trg, int *bytes)
       //    otherwise accumulate from sptr counts of last sweep
 
       if (b == 0)
-        { for (i = 0; i < NTHREADS; i++)
+        { if (SEGBEG != NULL)
+            { for (i = 0; i < NTHREADS; i++)
+                { parmx[i].beg = SEGBEG[i];
+                  parmx[i].end = SEGBEG[i] + SEGLEN[i];
+                }
+            }
+          for (i = 0; i < NTHREADS; i++)
             pthread_create(threads+i,NULL,lexbeg_thread,parmx+i);
 
           for (i = 0; i < NTHREADS; i++)

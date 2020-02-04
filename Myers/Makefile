@@ -2,7 +2,7 @@ DEST_DIR = ~/bin
 
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = VGPseq VGPzip VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe
+ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe
 
 all: deflate.lib $(ALL)
 
@@ -20,6 +20,9 @@ VGPzip: VGPzip.c $(GENE_DPND)
 
 VGPseq: VGPseq.c $(VGP_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPseq VGPseq.c $(VGP_CORE) $(GENE_CORE) -lpthread
+
+VGPpair: VGPpair.c $(VGP_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPpair VGPpair.c $(VGP_CORE) $(GENE_CORE) -lpthread
 
 VGPpacbio: VGPpacbio.c pb_expr.c pb_expr.h $(VGP_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPpacbio VGPpacbio.c pb_expr.c $(VGP_CORE) $(GENE_CORE) -lpthread

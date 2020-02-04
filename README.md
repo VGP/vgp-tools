@@ -310,8 +310,8 @@ We introduce the 4 secondary specializations of sequence files below.
 This subtype of .seq-files requires that all sequences and their associated QV's if present
 are organized in read-pairs with P-lines.  If group lines are present then they should
 correspond to sequencing lanes or the equivalent, as in SAM read groups.  For these files,
-\#S = 2 #P and #Q = #S or #Q = 0.  See the documentation of **VGPseq** in Chapter 4 for an example
-of a simple tool that can produce a .irp file from a pair of possibly gzip'd .fasta or .fastq files.
+\#S = 2 #P and #Q = #S or #Q = 0.  See the documentation of **VGPseq** and **VGPpair** in Chapter 4 for an example
+of how to produce a .irp file from a pair of possibly gzip'd .fasta or .fastq files.
 
 ### 2.1.2. 10X Genomics read clouds, .10x
 
@@ -791,7 +791,7 @@ The other distinguishing feature of ```VGPzip``` is the very large block size (`
 64KB blocks).  Our goal is to have a compressed file that can be operated on in several
 large pieces by parallel threads.  For this purpose, small blocks are just a nuisance and would make the associated ```.vzi``` decompression index excessively large.  All import tools in the VGP repertoire such as **VGPseq** below can perform parallel threaded processing on VGPzip'd files, and thus operate much more efficiently.
 
-#### <code>4.3. VGPseq [-vsg] [-T\<int(4)\>] \<forward:.fast[aq][.gz]> ...</code>
+#### <code>4.3. VGPseq [-vsg] [-T\<int(4)\>] \<name:.fast[aq][.gz]> ...</code>
 
 VGPseq reads one or more, possibly compressed, fasta or fastq files and outputs a single file in .seq format to the standard output.  If more than one file is given then they must
 all be either .fasta or .fastq files, a mix is not allowed.
@@ -816,6 +816,12 @@ therefore the .fastq headers encode the instrument, flow cell, lane, etc. in fie
 between :'s where the data is in order of flow cell and lane.  VGPseq uses this
 information to group reads into lanes.
 
+#### <code>4.3. VGPpair [-v] [-T\<int(4)\>] \<forward:.seq> \<reverse:.seq></code>
+
+VGPpair reads two, presumably paired .seq files and outputs to stdout a compressed binary
+.irp file in which the sequences with the same indices are paired together, with the forward sequence (and any qualifying lines, e.g. 'Q', 'W', etc) immediately preceding the reverse sequence (and its modulating lines if any).  The only condition is that the two files have
+the same number of sequences.  The group structure, if any, is taken from the forward file.
+
 #### <code>4.4. VGPpacbio [-va] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> ...</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
@@ -830,14 +836,17 @@ The -a option asks VGPpacbio to  output the arrow information in N- and A-lines 
 the default is to not output this information.  The reads are grouped into SMRT cells where each
 input file is assumed to contain the data produced by a single cell.
 
-#### <code>4.5. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<source:.irp></code>
+#### <code>4.5. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<forward:.seq> \<reverse:.seq></code>
 
 *Still under development but operational*
 
-VGPcloud takes a possible compressed .irp file containing Illumina data produced with the
-10x Genomics read cloud technology.  As such the first 23bp of the forward read are assumed
-to consist of a 16bp barcode followed by a 7bp linker.  VGPcloud does an external sort of
-the read pairs according to their barcodes in the subdirectory given by the -P option (/tmp
+VGPcloud takes pair of .seq files containing paired Illumina data produced with the
+10x Genomics read cloud technology.  As such the first 23bp of the forward reads are assumed
+to consist of a 16bp barcode followed by a 7bp linker.  VGPcloud examines the bar codes and
+considers valid any that occur in sufficient number and do not contain a low quality base or
+'N'.  It then corrects any bar code that has one difference from a unique valid code.  Those
+read pairs with valid or corrected bar codes are then sortedd
+according to their barcodes in the subdirectory given by the -P option (/tmp
 by default).  It then groups the pairs by barcode and outputs them as an .10x file to the
 standard output after trimming off the first 23bp of the forward read.
 

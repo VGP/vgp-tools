@@ -26,7 +26,7 @@
 #include "gene_core.h"
 #include "../Durbin/VGPlib.h"
 
-#define  DEBUG_FIND
+#undef  DEBUG_FIND
 #undef  DEBUG_OUT
 
 #define IO_BLOCK  100000
@@ -637,6 +637,7 @@ int main(int argc, char *argv[])
         fprintf(stderr," intervals for the LA\n");
         fprintf(stderr,"\n");
         fprintf(stderr,"   -g  Output la's in read pile groups\n");
+        fprintf(stderr,"   -v: verbose mode, output progress as proceed\n");
 
         exit (1);
       }
@@ -661,7 +662,7 @@ int main(int argc, char *argv[])
     fclose(input);
 
     if (VERBOSE)
-      { fprintf(stderr,"  Scanning sequence file %s\n",fname1);
+      { fprintf(stderr,"  Scanning .pbr file %s\n",fname1);
         fflush(stderr);
       }
 
@@ -683,7 +684,7 @@ int main(int argc, char *argv[])
 
     if (ISTWO)
       { if (VERBOSE)
-          { fprintf(stderr,"  Scanning sequence file %s\n",fname2);
+          { fprintf(stderr,"  Scanning .pbr file %s\n",fname2);
             fflush(stderr);
           }
         RLEN2 = Fetch_Length_Vector(fname2,&NREAD2,&RMAX2);

@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Feb  4 11:55 2020 (rd109)
+ * Last edited: Feb  4 12:05 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits + compactify code
  *   * Jul  8 04:28 2019 (rd109): refactored to use lineInfo[]
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
@@ -188,7 +188,7 @@ static void vgpFileDestroy(VgpFile *vf)
   if (vf->reference  != NULL) free (vf->reference);    //  EWM: Memory leak
   if (vf->deferred   != NULL) free (vf->deferred);     //  EWM: Memory leak
   if (vf->codecBuf   != NULL) free (vf->codecBuf);
-  if (vf->f          != NULL) fclose (vf->f);
+  if (vf->f != NULL && vf->f != stdout) fclose (vf->f);
 
   for (i = 0; i < 128 ; i++)
     if (vf->lineInfo[i] != NULL)
@@ -555,7 +555,7 @@ BOOL vgpReadLine (VgpFile *vf)
     vf->object += 1;
   if (t == vf->groupType)
     updateGroupCount (vf, TRUE);
-  
+
   if (isAscii)           // read field by field according to ascii spec
     { int     i, j;
       I64    *ilst, len;
@@ -983,6 +983,7 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
                   { li->bufSize = l0->bufSize;
                     li->buffer  = new (l0->bufSize*l0->listByteSize, void);
                   }
+                li->given = l0->given;
               }
           }
 
@@ -993,6 +994,9 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
 
         v->lineInfo['&'] = vf->lineInfo['&'];
         v->lineInfo['*'] = vf->lineInfo['*'];
+
+        v->isIndexIn = vf->isIndexIn;
+        v->subType   = vf->subType;
       }
   }
   
@@ -1496,14 +1500,17 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
             }
           else
             { fputc (x, vf->f);
-              if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
-                die ("write fields: t %c, nField %d, fieldSize %lld", t, nField, fieldSize);
+              if (nField > 0)
+                { if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
+                    die ("write fields: t %c, nField %d, fieldSize %lld", t, nField, fieldSize);
+                }
             }
         }
       else
         { fputc (x, vf->f);
-          if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
-            die ("write fields: t %c, nField %d, fieldSize %lld", t, nField, fieldSize);
+          if (nField > 0)
+            if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
+              die ("write fields: t %c, nField %d, fieldSize %lld", t, nField, fieldSize);
 
           if (li->fieldCodec != NULL)
             { vcAddToTable (li->fieldCodec, fieldSize, (char *) vf->field);

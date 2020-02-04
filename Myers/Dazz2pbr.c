@@ -25,7 +25,7 @@
 
 #define IO_BLOCK 10000000
 
-static char *Usage = "[-agu] [-T<int(4)>] <path:db>";
+static char *Usage = "[-vagu] [-T<int(4)>] <path:db>";
 
 
 /*******************************************************************************************
@@ -694,8 +694,10 @@ int main(int argc, char *argv[])
   char       *command;
   int         nfiles;
   int64       nreads;
-  int         NTHREADS;
   DAZZ_DB    _db, *db = &_db;
+
+  int         NTHREADS;
+  int         VERBOSE;
 
   //  Capture command line for provenance
 
@@ -734,7 +736,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("agu")
+            ARG_FLAGS("vagu")
             break;
           case 'T':
             ARG_POSITIVE(NTHREADS,"Number of threads")
@@ -744,9 +746,10 @@ int main(int argc, char *argv[])
         argv[j++] = argv[i];
     argc = j;
 
-    TRIM  = 1-flags['u'];
-    DOARW = flags['a'];
-    DOGRP = flags['g'];
+    VERBOSE = flags['v'];
+    TRIM    = 1-flags['u'];
+    DOARW   = flags['a'];
+    DOGRP   = flags['g'];
 
     if (argc <= 1)
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
@@ -757,11 +760,13 @@ int main(int argc, char *argv[])
         fprintf(stderr,"          A # string   - arrow pulse-width string\n");
         fprintf(stderr,"      -g: g # # string - cell size and name\n");
         fprintf(stderr,"\n");
+        fprintf(stderr,"      -v: verbose mode, output progress as proceed\n");
         fprintf(stderr,"      -u: Export untrimmed DB (default is trimmed DB).\n");
         fprintf(stderr,"      -T: Number of threads to use\n");
         exit (1);
       }
   }
+
 
   //  Open DB
 
@@ -783,6 +788,11 @@ int main(int argc, char *argv[])
           }
       }
   }
+
+  if (VERBOSE)
+    { fprintf(stderr,"  Analyzing contents of DB %s\n",argv[1]);
+      fflush(stderr);
+    }
 
   //  Load QVs if requested
 
@@ -879,6 +889,11 @@ int main(int argc, char *argv[])
     pthread_t  threads[NTHREADS];
     int        i;
 
+    if (VERBOSE)
+      { fprintf(stderr,"  Partitioning Dazzler DB into %d parts\n",NTHREADS);
+        fflush(stderr);
+      }
+
     vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
     vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
     vgpWriteHeader(vf);
@@ -888,6 +903,11 @@ int main(int argc, char *argv[])
         parm[i].beg = (nreads * i) / NTHREADS;
         parm[i].end = (nreads * (i+1)) / NTHREADS;
         parm[i].arg = argv[1];
+      }
+
+    if (VERBOSE)
+      { fprintf(stderr,"  Producing .pbr segements in parallel\n");
+        fflush(stderr);
       }
 
     //  Generate the data lines in parallel threads
@@ -905,6 +925,11 @@ int main(int argc, char *argv[])
     free(fhead);
     free(findx-1);
   }
+
+  if (VERBOSE)
+    { fprintf(stderr,"  Done\n");
+      fflush(stderr);
+    }
 
   exit (0);
 }
