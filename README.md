@@ -13,7 +13,7 @@ VGP-Tools is a growing collection of tools designed to operate on all the forms 
 in a DNA sequencing and assembly project.   The specification of the content of the several types of data files involved has a very simple ASCII format that is easy for both humans and programs to read and interpret.  Moreover, there is a corresponding compressed and indexed binary representation for each ASCII datum so that production VGP tools are very efficient in time and the size of the data files they manipulate.  A simple converter allows one to move between the ASCII and binary representations of data.
 
 The framework allows one to represent source data, process intermediates, and the ultimate reconstructed genome assemblies for a large-scale DNA sequencing project.
-There are six **primary file types**, one for each of *sequences*, *restriction maps*,
+There are seven **primary file types**, one for each of *sequences*, *restriction maps*,
 *alignments*, *links*, *breaks*, and *lists*, that contain a collection of objects of a given type.  Each
 of these primary file types can be specialized as a **secondary file type** that ensures certain
 semantic constraints on the objects (e.g. all reads are paired and have QVs), and/or introduces
@@ -382,7 +382,9 @@ So in the header of a .ctg-file one expects to see the dependency headers:
 
 ### 2.1.5. Kmer sets, .kmr
 
-This sequence subtype contains lists of kmers.  The S-line gives the kmer sequence.  The additional C-line type can be used to specify counts in a set of sequences, in which case there should be a reference line for the sequence file name
+This sequence subtype contains lists of kmers.  The S-line gives the kmer sequence.  
+The additional C-line type can be used to specify counts in a set of sequences, in which case there should be a reference line for the sequence file name. 
+If you want to record counts in more than one sequence-set, then give multiple sequence file names, and correspondingly multiple C-lines for each S-line. 
 
 ```
   < <string:.seq_file_name>
@@ -608,25 +610,23 @@ desirable.
 
 ## 2.4. Sequence to sequence hit file, .hit
 
-This file type is for recording match hits between sequences in one file and those in another file, 
+This file type is for recording match hits between query sequences in one file and target sequences in another file, 
 optionally together with the locations of the hits.  The typical use of this file type is for kmer 
-matches in sequences and vice versa, but more generally we can think of it as recording global 
+matches in sequences, but more generally we can think of it as recording global 
 sequence matches and their start points. In this sense it is another type of alignment file, but .hit 
 files are much lighter weight than .aln files because they do not give start and end coordinates in 
 both sequences, and only have one primary line type and object per query sequence, rather than one 
 object per hit, which simplifies indexing and file reading.
 
 ```
-< <string:a_seq_file>   <int:nseqs>            file of query sequences
-< <string:b_seq_file>   <int:nseqs>            file of target sequences
+< <string:a_seq_file>   <int:nseqs>            file sequences
+< <string:b_seq_file>   <int:nseqs>            file sequences
 
-H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of queries b that have hits with target a
+H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of sequences b that have hits with sequence a
 ```
 
-There are two subtypes of .hit files, one in which the queries are the kmers, and the H-line gives the 
-list of target sequences that contain kmer matches (with duplicates for multiple matches), and the other 
-giving the inverse mapping in which the queries are long sequences and each H-line lists the kmers that
-are found within a query.
+There are two subtypes of .hit files, one in which the queries are the a sequences, and there is an H-line for each kmer that gives the list of target sequences that contain kmer matches (with duplicates for multiple matches), 
+and the other giving the inverse mapping in which there is a  H-line for each target that lists the kmers that are found within it.
 
 ### 2.4.1 kmer to sequence hit file, .k2s
 
@@ -634,8 +634,7 @@ are found within a query.
 P <int:nhit> <int:pos_b>^nhit                  positions in each target seq_b of query seq_a
 ```
 
-This version is used when the queries are short sequences such as kmers, and the targets are long sequences 
-in which the queries are found.  The P-line then gives the **positions** of the hits of query seq_a within each
+In this version the P-line gives the **positions** of the hits of query seq_a within each
 of the targets seq_b listed on the preceding H-line.
 Note that if seq_a is found twice in some seq_b then that seq_b must be listed twice in the H-line, with the positions 
 of each hit given in the corresponding locations in the P line. 
@@ -646,10 +645,8 @@ of each hit given in the corresponding locations in the P line.
 O <int:nhit> <int:pos_a>^nhit                  offsets in query seq_a of each target seq_b
 ```
 
-This version is used in the inverse situation when the queries are long sequences, and the targets are short 
-sequences such as kmers that are found within the long queries. The O-line then gives the **offsets** of the 
-hits of each target seq_b within the query seq_a as listed on the preceding H-line.
-As for .k2s if a seq_b is found twice in seq_a then that seq_b must be listed twice in the H-line, with the offsets 
+This version is used in the inverse situation when we want to list for each target the kmers that are found within it. The O-line then gives the **offsets** of the hits of each query seq_b within the target seq_a as listed on the preceding H-line.
+As for .k2s, if a seq_b is found twice in seq_a then that seq_b must be listed twice in the H-line, with the offsets 
 for each hit given in the corresponding locations in the O line. 
 
 ## 2.5. Contig join file, .jns
@@ -833,13 +830,16 @@ An alternative enabled by having proposed scaffolding operations in VGP formats 
 
 # 4. VGP Tool Manuals
 
-#### <code>4.0. vgpvalidate [-hw] [-o \<name>] [-t <3-code>] \<input:VGP-file></code>
+#### <code>4.0. VGPstat [-hw] [-o \<name>] [-t <3-code>] \<input:VGP-file></code>
 
 *To be written*
 
-#### <code>4.1. vgpview [-bhHuw] [-o \<name>] [-t <3-code>] [-i \<ranges>] \<input:VGP-file></code>
+#### <code>4.1. VGPview [-bhHuw] [-o \<name>] [-t <3-code>] [-i \<ranges>] [-g \<ranges>] \<input:VGP-file></code>
 
-*To be written*
+The -b option outputs the file in binary.  The default is ascii.  Note that the binary form is compressed and indexed, and is the fastest option for 
+The -H option just prints out the header.
+
+It is possible to stream ascii out of binary
 
 #### <code>4.2. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
 
