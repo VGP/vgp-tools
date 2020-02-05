@@ -2,7 +2,7 @@
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Date: February 18-22, 2019
-### Last Update: January 20, 2020
+### Last Update: February 5, 2020
 
 <br>
 <br>
@@ -608,30 +608,49 @@ desirable.
 
 ## 2.4. Sequence to sequence hit file, .hit
 
-This file type is for recording  match hits between sequences from one file to those in another file, 
-together optionally with the location
-Typically this is used for kmer matches in sequences and vice versa, but more generally we can think of it as   
+This file type is for recording match hits between sequences in one file and those in another file, 
+optionally together with the locations of the hits.  The typical use of this file type is for kmer 
+matches in sequences and vice versa, but more generally we can think of it as recording global 
+sequence matches and their start points. In this sense it is another type of alignment file, but .hit 
+files are much lighter weight than .aln files because they do not give start and end coordinates in 
+both sequences, and only have one primary line type and object per query sequence, rather than one 
+object per hit, which simplifies indexing and file reading.
 
 ```
-< <string:a_seq_file>   <int:nseqs>
-< <string:b_seq_file>   <int:nseqs>
+< <string:a_seq_file>   <int:nseqs>            file of query sequences
+< <string:b_seq_file>   <int:nseqs>            file of target sequences
 
-H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of sequences b that have hits with sequence a
+H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of queries b that have hits with target a
 ```
+
+There are two subtypes of .hit files, one in which the queries are the kmers, and the H-line gives the 
+list of target sequences that contain kmer matches (with duplicates for multiple matches), and the other 
+giving the inverse mapping in which the queries are long sequences and each H-line lists the kmers that
+are found within a query.
 
 ### 2.4.1 kmer to sequence hit file, .k2s
 
 ```
-P <int:nhit> <int:pos_b>^nhit                  positions of kmer seq_a from the H line in each seq_b
+P <int:nhit> <int:pos_b>^nhit                  positions in each target seq_b of query seq_a
 ```
 
-Here we are locating a_sequences in the 
+This version is used when the queries are short sequences such as kmers, and the targets are long sequences 
+in which the queries are found.  The P-line then gives the **positions** of the hits of query seq_a within each
+of the targets seq_b listed on the preceding H-line.
+Note that if seq_a is found twice in some seq_b then that seq_b must be listed twice in the H-line, with the positions 
+of each hit given in the corresponding locations in the P line. 
 
 ### 2.4.2 sequence to kmer hit file, .s2k
 
 ```
-P <int:nhit> <int:pos_b>^nhit                  positions of kmer seq_a from the H line in each seq_b
+O <int:nhit> <int:pos_a>^nhit                  offsets in query seq_a of each target seq_b
 ```
+
+This version is used in the inverse situation when the queries are long sequences, and the targets are short 
+sequences such as kmers that are found within the long queries. The O-line then gives the **offsets** of the 
+hits of each target seq_b within the query seq_a as listed on the preceding H-line.
+As for .k2s if a seq_b is found twice in seq_a then that seq_b must be listed twice in the H-line, with the offsets 
+for each hit given in the corresponding locations in the O line. 
 
 ## 2.5. Contig join file, .jns
 
