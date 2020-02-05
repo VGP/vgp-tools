@@ -29,6 +29,7 @@ or dataset2.pbr.
 	- **.pbr** for PacBio long reads and relevant meta-data.
 	- **.10x** for 10X Genomics read clouds with their extracted barcodes.
 	- **.ctg** for contigs from an assembly.
+	- **.kmr** for sets of kmers.
 
 - **.rmp**   primary type for restriction map (RM) objects.
 	- **.rmm** for RMs for individual molecules produced by e.g. Bionano.
@@ -37,9 +38,13 @@ or dataset2.pbr.
 
 - **.aln**   primary type for alignments between sequences and restriction maps.
 	- **.sxs** for alignments between sequences (pronounced "success").
-	- **.rxr** for alignments between restriction maps .
+	- **.rxr** for alignments between restriction maps.
 	- **.sxr** for alignments between sequences and restriction maps .
 	- **.map** for alignments between sequences and a target superstring.
+	
+- **.hit**   primary type for incidence data of kmers in sequences and vice versa.
+	- **.k2s** for lists per kmer of the sequences it hits.
+	- **.s2k** for lists per sequence of the kmers that hit it.
 
 - **.jns**   primary type for join information between (contig) sequences.
 
@@ -375,6 +380,17 @@ So in the header of a .ctg-file one expects to see the dependency headers:
 
 <br>
 
+### 2.1.5. Kmer sets, .kmr
+
+This sequence subtype contains lists of kmers.  The S-line gives the kmer sequence.  The additional C-line type can be used to specify counts in a set of sequences, in which case there should be a reference line for the sequence file name
+
+```
+  < <string:.seq_file_name>
+
+  C <int: count>
+```
+
+
 ## 2.2. Restriction Map, .rmp
 
 This file type encodes restriction maps, potentially with multiple enzymes with
@@ -589,7 +605,35 @@ desirable.
 <br>
 <br>
 
-## 2.4. Contig join file, .jns
+
+## 2.4. Sequence to sequence hit file, .hit
+
+This file type is for recording  match hits between sequences from one file to those in another file, 
+together optionally with the location
+Typically this is used for kmer matches in sequences and vice versa, but more generally we can think of it as   
+
+```
+< <string:a_seq_file>   <int:nseqs>
+< <string:b_seq_file>   <int:nseqs>
+
+H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of sequences b that have hits with sequence a
+```
+
+### 2.4.1 kmer to sequence hit file, .k2s
+
+```
+P <int:nhit> <int:pos_b>^nhit                  positions of kmer seq_a from the H line in each seq_b
+```
+
+Here we are locating a_sequences in the 
+
+### 2.4.2 sequence to kmer hit file, .s2k
+
+```
+P <int:nhit> <int:pos_b>^nhit                  positions of kmer seq_a from the H line in each seq_b
+```
+
+## 2.5. Contig join file, .jns
 
 For assemblies, we expect that our assembly process will create a **.seq** file of contigs,
 and that various methods will be applied to use 10X Genomics, BioNano, HiC and/or other data
@@ -636,7 +680,7 @@ If the gap is negative then the contigs overlap by the specified number of bases
 For technologoies such as Hi-C or 10X read clouds that do not provide such estimates
 on gap size, the G-line is simply not given.
 
-## 2.5. Contig break file, .brk
+## 2.6. Contig break file, .brk
 
 In counter point to joins, the same secondary information can also indicate intervals of a
 contig where it was misassembled and a break should actually occur.  We consider both the .jns
@@ -656,7 +700,7 @@ interval.
 <br>
 <br>
 
-## 2.6. List file, .lis
+## 2.7. List file, .lis
 
 This file type just keeps lists of indices into other VGP file types.  We use this to define
 subsets of objects in existing VGP files, without needing to create an explicit listing of
@@ -689,7 +733,7 @@ in .scf-files (see below) to name the final scaffold objects output by an assemb
 
 <br>
 
-### 2.6.1. Assembly layout file, .lyo
+### 2.7.1. Assembly layout file, .lyo
 
 An assembly layout file consists of a collection of lists over sequence read alignments
 between reads in the same .seq-file.  Each list encodes a path in the string graph of the
@@ -699,7 +743,7 @@ into the contig and provide additional data for consensus.
 
 <br>
 
-### 2.6.2. Scaffold file, .scf
+### 2.7.2. Scaffold file, .scf
 
 A scaffold file consists of a collection of lists over a scaffold link file, each of which
 gives a linear order of links defining a proposed assembly scaffold.
