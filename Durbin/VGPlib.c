@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Feb  7 10:04 2020 (rd109)
+ * Last edited: Feb  7 15:01 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits + compactify code
  *   * Jul  8 04:28 2019 (rd109): refactored to use lineInfo[]
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
@@ -1097,10 +1097,11 @@ BOOL vgpGotoObject (VgpFile *vf, I64 i)
 }
 
 I64 vgpGotoGroup (VgpFile *vf, I64 i)
-{ if (vf != NULL && vf->isIndexIn && vf->group > 0)
+{ if (vf != NULL && vf->isIndexIn)
     if (0 <= i && i < vf->lineInfo[(int) vf->groupType]->given.count)
       { I64 *groupIndex = (I64 *) vf->lineInfo['*']->buffer;
-        vgpGotoObject(vf,groupIndex[i]);
+        if (!vgpGotoObject(vf,groupIndex[i]))
+	  return 0 ;
         return (groupIndex[i+1] - groupIndex[i]);
       }
   return (0);

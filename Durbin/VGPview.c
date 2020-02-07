@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Feb  4 01:05 2020 (rd109)
+ * Last edited: Feb  7 15:01 2020 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -48,6 +48,12 @@ static IndexList *parseIndexList (char *s)
       else if (*s) die ("unrecognised character %c at %s in object list\n", *s, s) ;
     }
   return ol0 ; 
+}
+
+static void transferLine (VgpFile *vfIn, VgpFile *vfOut, size_t *fieldSize)
+{ memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
+  vgpWriteLine (vfOut, vfIn->lineType, vgpLen(vfIn), vgpString(vfIn)) ;
+  char *s = vgpReadComment (vfIn) ; if (s) vgpWriteComment (vfOut, s) ;
 }
 
 int main (int argc, char **argv)
@@ -94,52 +100,64 @@ int main (int argc, char **argv)
     else if (!strcmp (*argv, "-i") || !strcmp (*argv, "--index"))
       { objList = parseIndexList (argv[1]) ; argc -= 2 ; argv += 2 ; }
     else if (!strcmp (*argv, "-g") || !strcmp (*argv, "--group"))
-      { objList = parseIndexList (argv[1]) ; argc -= 2 ; argv += 2 ; }
+      { groupList = parseIndexList (argv[1]) ; argc -= 2 ; argv += 2 ; }
     else die ("unknown option %s - run without arguments to see options", *argv) ;
 
   if (isBinary) isNoHeader = FALSE ;
-  if (isHeaderOnly) { isHeaderOnly = TRUE ; isBinary = FALSE ; }
+  if (isHeaderOnly) isBinary = FALSE ;
   
   if (argc != 1) die ("can currently only take one input file") ;
 
   VgpFile *vfIn = vgpFileOpenRead (*argv, fileType, 1) ; /* reads the header */
   if (!vfIn) die ("failed to open vgp file %s", *argv) ;
   
-    { VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, FALSE, isBinary, 1) ;
-      if (!vfOut) die ("failed to open output file %s", outFileName) ;
-
-      if (isHeaderOnly)
-	vgpWriteHeader (vfOut) ;
-      else
-	{ vgpAddProvenance (vfOut, "vgpview", "0.0", command, 0) ;
-	  if (!isNoHeader) vgpWriteHeader (vfOut) ;
-
-	  static size_t fieldSize[128] ;
-	  for (i = 0 ; i < 128 ; ++i)
-	    if (vfIn->lineInfo[i]) fieldSize[i] = vfIn->lineInfo[i]->nField*sizeof(Field) ;
-
-	  if (objList)
-	    { vfOut->isLastLineBinary = TRUE ; /* prevents leading '\n' */
-	      while (objList)
-		{ if (!vgpGotoObject (vfIn, objList->i0)) die ("bad seek to %lld", objList->i0 ) ;
-		  if (!vgpReadLine (vfIn)) die ("can't read object %lld", objList->i0) ;
-		  for (i = objList->i0 ; i < objList->iN ; ) // conditional increment end of loop
-		    { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
-		      vgpWriteLine (vfOut, vfIn->lineType, vgpString(vfIn)) ;
-		      if (!vgpReadLine (vfIn)) break ;
-		      if (vfIn->lineType == vfIn->objectType) ++i ;
-		    }
-		  objList = objList->next ;
-		}
-	    }
-	  else
-	    while (vgpReadLine (vfIn))
-	      { memcpy (vfOut->field, vfIn->field, fieldSize[vfIn->lineType]) ;
-		vgpWriteLine (vfOut, vfIn->lineType, vgpString(vfIn)) ;	      }
-	}
+  VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, FALSE, isBinary, 1) ;
+  if (!vfOut) die ("failed to open output file %s", outFileName) ;
+  
+  if (isHeaderOnly)
+    vgpWriteHeader (vfOut) ;
+  else
+    { vgpAddProvenance (vfOut, "vgpview", "0.0", command, 0) ;
+      if (!isNoHeader) vgpWriteHeader (vfOut) ;
       
-      vgpFileClose (vfOut) ;
+      static size_t fieldSize[128] ;
+      for (i = 0 ; i < 128 ; ++i)
+	if (vfIn->lineInfo[i]) fieldSize[i] = vfIn->lineInfo[i]->nField*sizeof(Field) ;
+      
+      if (objList)
+	{ while (objList)
+	    { if (!vgpGotoObject (vfIn, objList->i0))
+		die ("can't locate to object %lld", objList->i0 ) ;
+	      if (!vgpReadLine (vfIn))
+		die ("can't read object %lld", objList->i0) ;
+	      while (objList->i0 < objList->iN)
+		{ transferLine (vfIn, vfOut, fieldSize) ;
+		  if (!vgpReadLine (vfIn)) break ;
+		  if (vfIn->lineType == vfIn->objectType) ++objList->i0 ;
+		}
+	      objList = objList->next ;
+	    }
+	}
+      else if (groupList)
+	{ while (groupList)
+	    { if (!vgpGotoGroup (vfIn, groupList->i0))
+		die ("can't locate to group %lld", groupList->i0 ) ;
+	      if (!vgpReadLine (vfIn))
+		die ("can't read group %lld", groupList->i0) ;
+	      while (groupList->i0 < groupList->iN)
+		{ transferLine (vfIn, vfOut, fieldSize) ;
+		  if (!vgpReadLine (vfIn)) break ;
+		  if (vfIn->lineType == vfIn->groupType) ++groupList->i0 ;
+		}
+	      groupList = groupList->next ;
+	    }
+	}
+      else
+	while (vgpReadLine (vfIn))
+	  transferLine (vfIn, vfOut, fieldSize) ;
     }
+  
+  vgpFileClose (vfOut) ;
 
   timeTotal (stderr) ;
 }
