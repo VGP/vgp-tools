@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Feb  4 00:52 2020 (rd109)
+ * Last edited: Feb  6 00:41 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -69,9 +69,16 @@ typedef struct
     I64 groupTotal;
   } Counts;
 
-  // Record for a particular line type.  There is at most one list element.
+  // VGPcodecs are a private package for binary vgp file compression
 
-typedef void VGPcodec; // forward declaration of opaque type for compression codecs - see later
+typedef void VGPcodec; // forward declaration of opaque type for compression codecs
+extern  VGPcodec *DNAcodec;
+  // DNAcodec is a special pre-existing compressor one should use for DNA.
+  // It compresses every base to 2-bits, where any non-ACGT letter is
+  // effectively converted to an A.  Compression is case insensitive,
+  // but decompression always delivers lower-case.
+
+  // Record for a particular line type.  There is at most one list element.
 
 typedef struct
   { Counts     accum;         // counts read or written to this moment
@@ -120,6 +127,7 @@ typedef struct
     char        objectType;          // line designation character for primary objects
     char        groupType;           // line designation character for groups (optional)
     I64         line;                // current line number
+    I64         byte;                // current byte position when writing binary
     I64         object;              // current object - incremented when object line read
     I64         group;               // current group - incremented when group line read
     Provenance *provenance;          // if non-zero then count['!'] entries
@@ -179,12 +187,12 @@ char vgpReadLine (VgpFile *vf);
   // Read the next VGP formatted line returning the line type of the line, or 0
   //   if at the end of the data section.  The content macros immediately below can be
   //   used to access the information of the line just read.
-  // EWM: returns line type not boolean, added vgpNextString macro for STRING_LISTs.
 
 #define vgpInt(vf,x)        ((vf)->field[x].i)
 #define vgpReal(vf,x)       ((vf)->field[x].r)
 #define vgpChar(vf,x)       ((vf)->field[x].c)
-#define vgpLen(vf,x)        (((vf)->field[x].len) & 0xffffffffffffffll)
+#define _LF(vf)             ((vf)->lineInfo[(int)(vf)->lineType]->listField)
+#define vgpLen(vf)          ((vf)->field[_LF(vf)?_LF(vf)-1:0].len & 0xffffffffffffffll)
 #define vgpString(vf)       (char *) ((vf)->lineInfo[(int) (vf)->lineType]->buffer)
 #define vgpIntList(vf)      (I64 *) ((vf)->lineInfo[(int) (vf)->lineType]->buffer)
 #define vgpRealList(vf)     (double *) ((vf)->lineInfo[(int) (vf)->lineType]->buffer)
@@ -196,11 +204,15 @@ char vgpReadLine (VgpFile *vf);
   //   subsequent strings sequentially with vgpNextStr, e.g.:
   //
   //       char *s = vgpString(vf);
-  //       for (int i = 0; i < vgpLen(vf,x); i++)
+  //       for (int i = 0; i < vgpLen(vf); i++)
   //         { // do something with i'th string
   //           s = vgpNextStr(vf,s);
   //         }
 
+char *vgpReadComment (VgpFile *vf);
+
+  // Can be called after vgpReadLine() to read any optional comment text after the fixed fields.
+  // Returns NULL if there is no comment.
 
 //  WRITING VGP FILES:
 
@@ -243,17 +255,18 @@ void vgpWriteHeader (VgpFile *vf);
   //   line type count stats must be set.  For binary output, the line type counts will be
   //   accumulated and output in a footer upon vgpClose.
 
-void vgpWriteLine (VgpFile *vf, char lineType,  void *buf);
+void vgpWriteLine (VgpFile *vf, char lineType, I64 listLen, void *listBuf);
 
-  // Setup a line for output just as it would be returned by vgpReadLine and then call
-  //   this routine to output the line (ASCII or binary).  Use the macros above on the l.h.s.
-  //   of assignments to fill fields (e.g. vgpInt(vf,2) = 3) and place the list data (if
-  //   relevant) in a buffer 'buf' and then call for the write.  If buf == NULL it is assumed
-  //   the list object is on the line's buffer (if relevant).
-  //   NB: the macro vgpInt should be used to set a list length, not vgpLen.
-  //   NB: adds '\n' before writing line not after, so user fprintf() can add extra material
-  //       if desired.
+  // Set up a line for output just as it would be returned by vgpReadLine and then call
+  //   this routine to output the line (ASCII or binary).
+  // Use the macros above on the l.h.s. of assignments to fill fields (e.g. vgpInt(vf,2) = 3).
+  // For lists, give the length in the listLen argument, and either place the list data in your
+  //   own buffer and give it as listBuf, or put in the line's buffer and set listBuf == NULL.
 
+void vgpWriteComment (VgpFile *vf, char *comment);
+
+  // Adds a comment to the current line. Need to use this not just fprintf() so as to keep the
+  // index correct in binary mode.
 
 // CLOSING FILES (FOR BOTH READ & WRITE)
 
@@ -283,7 +296,7 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void *buffer);
 
 BOOL vgpGotoObject (VgpFile *vf, I64 i);
 
-  // Goto i'th object in the file.  This only works on binary files which has an index.
+  // Goto i'th object in the file.  This only works on binary files which have an index.
 
 I64  vgpGotoGroup  (VgpFile *vf, I64 i);
 
@@ -336,19 +349,11 @@ void  timeTotal(FILE *f);                           // print full time since fir
  //   where the low 56 bits encode length, and the high 8 bits encode the # of high-order
  //   0-bytes in every list element if an INT_LIST (0 otherwise).
 
-
 /***********************************************************************************
  *
  *    FINALLY, THE CODEC INTERFACE
  *
  **********************************************************************************/
-
-  //  DNAcodec is a special pre-existing compressor one should use for DNA.
-  //  It compresses every base to 2-bits, where any non-ACGT letter is
-  //  effectively converted to an A.  Compression is case insensitive,
-  //  but decompression always delivers lower-case.
-
-extern VGPcodec *DNAcodec;
 
   //  To create a compressor, get an initially empty object with vcCreate, then
   //    add a significant corpus of the byte data to be compressed with vcAddToTable,

@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Feb  4 12:05 2020 (rd109)
+ * Last edited: Feb  7 10:04 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits + compactify code
  *   * Jul  8 04:28 2019 (rd109): refactored to use lineInfo[]
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
@@ -68,6 +68,7 @@ static VgpFile *vgpFileCreate(FileType fileType)
     info['&']->isIntListDiff = TRUE;
   info['*'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0);  // group index
     info['*']->isIntListDiff = TRUE;
+  info['/'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0); // comment
 
   defineFormat (vf, fileType);      // from vgpformat_1_0.h
 
@@ -133,7 +134,7 @@ static VgpFile *vgpFileCreate(FileType fileType)
     die ("VGP spec error file type %s: missing line spec for group type %c",
            fileTypeName[fileType], vf->groupType);
 
-  // setup for compression and determine endian of machine
+  // setup for compression
 
   vf->codecTrainingSize = 100000;
   info[1]->bufSize = vcMaxSerialSize() + 1; // +1 for added but unused 0-terminator
@@ -141,11 +142,13 @@ static VgpFile *vgpFileCreate(FileType fileType)
   info[2]->bufSize = vcMaxSerialSize() + 1;
   info[2]->buffer  = new (info[2]->bufSize, void);
 
-  { int   t = 1;                   // endian test
+  // determine endian of machine
+
+  { int   t = 1;
     char *b = (char *) (&t);
     vf->isBig = (*b == 0);
   }
-  
+
   return (vf);
 }
 
@@ -303,12 +306,38 @@ static inline void readString(VgpFile *vf, char *buf, I64 n)
     die ("failed to read %d byte string", n);
 }
 
-static inline void readFlush (VgpFile *vf) // reads to the end of the line
-{ char x;
+static inline void readFlush (VgpFile *vf) // reads to the end of the line and stores as comment
+{ char       x;
+  int        n = 0;
+  LineInfo *li = vf->lineInfo['/'] ;
 
+  // check the first character - if it is newline then done
+  x = getc (vf->f) ; 
+  if (x == '\n')
+    return ;
+  else if (x != ' ')
+    parseError (vf, "comment not separated by a space") ;
+
+  // else the remainder of the line is a comment
+  if (!li->bufSize)
+    { li->bufSize = 1024 ;
+      li->buffer = new (1024, char) ;
+    }
   while ((x = getc (vf->f)) && x != '\n')
     if (x == EOF)
       parseError (vf, "premature end of file");
+    else
+      { if ((n+1) >= li->bufSize)
+	  { char *s = new (2*li->bufSize, char) ;
+	    memcpy (s, li->buffer, li->bufSize) ;
+	    free (li->buffer) ;
+	    li->buffer = s ;
+	    li->bufSize *= 2 ;
+	  }
+	((char*)li->buffer)[n] = x ;
+	++n ;
+      }
+  ((char*)li->buffer)[n] = 0 ; // string terminator
 }
 
 
@@ -377,13 +406,10 @@ static inline void updateGroupCount(VgpFile *vf, BOOL isGroupLine)
   //    accommodate negative numbers, other bits of code looked incomplete.  I
   //    have heavily rewritten and these need debug.
 
-static char *compactIntList (VgpFile *vf, LineInfo *li, char *buf)
+static char *compactIntList (VgpFile *vf, LineInfo *li, I64 len, char *buf)
 { char *y;
   int   d, k;
-  I64   z, i, ix, len, mask, *ibuf;
-
-  ix  = li->listField-1;
-  len = vgpLen(vf,ix);
+  I64   z, i, mask, *ibuf;
 
   ibuf = (I64 *) buf;
 
@@ -431,18 +457,18 @@ static char *compactIntList (VgpFile *vf, LineInfo *li, char *buf)
         buf += z;
       }
 
-  vgpInt(vf,ix) |= (z << 56);
+  // finally record the number of zero bytes in the top bits of the len field
+  vgpInt(vf,li->listField-1) |= (z << 56);
+  
   return (li->buffer);
 }
 
-
-static void decompactIntList (VgpFile *vf, LineInfo *li, char *buf)
-{ I64   i, len, *x;
+static void decompactIntList (VgpFile *vf, LineInfo *li, I64 len, char *buf)
+{ I64   i, *x;
   int   ix, d, z, k;
   char *s, *t;
 
-  ix  = li->listField-1;
-  len = vgpLen (vf, ix);
+  ix = li->listField - 1 ;
   z   = (vgpInt (vf, ix) >> 56);
 
   if (z > 0)                      // decompacts in place
@@ -492,8 +518,8 @@ static void decompactIntList (VgpFile *vf, LineInfo *li, char *buf)
  *
  **********************************************************************************/
 
-  //  Read a string list, first into new allocs, then into sized line buffer
-  //    Annoyingly inefficient.
+  //  Read a string list, first into new allocs, then into sized line buffer.
+  //    Annoyingly inefficient, but we don't use it very much.
 
 static void readStringList(VgpFile *vf, char t, I64 len)
 { int    j;
@@ -549,12 +575,14 @@ BOOL vgpReadLine (VgpFile *vf)
 
   li = vf->lineInfo[(int) t];
   if (li == NULL)
-    parseError (vf, "unknown line type %c(%d) %d", t, t, vf->linePos);
+    parseError (vf, "unknown line type %c(%d was %d) %d", t, t, x, vf->linePos);
   li->accum.count += 1;
   if (t == vf->objectType)
     vf->object += 1;
   if (t == vf->groupType)
     updateGroupCount (vf, TRUE);
+
+  // fprintf (stderr, "reading line %lld type %c\n", vf->line, t) ;
 
   if (isAscii)           // read field by field according to ascii spec
     { int     i, j;
@@ -612,25 +640,23 @@ BOOL vgpReadLine (VgpFile *vf)
         { if (x & 0x1)                       // fields are compressed
             { nBits = (U8) getc (vf->f);     // NB only fields under 255 bits are compressed
               if (fread (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
-                die ("compressed fields");
+                die ("fail to read compressed fields");
 
               vcDecode (li->fieldCodec, nBits, vf->codecBuf, (char *) vf->field);
             }
           else
             if (fread (vf->field, sizeof(Field), nField, vf->f) != (unsigned long) nField)
-              die ("fields");
+              die ("fail to read fields");
         }
 
       if (t == vf->groupType)
-        { I64 *gidx;
-
-          gidx = (I64 *) vf->lineInfo['*']->buffer;
-          vf->field[0].i = gidx[vf->group] - gidx[vf->group-1];
+        { I64 *groupIndex = (I64 *) vf->lineInfo['*']->buffer;
+          vf->field[0].i = groupIndex[vf->group] - groupIndex[vf->group-1];
         }
 
       ix =  li->listField-1;
       if (ix >= 0)
-        { listLen = vgpLen(vf,ix);
+        { listLen = vgpLen(vf);
           li->accum.total += listLen;
           if (listLen > li->accum.max)
             li->accum.max = listLen;
@@ -641,9 +667,9 @@ BOOL vgpReadLine (VgpFile *vf)
 
               else if (x & 0x2)     // list is compressed
                 { if (fread (&nBits, sizeof(I64), 1, vf->f) != 1)
-                    die ("list nBits");
+                    die ("fail to read list nBits");
                   if (fread (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
-                    die ("compressed list");
+                    die ("fail to read compressed list");
                   vcDecode (li->listCodec, nBits, vf->codecBuf, li->buffer);
                 }
 
@@ -656,17 +682,37 @@ BOOL vgpReadLine (VgpFile *vf)
                 }
 
               if (li->fieldSpec[ix] == INT_LIST)
-                decompactIntList (vf, li, li->buffer);
+                decompactIntList (vf, li, listLen, li->buffer);
             }
 
           if (li->fieldSpec[ix] == STRING)
             ((char *) li->buffer)[listLen] = '\0'; // 0 terminate
         }
+
+      { U8 peek = getc(vf->f) ; // check if next line is a comment - if so then read it
+	ungetc(peek, vf->f) ;
+	if (peek & 0x80)
+	  peek = vf->binaryTypeUnpack[peek];
+	if (peek == '/') // a comment
+	  { Field keepField0 = vf->field[0] ;
+	    vgpReadLine (vf) ; // read comment line into vf->lineInfo['/']->buffer
+	    vf->lineType = t ;
+	    vf->field[0] = keepField0 ;
+	  }
+      }
     }
 
   return (t);
 }
 
+char *vgpReadComment (VgpFile *vf)
+{
+  char *comment = (char*)(vf->lineInfo['/']->buffer) ;
+  if (comment && *comment != 0)
+    return comment ;
+  else
+    return 0 ;
+}
 
 /***********************************************************************************
  *
@@ -679,7 +725,7 @@ BOOL vgpReadLine (VgpFile *vf)
  *
  **********************************************************************************/
 
-VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
+VgpFile *vgpFileOpenRead (const char *path, FileType fileType, int nthreads)
 { VgpFile *vf;
   FILE    *f;
   int      curLine;
@@ -722,7 +768,9 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
           { fprintf(stderr, "PARSE ERROR, line 1: 1-line syntax\n"); 
             exit (1);
           }
-        while (getc(f) != '\n') ;
+        while (getc(f) != '\n')
+	  if (feof(f))
+	    die ("end of file before end of line 1") ;
 
         if (major != MAJOR_NUMBER)
           die ("major version file %d != %d", major, MAJOR_NUMBER);
@@ -801,7 +849,7 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
           ungetc(' ',f);
           ungetc('!',f);
         }
-
+      
       vf->f = f;
       vgpReadLine(vf);  // can't fail because we checked file eof already
       f = vf->f;
@@ -809,13 +857,13 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
       switch (vf->lineType)
 
       { case '1':
-          parseError(vf, "1 shold be first line in header");
+          parseError(vf, "1 should be first line in header");
           break;
 
         case '2':
           { char   *s;
             SubType t;
-
+	    
             t = 0;
             s = vgpString(vf);
             for (i = 1; i < MAX_SUB; ++i)
@@ -849,7 +897,7 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
                   }
                 if (c == vf->groupType && vf->isBinary) // allocate space for group index
                   { vf->lineInfo['*']->bufSize = li->given.count+1; // +1 for end value
-                    vf->lineInfo['*']->buffer  = new (li->given.count+1, I64);
+                    vf->lineInfo['*']->buffer  = new (vf->lineInfo['*']->bufSize, I64);
                   }
                 break;
               case '@':
@@ -946,7 +994,7 @@ VgpFile *vgpFileOpenRead(const char *path, FileType fileType, int nthreads)
           break;
       }
     }
-  vf->isCheckString = FALSE;   // reset to value on entry as use can set this
+  vf->isCheckString = FALSE;   // user can set this back to TRUE if they wish
 
   // allocate codec buffer - always allocate enough to handle fields of all line types
 
@@ -1049,13 +1097,11 @@ BOOL vgpGotoObject (VgpFile *vf, I64 i)
 }
 
 I64 vgpGotoGroup (VgpFile *vf, I64 i)
-{ I64 *gidx;
-
-  if (vf != NULL && vf->isIndexIn && vf->group > 0)
+{ if (vf != NULL && vf->isIndexIn && vf->group > 0)
     if (0 <= i && i < vf->lineInfo[(int) vf->groupType]->given.count)
-      { gidx = (I64 *) vf->lineInfo['*']->buffer;
-        vgpGotoObject(vf,gidx[i]);
-        return (gidx[i+1] - gidx[i]);
+      { I64 *groupIndex = (I64 *) vf->lineInfo['*']->buffer;
+        vgpGotoObject(vf,groupIndex[i]);
+        return (groupIndex[i+1] - groupIndex[i]);
       }
   return (0);
 }
@@ -1093,6 +1139,7 @@ VgpFile *vgpFileOpenWriteNew (const char *path, FileType fileType, SubType subTy
       vf->isWrite  = TRUE;
       vf->subType  = subType;
       vf->isBinary = isBinary;
+      vf->isLastLineBinary = TRUE; // we don't want to add a newline before the first true line
 
       vf->codecBufSize = MAX_FIELD*sizeof(Field) + 1;
       vf->codecBuf     = new (vf->codecBufSize, void); 
@@ -1382,9 +1429,9 @@ void vgpWriteHeader (VgpFile *vf)
  *
  **********************************************************************************/
 
-static void writeStringList (VgpFile *vf, char t, int len)
+static int writeStringList (VgpFile *vf, char t, int len)
 { LineInfo *li;
-  int       j;
+  int       j, nByteWritten = 0;
   I64       sLen, totLen;
   char     *buf;
 
@@ -1394,7 +1441,7 @@ static void writeStringList (VgpFile *vf, char t, int len)
   for (j = 0; j < len; j++)
     { sLen = strlen (buf);
       totLen += sLen;
-      fprintf (vf->f, " %lld %s", sLen, buf);
+      nByteWritten += fprintf (vf->f, " %lld %s", sLen, buf);
       buf += sLen + 1;
     }
 
@@ -1402,16 +1449,20 @@ static void writeStringList (VgpFile *vf, char t, int len)
   li->accum.total += totLen;
   if (li->accum.max < totLen)
     li->accum.max = totLen;
+
+  return nByteWritten ;
 }
 
 // process is to fill fields by assigning to macros, then call - list contents are in buf
 // NB adds '\n' before writing line not after, so user fprintf() can add extra material
 // first call will write initial header, allowing space for count sizes to expand on close
 
-void vgpWriteLine (VgpFile *vf, char t, void *buf)
-{ I64       i, j, len;
+void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
+{ I64       i, j, ix;
   LineInfo *li;
 
+  //  fprintf (stderr, "write line type %c\n", t) ;
+  
   if ( ! vf->isWrite)
     die ("Trying to write a line to a file open for reading");
   if (vf->isFinal && isalpha(t))
@@ -1422,8 +1473,8 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
     die ("vgpWriteLine error: line type %c not present in file spec %s ",
          t,fileTypeName[vf->fileType]);
 
-  if (buf == NULL)
-    buf = li->buffer;
+  if (listBuf == NULL)
+    listBuf = li->buffer;
 
   if ( ! vf->isLastLineBinary)      // terminate previous ascii line
     fputc ('\n', vf->f);
@@ -1433,35 +1484,48 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
   if (t == vf->groupType)
     updateGroupCount(vf, TRUE);
 
+  ix = li->listField-1;
+  if (ix >= 0)
+    { if (listLen >= 0)
+	vf->field[ix].len = listLen ;
+      else
+	die ("listLen %lld must be positive", listLen) ;
+    }
+
   // BINARY - block write and optionally compress
   
   if (vf->isBinary)
     { U8  x, cBits;
-      int nField, ix;
-      I64 fieldSize, nBits, listLen, listBytes, listSize;
+      int nField;
+      I64 fieldSize, nBits, listBytes, listSize;
 
-      if (t == vf->objectType)    //  EWM: Index was being built for ASCII too??
-        { LineInfo *lx;
+      if (!vf->isLastLineBinary)
+	vf->byte = ftello (vf->f) ;
 
-          lx = vf->lineInfo['&'];
-          if (vf->object >= lx->bufSize)
-            { I64  ns, *nb;
+      if (t == vf->objectType) // update index and increment object count
+        { LineInfo *lx = vf->lineInfo['&'];
 
-              ns = (lx->bufSize << 1) + 0x20000;
-              nb = new (ns, I64);
+          if (vf->object >= lx->bufSize) // first ensure enough space
+            { I64  ns = (lx->bufSize << 1) + 0x20000;
+              I64 *nb = new (ns, I64);
+	      
               memcpy(nb, lx->buffer, lx->bufSize*sizeof(I64));
               free (lx->buffer);
               lx->buffer  = nb;
               lx->bufSize = ns;
             }
-       
-          ((I64 *) lx->buffer)[vf->object] = ftello (vf->f); // must come after writing newline
+          ((I64 *) lx->buffer)[vf->object] = vf->byte;
+#define CHECK_INDEX
+#ifdef CHECK_INDEX
+          { if (ftello (vf->f) != ((I64 *) lx->buffer)[vf->object])
+	      die ("byte offset index error") ;
+	  }
+#endif
           vf->object += 1;
         }
       if (t == vf->groupType)
-        { LineInfo *lx;
-
-          lx = vf->lineInfo['*'];
+        { LineInfo *lx = vf->lineInfo['*'];
+	  
           if (vf->group >= lx->bufSize) // still room for final value because one ahead here
             { I64  ns, *nb;
 
@@ -1478,10 +1542,9 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
 
       nField    = li->nField;
       fieldSize = nField*sizeof(Field);
-      ix        = li->listField-1;
 
       if (ix >= 0 && li->fieldSpec[ix] == INT_LIST)
-        buf = compactIntList (vf, li, buf);
+	listBuf = compactIntList (vf, li, listLen, listBuf);
 
       x = li->binaryTypePack;   //  Binary line code + compression flags
       if (li->isUseListCodec)
@@ -1497,6 +1560,7 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
               fputc (cBits, vf->f) ;
               if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
                 die("compressed fields");
+	      vf->byte += 2 + ((nBits+7) >> 3) ;
             }
           else
             { fputc (x, vf->f);
@@ -1504,6 +1568,7 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
                 { if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
                     die ("write fields: t %c, nField %d, fieldSize %lld", t, nField, fieldSize);
                 }
+	      vf->byte += 1 + fieldSize ;
             }
         }
       else
@@ -1511,6 +1576,7 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
           if (nField > 0)
             if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
               die ("write fields: t %c, nField %d, fieldSize %lld", t, nField, fieldSize);
+	  vf->byte += 1 + fieldSize ;
 
           if (li->fieldCodec != NULL)
             { vcAddToTable (li->fieldCodec, fieldSize, (char *) vf->field);
@@ -1566,8 +1632,7 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
       // Write the list if there is one
 
       if (ix >= 0)
-        { listLen = vgpLen(vf, ix);
-          li->accum.total += listLen;
+        { li->accum.total += listLen;
           if (listLen > li->accum.max)
             li->accum.max = listLen;
 
@@ -1576,7 +1641,7 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
               listSize  = listLen * listBytes;
 
               if (li->fieldSpec[ix] == STRING_LIST) // handle as ASCII
-                writeStringList (vf, t, listLen);
+                vf->byte += writeStringList (vf, t, listLen);
 
               else if (x & 0x2)
                 { if (listSize >= vf->codecBufSize)
@@ -1584,18 +1649,21 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
                       vf->codecBufSize = listSize+1;
                       vf->codecBuf     = new (vf->codecBufSize, void);
                     }
-                  nBits = vcEncode (li->listCodec, listSize, buf, vf->codecBuf);
+                  nBits = vcEncode (li->listCodec, listSize, listBuf, vf->codecBuf);
                   if (fwrite (&nBits, sizeof(I64), 1, vf->f) != 1)
-                    die ("list nBits");
+                    die ("failed to write list nBits");
                   if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
-                    die ("compressed list");
+                    die ("failed to write compressed list");
+		  vf->byte += sizeof(I64) + ((nBits+7) >> 3);
                 }
 
               else
-                { if (fwrite (buf, listSize, 1, vf->f) != 1)
-                    die ("write list");
+                { if (fwrite (listBuf, listSize, 1, vf->f) != 1)
+                    die ("failed to write list ix %d listLen %lld listSize %lld listBuf %lx",
+			 ix, listLen, listSize, listBuf);
+		  vf->byte += listSize;
                   if (li->listCodec != NULL)
-                    { vcAddToTable (li->listCodec, listSize, buf);
+                    { vcAddToTable (li->listCodec, listSize, listBuf);
                       li->listTack += listSize;
 
                       if (li->listTack > vf->codecTrainingSize)
@@ -1667,35 +1735,41 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
           case INT_LIST:
           case REAL_LIST:
           case STRING_LIST:
-            len = vgpLen(vf,i);
-            li->accum.total += len;
-            if (len > li->accum.max)
-              li->accum.max = len;
+            li->accum.total += listLen;
+            if (listLen > li->accum.max)
+              li->accum.max = listLen;
 
-            fprintf (vf->f, " %lld", len);
+            fprintf (vf->f, " %lld", listLen);
             if (li->fieldSpec[i] == STRING)
-              { if (len > INT_MAX)
-                  die ("write problem: string length %lld > current max %d", len, INT_MAX);
-                fprintf (vf->f, " %.*s", (int) len, (char *) buf);
+              { if (listLen > INT_MAX)
+                  die ("write problem: string length %lld > current max %d", listLen, INT_MAX);
+                fprintf (vf->f, " %.*s", (int) listLen, (char *) listBuf);
               }
             else if (li->fieldSpec[i] == INT_LIST)
-              { I64 *b = (I64 *) buf;
-                for (j = 0; j < len ; ++j)
+              { I64 *b = (I64 *) listBuf;
+                for (j = 0; j < listLen ; ++j)
                   fprintf (vf->f, " %lld", b[j]);
               }
             else if (li->fieldSpec[i] == REAL_LIST)
-              { double *b = (double *) buf;
-                for (j = 0; j < len ; ++j)
+              { double *b = (double *) listBuf;
+                for (j = 0; j < listLen ; ++j)
                   fprintf (vf->f, " %f", b[j]);
               }
             else // STRING_LIST
-              writeStringList (vf, t, len);
+              writeStringList (vf, t, listLen);
             break;
         }
       vf->isLastLineBinary = FALSE;
     }
 }
 
+void vgpWriteComment (VgpFile *vf, char *comment)
+{
+  if (vf->isLastLineBinary)
+    vgpWriteLine (vf, '/', strlen(comment), comment) ;
+  else
+    fprintf (vf->f, " %s", comment) ;
+}
 
 /***********************************************************************************
  *
@@ -1704,7 +1778,7 @@ void vgpWriteLine (VgpFile *vf, char t, void *buf)
  **********************************************************************************/
 
 static void vgpWriteFooter (VgpFile *vf)
-{ int       i;
+{ int       i,n;
   off_t     footOff;
   LineInfo *li;
   
@@ -1735,24 +1809,22 @@ static void vgpWriteFooter (VgpFile *vf)
 	    }
           if (li->isUseFieldCodec)
             { vgpChar(vf,0) = i;
-              vgpInt(vf,1)  = vcSerialize (li->fieldCodec, vf->lineInfo[1]->buffer);
-              vgpWriteLine (vf, 1, vf->lineInfo[i]->buffer);
+              n = vcSerialize (li->fieldCodec, vf->lineInfo[1]->buffer);
+              vgpWriteLine (vf, 1, n, vf->lineInfo[i]->buffer);
             }
           if (li->isUseListCodec && li->listCodec != DNAcodec)
             { vgpChar(vf,0) = i;
-              vgpInt(vf,1)  = vcSerialize (li->listCodec, vf->lineInfo[2]->buffer);
-              vgpWriteLine (vf, 2, vf->lineInfo[2]->buffer);
+              n = vcSerialize (li->listCodec, vf->lineInfo[2]->buffer);
+              vgpWriteLine (vf, 2, n, vf->lineInfo[2]->buffer);
             }
         }
     }
 
-  vgpInt(vf,0) = vf->object; // number of objects in file = length of index
-  vgpWriteLine (vf, '&', NULL);
+  vgpWriteLine (vf, '&', vf->object, NULL); // number of objects in file = length of index
 
   if (vf->groupType > 0 && vf->group > 0)
     { ((I64 *) vf->lineInfo['*']->buffer)[vf->group] = vf->object;
-      vgpInt(vf,0) = vf->group+1; // number of groups in file + 1 = length of index
-      vgpWriteLine (vf, '*', NULL);
+      vgpWriteLine (vf, '*', vf->group+1, NULL); // number of groups in file + 1 = length of index
     }
 
   fprintf (vf->f, "^\n");
