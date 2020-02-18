@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Feb  7 15:01 2020 (rd109)
+ * Last edited: Feb 15 11:43 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits + compactify code
  *   * Jul  8 04:28 2019 (rd109): refactored to use lineInfo[]
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
@@ -159,6 +159,32 @@ static void lineInfoDestroy(LineInfo *li)
   free(li);
 }
 
+static void provRefDefCleanup (VgpFile *vf)
+{ int n ;
+
+  if (vf->provenance)
+    { Provenance *p = vf->provenance ;
+      for (n = vf->lineInfo['!']->accum.count ; n-- ; p++)
+	{ free (p->program) ;
+	  free (p->version) ;
+	  free (p->command) ;
+	  free (p->date) ; }
+      free (vf->provenance) ;
+    }
+  if (vf->reference)
+    { Reference *r = vf->reference ;
+      for (n = vf->lineInfo['<']->accum.count ; n-- ; r++) 
+	free (r->filename) ;
+      free (vf->reference) ;
+    }
+  if (vf->deferred)
+    { Reference *r = vf->deferred ;
+      for (n = vf->lineInfo['>']->accum.count ; n-- ; r++) 
+	free (r->filename) ;
+      free (vf->deferred) ;
+    }
+}
+
 static void vgpFileDestroy(VgpFile *vf)
 { int       i, j;
   LineInfo *li, *lx;
@@ -179,17 +205,13 @@ static void vgpFileDestroy(VgpFile *vf)
         }
 
       for (j = 1; j < vf->share; j++)
-        { if (vf[j].provenance != NULL) free (vf[j].provenance);
-          if (vf[j].reference  != NULL) free (vf[j].reference);
-          if (vf[j].deferred   != NULL) free (vf[j].deferred);
+        { provRefDefCleanup (&vf[j]) ;
           if (vf[j].codecBuf   != NULL) free (vf[j].codecBuf);
           if (vf[j].f          != NULL) fclose (vf[j].f);
         }
     }
 
-  if (vf->provenance != NULL) free (vf->provenance);   //  EWM: Memory leak
-  if (vf->reference  != NULL) free (vf->reference);    //  EWM: Memory leak
-  if (vf->deferred   != NULL) free (vf->deferred);     //  EWM: Memory leak
+  provRefDefCleanup (vf) ;
   if (vf->codecBuf   != NULL) free (vf->codecBuf);
   if (vf->f != NULL && vf->f != stdout) fclose (vf->f);
 
@@ -925,19 +947,14 @@ VgpFile *vgpFileOpenRead (const char *path, FileType fileType, int nthreads)
             break;
           }
 
-        case '!':     // NB need to copy the strings - small memory leak
+        case '!':     // NB need to copy the strings
           { char *prog     = vgpString(vf);
             char *version  = prog + strlen(prog) + 1;
             char *command  = version + strlen(version) + 1;
-            char *dateTime = command + strlen(command) + 1;
-
-            dateTime = strdup(dateTime);
-            command  = strdup(command);
-            version  = strdup(version);
-            prog     = strdup(prog);
+            char *date = command + strlen(command) + 1;
 
             vf->lineInfo['!']->accum.count -= 1; // to avoid double counting
-            vgpAddProvenance (vf, prog, version, command, dateTime);
+            vgpAddProvenance (vf, prog, version, command, date);
             break;
           }
 
@@ -1087,7 +1104,7 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void *buffer)
 }
 
 BOOL vgpGotoObject (VgpFile *vf, I64 i)
-{ if (vf != NULL && vf->isIndexIn)
+{ if (vf != NULL && vf->isIndexIn && vf->objectType)
     if (0 <= i && i < vf->lineInfo[(int) vf->objectType]->given.count)
       if (fseek (vf->f, ((I64 *) vf->lineInfo['&']->buffer)[i], SEEK_SET) == 0)
         { vf->object = i;
@@ -1097,7 +1114,7 @@ BOOL vgpGotoObject (VgpFile *vf, I64 i)
 }
 
 I64 vgpGotoGroup (VgpFile *vf, I64 i)
-{ if (vf != NULL && vf->isIndexIn)
+{ if (vf != NULL && vf->isIndexIn && vf->groupType)
     if (0 <= i && i < vf->lineInfo[(int) vf->groupType]->given.count)
       { I64 *groupIndex = (I64 *) vf->lineInfo['*']->buffer;
         if (!vgpGotoObject(vf,groupIndex[i]))
@@ -1235,8 +1252,9 @@ VgpFile *vgpFileOpenWriteFrom (const char *path, VgpFile *vfIn, BOOL useAccum, B
  **********************************************************************************/
 
 static BOOL addProvenance(VgpFile *vf, Provenance *from, int n)
-{ I64         o;
-  LineInfo   *l;
+{ I64 i ;
+  LineInfo   *l = vf->lineInfo['!'];
+  I64         o = l->accum.count;
   Provenance *p;
 
   if (n == 0)
@@ -1244,17 +1262,23 @@ static BOOL addProvenance(VgpFile *vf, Provenance *from, int n)
   if (vf->isHeaderOut)
     die("can't addProvenance after writing header");
 
-  l = vf->lineInfo['!'];
-  o = l->accum.count;
   l->accum.count += n;
 
   p = new(o+n, Provenance);
   if (o > 0)
     memcpy (p, vf->provenance, o*sizeof(Provenance));
   memcpy (p+o, from, n*sizeof(Provenance));
-
   free (vf->provenance);
   vf->provenance = p;
+
+  // finally create self-owned copy of all fields
+  p = p+o ;
+  for (i = 0 ; i < n ; ++i, ++p)
+    { p->program = strdup(p->program) ;
+      p->version = strdup(p->version) ;
+      p->command = strdup(p->command) ;
+      p->date = strdup(p->date) ;
+    }
 
   return (TRUE);
 }
@@ -1275,16 +1299,20 @@ BOOL vgpAddProvenance(VgpFile *vf, char *prog, char *version, char *command, cha
       p.date = new (20, char);
       strftime(p.date, 20, "%F_%T", localtime(&t));
     }
-  return addProvenance (vf, &p, 1);
+  addProvenance (vf, &p, 1);
+  if (date == NULL)
+    free (p.date) ;
+  return TRUE ; // always added something
 }
 
 static BOOL addReference(VgpFile *vf, Reference *from, int n, BOOL isDeferred)
 { I64        o;
   LineInfo  *l;
   Reference *r, **t;
+  I64 i ;
 
   if (n == 0)
-    return (FALSE);
+    return FALSE;
   if (vf->isHeaderOut)
     die ("can't addReference after writing header");
 
@@ -1303,11 +1331,14 @@ static BOOL addReference(VgpFile *vf, Reference *from, int n, BOOL isDeferred)
   if (o > 0)
     memcpy (r, *t, o*sizeof(Reference));
   memcpy (r+o, from, n*sizeof(Reference));
-
   free (*t);
   *t = r;
 
-  return (TRUE);
+  r += o ; // make self-owned copy of filename strings
+  for (i = 0 ; i < n ; ++i, ++r)
+    r->filename = strdup (r->filename) ;
+
+  return TRUE;
 }
 
 BOOL vgpInheritReference(VgpFile *vf, VgpFile *source)
@@ -1328,7 +1359,6 @@ BOOL vgpAddDeferred (VgpFile *vf, char *filename)
   ref.filename = filename;
   return (addReference (vf, &ref, 1, TRUE));
 }
-
 
 /***********************************************************************************
  *

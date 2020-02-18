@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Feb  7 15:01 2020 (rd109)
+ * Last edited: Feb 15 02:28 2020 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -110,6 +110,9 @@ int main (int argc, char **argv)
 
   VgpFile *vfIn = vgpFileOpenRead (*argv, fileType, 1) ; /* reads the header */
   if (!vfIn) die ("failed to open vgp file %s", *argv) ;
+
+  if ((objList || groupList) && !vfIn->isBinary)
+    die ("%s is ascii - you can only access objects and groups by index in binary files", *argv) ;
   
   VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, FALSE, isBinary, 1) ;
   if (!vfOut) die ("failed to open output file %s", outFileName) ;
@@ -157,8 +160,10 @@ int main (int argc, char **argv)
 	  transferLine (vfIn, vfOut, fieldSize) ;
     }
   
+  vgpFileClose (vfIn) ;
   vgpFileClose (vfOut) ;
 
+  free (command) ;
   timeTotal (stderr) ;
 }
 
