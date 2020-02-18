@@ -6,8 +6,8 @@ ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe
 
 all: deflate.lib $(ALL)
 
-VGP_CORE = ../Durbin/vgprd.c ../Durbin/compression.c
-VGP_DPND = $(VGP_CORE) ../Durbin/vgprd.h ../Durbin/compression.h
+VGP_CORE = ../Durbin/VGPlib.c
+VGP_DPND = $(VGP_CORE) ../Durbin/VGPlib.h
 
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h

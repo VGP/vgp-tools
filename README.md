@@ -2,7 +2,7 @@
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Date: February 18-22, 2019
-### Last Update: January 20, 2020
+### Last Update: February 5, 2020
 
 <br>
 <br>
@@ -13,7 +13,7 @@ VGP-Tools is a growing collection of tools designed to operate on all the forms 
 in a DNA sequencing and assembly project.   The specification of the content of the several types of data files involved has a very simple ASCII format that is easy for both humans and programs to read and interpret.  Moreover, there is a corresponding compressed and indexed binary representation for each ASCII datum so that production VGP tools are very efficient in time and the size of the data files they manipulate.  A simple converter allows one to move between the ASCII and binary representations of data.
 
 The framework allows one to represent source data, process intermediates, and the ultimate reconstructed genome assemblies for a large-scale DNA sequencing project.
-There are six **primary file types**, one for each of *sequences*, *restriction maps*,
+There are seven **primary file types**, one for each of *sequences*, *restriction maps*,
 *alignments*, *links*, *breaks*, and *lists*, that contain a collection of objects of a given type.  Each
 of these primary file types can be specialized as a **secondary file type** that ensures certain
 semantic constraints on the objects (e.g. all reads are paired and have QVs), and/or introduces
@@ -29,6 +29,7 @@ or dataset2.pbr.
 	- **.pbr** for PacBio long reads and relevant meta-data.
 	- **.10x** for 10X Genomics read clouds with their extracted barcodes.
 	- **.ctg** for contigs from an assembly.
+	- **.kmr** for sets of kmers.
 
 - **.rmp**   primary type for restriction map (RM) objects.
 	- **.rmm** for RMs for individual molecules produced by e.g. Bionano.
@@ -37,9 +38,13 @@ or dataset2.pbr.
 
 - **.aln**   primary type for alignments between sequences and restriction maps.
 	- **.sxs** for alignments between sequences (pronounced "success").
-	- **.rxr** for alignments between restriction maps .
+	- **.rxr** for alignments between restriction maps.
 	- **.sxr** for alignments between sequences and restriction maps .
 	- **.map** for alignments between sequences and a target superstring.
+	
+- **.hit**   primary type for incidence data of kmers in sequences and vice versa.
+	- **.k2s** for lists per kmer of the sequences it hits.
+	- **.s2k** for lists per sequence of the kmers that hit it.
 
 - **.jns**   primary type for join information between (contig) sequences.
 
@@ -375,6 +380,19 @@ So in the header of a .ctg-file one expects to see the dependency headers:
 
 <br>
 
+### 2.1.5. Kmer sets, .kmr
+
+This sequence subtype contains lists of kmers.  The S-line gives the kmer sequence.  
+The additional C-line type can be used to specify counts in a set of sequences, in which case there should be a reference line for the sequence file name. 
+If you want to record counts in more than one sequence-set, then give multiple sequence file names, and correspondingly multiple C-lines for each S-line. 
+
+```
+  < <string:.seq_file_name>
+
+  C <int: count>
+```
+
+
 ## 2.2. Restriction Map, .rmp
 
 This file type encodes restriction maps, potentially with multiple enzymes with
@@ -589,7 +607,49 @@ desirable.
 <br>
 <br>
 
-## 2.4. Contig join file, .jns
+
+## 2.4. Sequence to sequence hit file, .hit
+
+This file type is for recording match hits between query sequences in one file and target sequences in another file, 
+optionally together with the locations of the hits.  The typical use of this file type is for kmer 
+matches in sequences, but more generally we can think of it as recording global 
+sequence matches and their start points. In this sense it is another type of alignment file, but .hit 
+files are much lighter weight than .aln files because they do not give start and end coordinates in 
+both sequences, and only have one primary line type and object per query sequence, rather than one 
+object per hit, which simplifies indexing and file reading.
+
+```
+< <string:a_seq_file>   <int:nseqs>            file sequences
+< <string:b_seq_file>   <int:nseqs>            file sequences
+
+H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of sequences b that have hits with sequence a
+```
+
+There are two subtypes of .hit files, one in which the queries are the a sequences, and there is an H-line for each kmer that gives the list of target sequences that contain kmer matches (with duplicates for multiple matches), 
+and the other giving the inverse mapping in which there is an H-line for each target that lists the kmers that are found within it.
+
+### 2.4.1 kmer to sequence hit file, .k2s
+
+```
+P <int:nhit> <int:pos_b>^nhit                  positions in each target seq_b of query seq_a
+```
+
+In this version the P-line gives the **positions** of the hits of query seq_a within each
+of the targets seq_b listed on the preceding H-line.
+Note that if seq_a is found twice in some seq_b then that seq_b must be listed twice in the H-line, with the positions 
+of each hit given in the corresponding locations in the P line. 
+
+### 2.4.2 sequence to kmer hit file, .s2k
+
+```
+O <int:nhit> <int:pos_a>^nhit                  offsets in query seq_a of each target seq_b
+```
+
+This version is used in the inverse situation when we want to list for each target the kmers that are found within it. The O-line then gives the **offsets** of the hits of each query seq_b within the target seq_a as listed on the preceding H-line.
+As for .k2s, if a seq_b is found twice in seq_a then that seq_b must be listed twice in the H-line, with the offsets 
+for each hit given in the corresponding locations in the O line. 
+
+## 2.5. Contig join file, .jns
 
 For assemblies, we expect that our assembly process will create a **.seq** file of contigs,
 and that various methods will be applied to use 10X Genomics, BioNano, HiC and/or other data
@@ -636,7 +696,7 @@ If the gap is negative then the contigs overlap by the specified number of bases
 For technologoies such as Hi-C or 10X read clouds that do not provide such estimates
 on gap size, the G-line is simply not given.
 
-## 2.5. Contig break file, .brk
+## 2.6. Contig break file, .brk
 
 In counter point to joins, the same secondary information can also indicate intervals of a
 contig where it was misassembled and a break should actually occur.  We consider both the .jns
@@ -656,7 +716,7 @@ interval.
 <br>
 <br>
 
-## 2.6. List file, .lis
+## 2.7. List file, .lis
 
 This file type just keeps lists of indices into other VGP file types.  We use this to define
 subsets of objects in existing VGP files, without needing to create an explicit listing of
@@ -689,7 +749,7 @@ in .scf-files (see below) to name the final scaffold objects output by an assemb
 
 <br>
 
-### 2.6.1. Assembly layout file, .lyo
+### 2.7.1. Assembly layout file, .lyo
 
 An assembly layout file consists of a collection of lists over sequence read alignments
 between reads in the same .seq-file.  Each list encodes a path in the string graph of the
@@ -699,7 +759,7 @@ into the contig and provide additional data for consensus.
 
 <br>
 
-### 2.6.2. Scaffold file, .scf
+### 2.7.2. Scaffold file, .scf
 
 A scaffold file consists of a collection of lists over a scaffold link file, each of which
 gives a linear order of links defining a proposed assembly scaffold.
@@ -770,13 +830,46 @@ An alternative enabled by having proposed scaffolding operations in VGP formats 
 
 # 4. VGP Tool Manuals
 
-#### <code>4.0. vgpvalidate [-hw] [-o \<name>] [-t <3-code>] \<input:VGP-file></code>
+#### <code>4.0. VGPstat [-Hu] [-o \<name>] [-t <3-code>] \<input:VGP-file></code>
 
-*To be written*
+VGPstat provides information about a VGP file.  Without arguments it validates an ascii file, including reporting any missing header information, and states how many objects, groups, and lines it contains.  Details of how many lines of each type are present are available in the count '@' header lines output by the -H option.
 
-#### <code>4.1. vgpview [-bhHuw] [-o \<name>] [-t <3-code>] [-i \<ranges>] \<input:VGP-file></code>
+The -H option calculates a full and correct header from the contents of the file, and writes it out in ascii.  A header can be added to an ascii file that is lacking one using VGPview as explained below in the next section.
 
-*To be written*
+The -u option outputs the number of bytes used by each line type.
+
+The -o option redirects the output to the named file. The default is stdout.
+
+The -t option specifies the file type, and is required if the inspected file is an ascii file without a header, but is not needed for a binary file or an ascii file with a proper header.
+
+#### <code>4.1. VGPview [-bhH] [-o \<filename>] [-t <3-code>] [-i \<ranges>] [-g \<ranges>] \<input:VGP-file></code>
+	
+VGPview is the standard utility to extract data from VGP files and convert between ascii and binary forms of the format.
+
+The -b option outputs the file in binary.  The default is ascii.  Note that the binary form is compressed and indexed, and should be the standard form for programmatic access.
+
+The -h option drops the header lines from ascii output.  It has no effect when writing binary because all binary files automatically generate a full header (much of which is actually written as a footer, since it can only be created once all the data is processed).
+
+The -H option just prints out the header, in ascii.
+
+The -o option redirects the output to the named file. The default is stdout.
+
+The -t option specifies the file type, and is required if the inspected file is an ascii file without a header, but is not needed for a binary file or an ascii file with a proper header.
+
+The -i and -g options make use of the binary file indices to allow random access to arbitrary sets of ojects or groups.  Legal range arguments include "0-10" which outputs the first 10 items, "7" which outputs the eighth item (remember numbering starts at 0), or compound ranges such as "3,5,9,20-33,4" which returns the requested items in the specified order.
+
+It is possible to stream from a binary file to ascii and back from ascii to binary, so a standard pattern is 
+```
+   VGPview -h <binary-file> | <script operating on ascii> | VGPview -b -t <type> - > <new-binary-file>
+```
+Note that the script can ignore the header information, which is reconstructed by the second call to VGPview.
+
+Regrettably it is not possible to stream a binary file into VGPview, since reading a binary file requires a seek operation to the end of the file to read footer information before reading the rest of the file.  An intermediate binary file must therefore be created to pass from ascii to binary and back again, as follows:
+```
+   VGPview -b -t <type> <ascii-file> > <binary-file>
+   VGPview <binary-file> > <new-ascii-file>
+```
+This pattern has the effect of standardising an ascii file, and is the recommended way to add a header to an ascii VGP file that lacks a header.  Although some format consistency checks will be performed, if you want to fully validate a VGP file then use VGPstat.
 
 #### <code>4.2. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
 

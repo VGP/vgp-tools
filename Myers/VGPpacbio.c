@@ -1,3 +1,4 @@
+/*  Last edited: Feb  4 11:52 2020 (rd109) */
 /*******************************************************************************************
  *
  *  VGPpacbio: Converte Pacbio subreads.bam file to a VGP .pbr file
@@ -19,7 +20,7 @@
 
 #include "gene_core.h"
 #include "pb_expr.h"
-#include "../Durbin/vgprd.h"
+#include "../Durbin/VGPlib.h"
 
 #include "LIBDEFLATE/libdeflate.h"
 

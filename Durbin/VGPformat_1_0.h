@@ -1,15 +1,15 @@
 /*****************************************************************************************
  *
- *  File: vgpformat.h
+ *  File: VGPformat.h
  *      Description: this contains the VGP format specification.  The idea is to include
- *      this file into vgprd.c, so it is compiled into the executable.  It is a separate
- *      file so as to make it easy to change the format and version implementation for vgprd.h
+ *      this file into VGPlib.c, so it is compiled into the executable.  It is a separate
+ *      file so as to make it easy to change the format and version implementation for VGPlib.h
  *
  *  Author: Richard Durbin (rd109@cam.ac.uk)
- *  Copyright (C) Richard Durbin, Cambridge University, 2019
+ *  Copyright (C) Richard Durbin, Cambridge University, 2019-
  *
  * HISTORY:
- * Last edited: Jul 18 18:20 2019 (rd109)
+ * Last edited: Feb  3 15:59 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Jul  7 22:14 2019 (rd109): add DNAcodec for sequence S data
  *   * Jul  7 22:13 2019 (rd109): added code to build auxiliary structures, pack etc. last 2 days

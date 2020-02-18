@@ -1,3 +1,4 @@
+/*  Last edited: Feb  4 11:54 2020 (rd109) */
 
 /*******************************************************************************************
  *
@@ -18,7 +19,7 @@
 #include <unistd.h>
 
 #include "gene_core.h"
-#include "../Durbin/vgprd.h"
+#include "../Durbin/VGPlib.h"
 
 #define PATHSEP "/."
 
