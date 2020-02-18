@@ -69,7 +69,7 @@ static void Fetch_Fastq(char *arg, File_Object *input)
     { fprintf(stderr,"%s: Cannot open %s as an .fast[aq] file\n",Prog_Name,arg);
       exit (1);
     }
-  path = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating full path name");
+  path  = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating full path name");
   fastq = (i%2 == 0);
   zipd  = (i < 2);
 
@@ -872,7 +872,7 @@ int main(int argc, char *argv[])
 #endif
 
       if (VERBOSE)
-        { fprintf(stderr,"  Producing .seq segements in parallel\n");
+        { fprintf(stderr,"  Producing .seq segments in parallel\n");
           fflush(stderr);
         }
 
@@ -892,6 +892,11 @@ int main(int argc, char *argv[])
       for (i = 0; i < NTHREADS; i++)
         pthread_join(threads[i],NULL);
 #endif
+
+      if (VERBOSE)
+        { fprintf(stderr,"  Cat'ing .seq segments\n");
+          fflush(stderr);
+        }
 
       vgpFileClose(vf);
     }

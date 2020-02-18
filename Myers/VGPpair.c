@@ -63,9 +63,10 @@ static void *output_thread(void *arg)
   int         i, j, n, t1, t2;
 
 #define TRANSFER(vi,ti,vo)				\
-  for (j = 0; j < vi->lineInfo[ti]->nField; j++)	\
+{ for (j = 0; j < vi->lineInfo[ti]->nField; j++)	\
     vo->field[j] = vi->field[j];			\
-  vgpWriteLine(vo,ti,vi->lineInfo[ti]->buffer);
+  vgpWriteLine(vo,ti,vi->lineInfo[ti]->buffer);		\
+}
 
   vgpGotoObject(v1,beg);
   vgpGotoObject(v2,beg);
@@ -248,6 +249,11 @@ int main(int argc, char *argv[])
       int      i, j;
       int64    nreads;
 
+      if (VERBOSE)
+        { fprintf(stderr,"  Splitting .seq files into %d segments for pair merging\n",NTHREADS);
+          fflush(stderr);
+        }
+
       v1 = vgpFileOpenRead(fname1,SEQ,NTHREADS);
       v2 = vgpFileOpenRead(fname2,SEQ,NTHREADS);
 
@@ -300,6 +306,11 @@ int main(int argc, char *argv[])
       for (i = 0; i < NTHREADS; i++)
         pthread_join(threads[i],NULL);
 #endif
+
+      if (VERBOSE)
+        { fprintf(stderr,"  Cat'ing .irp segments\n");
+          fflush(stderr);
+        }
 
       vgpFileClose(vf);
       vgpFileClose(v1);

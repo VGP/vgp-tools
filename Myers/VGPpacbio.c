@@ -38,11 +38,12 @@ typedef  struct libdeflate_decompressor Deflator;
 
 static int     VERBOSE;
 static int     NTHREADS;
+static int     QUALITY;         //  Output quality vector
 static int     ARROW;           //  Output arrow/A lines?
 static Filter *EXPR;            //  Filter expression
 static int     IS_BIG_ENDIAN;   //  Is machine big-endian?
 
-static char *Usage = "[-va] [-e<expr(ln>=500 && rq>=750)> [-T<int(4)>] <input:pacbio> ...";
+static char *Usage = "[-vaq] [-e<expr(ln>=500 && rq>=750)> [-T<int(4)>] <input:pacbio> ...";
 
 typedef struct
   { char      *fname;   //  Full path name of file
@@ -306,7 +307,7 @@ typedef struct
     Location     beg;
     int          eidx;
     Location     end;
-    int          ok;
+    int          error;
   } Thread_Arg;
 
   //  Find first record location (skip over header) in parm->fid
@@ -548,7 +549,6 @@ static void find_nearest(Thread_Arg *parm)
       bam_get(bam,NULL,ssize);
     }
 
-  close(fid);
   parm->beg.fpos = -1;
 }
 
@@ -569,8 +569,6 @@ static void sam_nearest(Thread_Arg *parm)
         sam_getline(bam);
     }
   parm->beg = bam->loc;
-
-  close(fid);
 }
 
 
@@ -711,10 +709,11 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
 
     if (lseq > theR->lmax)
       { theR->lmax = 1.2*lseq + 1000;
-        theR->seq  = (char *) Realloc(theR->seq,2*theR->lmax,"Reallocating sequence buffer");
+        theR->seq  = (char *) Realloc(theR->seq,3*theR->lmax,"Reallocating sequence buffer");
         if (theR->seq == NULL)
           exit (1);
         theR->arr  = theR->seq + theR->lmax;
+        theR->qvs  = theR->arr + theR->lmax;
       }
 
     if (ldata > theR->dmax)
@@ -750,8 +749,17 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
           s[i++] = INT_2_IUPAC[t[e] & 0xf];
         }
       if (i <= lseq)
-        s[i] = INT_2_IUPAC[t[e] >> 4];
+        s[i] = INT_2_IUPAC[t[e++] >> 4];
       lseq += 1;
+
+      if (QUALITY)
+        { t += e;
+          s  = theR->qvs;
+          if (t[0] == 0xff)
+            return (2);
+          for (i = 0; i < lseq; i++)
+            s[i] = t[i] + 33;
+        }
     }
   }
 
@@ -994,13 +1002,32 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
     qlen = p-q;
     CHECK (*q == '*', "No sequence for read?");
 
+    if (qlen > theR->lmax)
+      { theR->lmax = 1.2*qlen + 1000;
+        theR->seq  = (char *) Realloc(theR->seq,3*theR->lmax,"Reallocating sequence buffer");
+        if (theR->seq == NULL)
+          exit (1);
+        theR->arr  = theR->seq + theR->lmax;
+        theR->qvs  = theR->arr + theR->lmax;
+      }
+
     theR->len = qlen;
     seq = theR->seq;
     for (i = 0; i < qlen; i++)
       seq[i] = IUPAC_2_DNA[(int) (*q++)];
 
-    p = index(p+1,'\t');  // Skip qual
+    q = ++p;
+    p = index(p,'\t');
     CHECK( p == NULL, "No auxilliary tags in SAM record, file corrupted?")
+
+    if (QUALITY)
+      { if (*q == '*')
+          return (2);
+        qlen = p-q;
+        seq = theR->qvs;
+        for (i = 0; i < qlen; i++)
+          seq[i] = *q++;
+      }
   }
 
   { char *q, *arr;       //  Get zm, qs, qe, rq, sn, and pw from auxilliary tags
@@ -1111,6 +1138,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
         while (*p != '\t' && *p != '\n')
           p += 1;
       }
+
     if (ARROW && aline < 2)
       return (1);
   }
@@ -1140,20 +1168,22 @@ static void *output_thread(void *arg)
   uint32       eoff;
   int          head, isbam;
   int          f, fid;
+  int          error;
 
   //  Know the max size of sequence and data from pass 1, so set up accordingly
 
   theR->dmax = 50000;
   theR->data = Malloc(theR->dmax,"Allocating sequence array");
   theR->lmax = 75000;
-  theR->seq  = Malloc(2*theR->lmax,"Allocating sequence array");
+  theR->seq  = Malloc(3*theR->lmax,"Allocating sequence array");
   if (theR->seq == NULL || theR->data == NULL)
     exit (1);
   theR->arr = theR->seq + theR->lmax;
+  theR->qvs = theR->arr + theR->lmax;
 
   bam->decomp = parm->decomp;
 
-  parm->ok = 0;
+  parm->error = 0;
 
   for (f = parm->bidx; f <= parm->eidx; f++)
     { fid   = open(fobj[f].fname,O_RDONLY);
@@ -1190,17 +1220,26 @@ static void *output_thread(void *arg)
 
       while (bam->loc.fpos != epos || bam->loc.boff != eoff)
         { if (isbam)
-            { if (bam_record_scan(bam,theR))
-                return (NULL);
+            { error = bam_record_scan(bam,theR);
+              if (error)
+                { parm->error = error;
+                  return (NULL);
+                }
             }
           else
-            { if (sam_record_scan(bam,theR))
-                return (NULL);
+            { error = sam_record_scan(bam,theR);
+              if (error)
+                { parm->error = error;
+                  return (NULL);
+                }
             }
-    
+
 #ifdef DEBUG_RECORDS
           fprintf(stderr,"S = '%s'\n",theR->seq);
-          fprintf(stderr,"A = '%s'\n",theR->arr);
+          if (ARROW)
+            fprintf(stderr,"A = '%.*s'\n",theR->len,theR->arr);
+          if (QUALITY)
+            fprintf(stderr,"Q = '%.*s'\n",theR->len,theR->qvs);
           fprintf(stderr,"zm = %d\n",theR->well);
           fprintf(stderr,"ln = %d\n",theR->len);
           fprintf(stderr,"rq = %g\n",theR->qual);
@@ -1211,7 +1250,7 @@ static void *output_thread(void *arg)
           fprintf(stderr,"qs = %d\n",theR->beg);
           fprintf(stderr,"qe = %d\n",theR->end);
 #endif
-    
+
           if (head)
             { int len = strlen(theR->header);
     
@@ -1220,7 +1259,7 @@ static void *output_thread(void *arg)
               vgpWriteLine(vf,'g',theR->header);
               head = 0;
             }
-    
+
           if ( ! evaluate_bam_filter(EXPR,theR))
             continue;
     
@@ -1232,6 +1271,11 @@ static void *output_thread(void *arg)
           vgpInt(vf,2) = theR->end;
           vgpReal(vf,3) = theR->qual;
           vgpWriteLine(vf,'W',NULL);
+
+          if (QUALITY)
+            { vgpInt(vf,0) = theR->len;
+              vgpWriteLine(vf,'Q',theR->qvs);
+            }
     
           if (ARROW)
             { vgpInt(vf,0) = theR->len;
@@ -1247,8 +1291,6 @@ static void *output_thread(void *arg)
 
       close(fid);
     }
-
-  parm->ok = 1;
 
   return (NULL);
 }
@@ -1304,7 +1346,7 @@ int main(int argc, char* argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("vaU")
+            ARG_FLAGS("vaq")
             break;
           case 'e':
             EXPR = parse_filter(argv[i]+2);
@@ -1319,6 +1361,7 @@ int main(int argc, char* argv[])
 
     VERBOSE = flags['v'];
     ARROW   = flags['a'];
+    QUALITY = flags['q'];
 
     if (EXPR == NULL)
       EXPR = parse_filter("ln>=500 && rq>=750");
@@ -1328,6 +1371,7 @@ int main(int argc, char* argv[])
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: verbose mode, output progress as proceed\n");
         fprintf(stderr,"      -a: extract Arrow information on N- and A-lines.\n");
+        fprintf(stderr,"      -q: extract QV information on a Q-line.\n");
         fprintf(stderr,"      -T: Number of threads to use\n");
         fprintf(stderr,"\n");
         fprintf(stderr,"      -e: subread selection expression.  Possible variables are:\n");
@@ -1373,12 +1417,13 @@ int main(int argc, char* argv[])
       work = 0;
       for (f = 0; f < argc-1; f++)
         { struct stat stats;
-          char *suffix[4] = { ".subreads.bam", ".bam", ".subreads.sam", ".sam" };
+          char *suffix[6] = { ".ccs.bam", ".ccs.sam", ".subreads.bam", ".subreads.sam",
+                              ".bam", ".sam" };
           char *pwd, *root;
           int   fid;
 
           pwd = PathTo(argv[f+1]);
-          OPEN2(argv[f+1],pwd,root,fid,suffix,4);
+          OPEN2(argv[f+1],pwd,root,fid,suffix,6);
           if (fid < 0)
             { fprintf(stderr,"%s: Cannot open %s as an .subreads.bam/sam file\n",
                              Prog_Name,argv[f+1]);
@@ -1392,7 +1437,7 @@ int main(int argc, char* argv[])
 
           fobj[f].fname  = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating full path name");
           fobj[f].fsize  = stats.st_size;
-          fobj[f].isbam  = (i < 2);
+          fobj[f].isbam  = (i % 2 == 0);
 
           work += stats.st_size;
 
@@ -1515,9 +1560,10 @@ int main(int argc, char* argv[])
     //  Setup a VgpFile for each thread, put the header in the first one
 
     { VgpFile *vf;
-      int      i, ok;
+      int      i, error;
 
-      vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
+// vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
+vf = vgpFileOpenWriteNew("uuu.pbr",SEQ,PBR,TRUE,NTHREADS);
       vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
       vgpWriteHeader(vf);
 #ifdef DEBUG_OUT
@@ -1547,18 +1593,31 @@ int main(int argc, char* argv[])
         pthread_join(threads[i],NULL);
 #endif
 
-      //  If asked for arrow vectors but not in input, then ok will be 0.
-
-      ok = 1;
-      for (i = 0; i < NTHREADS; i++)
-        if ( ! parm[i].ok)
-          ok = 0;
-
-      if (!ok)
-        fprintf(stderr,"%s: Bam file does not contain pulse information for -a option\n",
-                       Prog_Name);
+      if (VERBOSE)
+        { fprintf(stderr,"  Cat'ing .pbr segments\n");
+          fflush(stderr);
+        }
 
       vgpFileClose(vf);
+
+      //  If asked for arrow / qv vectors but not in input, then error will be 1 / 2.
+
+      error = 0;
+      for (i = 0; i < NTHREADS; i++)
+        error |= parm[i].error;
+
+      if (error)
+        { if (error == 1)
+            fprintf(stderr,"%s: Bam file does not contain pulse information for -a option\n",
+                           Prog_Name);
+          else if (error == 2)
+            fprintf(stderr,"%s: Bam file does not contain qv information for -q option\n",
+                           Prog_Name);
+          else
+            fprintf(stderr,"%s: Bam file does not contain the information for -a & -q options\n",
+                           Prog_Name);
+          exit (1);
+        }
     }
 
     //  Free everything as a matter of good form

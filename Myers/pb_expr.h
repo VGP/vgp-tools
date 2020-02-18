@@ -27,6 +27,7 @@ typedef struct
     int    lmax;     //  current size of seq and arr
     char  *seq;
     char  *arr;
+    char  *qvs;
     int    dmax;     //  current size of data
     uint8 *data;     //  data buffer
     char  *header;

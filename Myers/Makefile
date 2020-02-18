@@ -36,8 +36,8 @@ Dazz2pbr: Dazz2pbr.c $(VGP_DPND) $(GENE_DPND)
 Dazz2sxs: Dazz2sxs.c $(VGP_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o Dazz2sxs Dazz2sxs.c $(VGP_CORE) $(GENE_CORE) -lpthread
 
-VGPcloud: VGPcloud.c radix.c radix.h exsort.c exsort.h $(GENE_DPND)
-	gcc $(CFLAGS) -o VGPcloud -DWORD_SIZE=4 VGPcloud.c radix.c exsort.c $(GENE_CORE) -lpthread
+VGPcloud: VGPcloud.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPcloud VGPcloud.c lsd.sort.c exsort.c $(GENE_CORE) -lpthread
 
 clean:
 	rm -f $(ALL)

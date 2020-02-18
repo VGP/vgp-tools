@@ -7,7 +7,7 @@
 #include <dirent.h>
 
 #include "gene_core.h"
-#include "radix.h"
+#include "lsd.sort.h"
 #include "exsort.h"
 
 int    VERBOSE;    //  Verbose mode?
@@ -618,9 +618,9 @@ int main(int argc, char *argv[])
 #endif
     barsort[4] = -1;
 
-    Set_Radix_Params(NTHREADS,VERBOSE,NULL,NULL);
+    Set_LSD_Params(NTHREADS,VERBOSE);
 
-    Radix_Sort(nhqbc,count,count+nhqbc,barsort);
+    LSD_Sort(nhqbc,count,count+nhqbc,sizeof(uint32),sizeof(uint32),barsort);
 
     count[nhqbc] = count[nhqbc-1] + 1;
 
