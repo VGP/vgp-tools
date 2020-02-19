@@ -64,7 +64,7 @@ int main(int argc, char* argv[])
       { li = inf->lineInfo[t];
         for (i = 0; i < li->nField; i++)
           ouf->field[i] = inf->field[i];
-        vgpWriteLine(ouf,t,li->buffer);
+        vgpWriteLine(ouf,t,vgpLen(inf),li->buffer);
       }
     vgpFileClose(ouf);
     vgpFileClose(inf);

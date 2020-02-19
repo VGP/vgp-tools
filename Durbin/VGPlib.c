@@ -1649,7 +1649,7 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                                                 ms[i].lineInfo[(int) t]->fieldCodec);
 			      vcCreateCodec (lx->fieldCodec, 1);
                               for (i = 1; i < ms->share; i++)
-                                { VGPcode *m = ms[i].lineInfo[(int) t]->fieldCodec;
+                                { VGPcodec *m = ms[i].lineInfo[(int) t]->fieldCodec;
                                   ms[i].lineInfo[(int) t]->fieldCodec = lx->fieldCodec;
                                   vcDestroy (m);
                                 }
@@ -1734,7 +1734,7 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                                                         ms[i].lineInfo[(int) t]->listCodec);
                                       vcCreateCodec (lx->listCodec, 1);
                                       for (i = 1; i < ms->share; i++)
-                                        { VGPcode *m = ms[i].lineInfo[(int) t]->listCodec;
+                                        { VGPcodec *m = ms[i].lineInfo[(int) t]->listCodec;
                                           ms[i].lineInfo[(int) t]->listCodec = lx->listCodec;
                                           vcDestroy (m);
                                         }

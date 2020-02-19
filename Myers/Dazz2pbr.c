@@ -639,9 +639,10 @@ static void *output_thread(void *arg)
 
       if (DOGRP && i == findx[map])
         { map += 1;
+          len  = strlen(fhead[map]);
           vgpInt(vf,0) = 0;
-          vgpInt(vf,1) = strlen(fhead[map]);
-          vgpWriteLine(vf,'g',fhead[map]);
+          vgpInt(vf,1) = len;
+          vgpWriteLine(vf,'g',len,fhead[map]);
         }
 
       Load_Read(db,i,read);
@@ -649,13 +650,13 @@ static void *output_thread(void *arg)
         Load_Arrow(db,i,arrow);
 
       vgpInt(vf,0) = len;
-      vgpWriteLine(vf,'S',read);
+      vgpWriteLine(vf,'S',len,read);
       
       vgpInt(vf,0) = r->origin;
       vgpInt(vf,1) = r->fpulse;
       vgpInt(vf,2) = r->fpulse+len;
       vgpReal(vf,3) = (r->flags & DB_QV) / 1000.;
-      vgpWriteLine(vf,'W',NULL);
+      vgpWriteLine(vf,'W',0,NULL);
 
       if (DOARW)
         { int   j, snr[4];
@@ -670,10 +671,10 @@ static void *output_thread(void *arg)
           vgpReal(vf,1) = snr[1] / 100.;
           vgpReal(vf,2) = snr[2] / 100.;
           vgpReal(vf,3) = snr[3] / 100.;
-          vgpWriteLine(vf,'N',NULL);
+          vgpWriteLine(vf,'N',0,NULL);
 
           vgpInt(vf,0) = len;
-          vgpWriteLine(vf,'A',arrow);
+          vgpWriteLine(vf,'A',len,arrow);
         }
     }
 

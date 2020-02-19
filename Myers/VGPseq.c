@@ -515,7 +515,7 @@ static void *output_thread(void *arg)
                       if (strcmp(lane,last) != 0)
                         { vgpInt(vf,0) = 0;
                           vgpInt(vf,1) = llen;
-                          vgpWriteLine(vf,'g',lane);
+                          vgpWriteLine(vf,'g',llen,lane);
 
                           { char *x; x = lane; lane = last; last = x; }
                         }
@@ -555,7 +555,7 @@ static void *output_thread(void *arg)
                     }
                   else
                     { vgpInt(vf,0) = olen;
-                      vgpWriteLine(vf,'S',line);
+                      vgpWriteLine(vf,'S',olen,line);
                       olen  = 0;
                       state = QPLS;
                     }
@@ -583,7 +583,7 @@ static void *output_thread(void *arg)
                     }
                   else
                     { vgpInt(vf,0) = olen;
-                      vgpWriteLine(vf,'Q',line);
+                      vgpWriteLine(vf,'Q',olen,line);
                       olen  = 0;
                       state = QAT;
                     }
@@ -606,7 +606,7 @@ static void *output_thread(void *arg)
                 case AEOL:
                   if (c == '>')
                     { vgpInt(vf,0) = olen;
-                      vgpWriteLine(vf,'S',line);
+                      vgpWriteLine(vf,'S',olen,line);
                       olen  = 0;
                       if (GROUP)
                         state = HEAD;
@@ -623,7 +623,7 @@ static void *output_thread(void *arg)
         }
       if (state == AEOL)
         { vgpInt(vf,0) = olen;
-          vgpWriteLine(vf,'S',line);
+          vgpWriteLine(vf,'S',olen,line);
           olen  = 0;
         }
       close(fid);

@@ -23,7 +23,7 @@
 #include <limits.h>
 
 #include "gene_core.h"
-#include "../Durbin/vgprd.h"
+#include "../Durbin/VGPlib.h"
 
 #undef  DEBUG_OUT
 
@@ -65,7 +65,7 @@ static void *output_thread(void *arg)
 #define TRANSFER(vi,ti,vo)				\
 { for (j = 0; j < vi->lineInfo[ti]->nField; j++)	\
     vo->field[j] = vi->field[j];			\
-  vgpWriteLine(vo,ti,vi->lineInfo[ti]->buffer);		\
+  vgpWriteLine(vo,ti,vgpLen(vi),vgpString(vi));		\
 }
 
   vgpGotoObject(v1,beg);
@@ -77,14 +77,14 @@ static void *output_thread(void *arg)
       exit (1);
     }
   for (i = beg; i < end; i++)
-    { vgpWriteLine(vf,'P',NULL);
+    { vgpWriteLine(vf,'P',0,NULL);
 
       TRANSFER(v1,t1,vf)
-      n  = vgpLen(v1,0);
+      n  = vgpLen(v1);
       t1 = vgpReadLine(v1);
       while (t1 != 'S')
         { if (t1 == 'Q')
-            { if (n != vgpLen(v1,0))
+            { if (n != vgpLen(v1))
                 { fprintf(stderr,"%s: Q string not same length in forward file, line %lld\n",
                                  Prog_Name,v1->line);
                   exit (1);
@@ -102,11 +102,11 @@ static void *output_thread(void *arg)
         }
 
       TRANSFER(v2,t2,vf)
-      n  = vgpLen(v2,0);
+      n  = vgpLen(v2);
       t2 = vgpReadLine(v2);
       while (t2 != 'S')
         { if (t2 == 'Q')
-            { if (n != vgpLen(v2,0))
+            { if (n != vgpLen(v2))
                 { fprintf(stderr,"%s: Q string not same length in reverse file, line %lld\n",
                                  Prog_Name,v2->line);
                   exit (1);

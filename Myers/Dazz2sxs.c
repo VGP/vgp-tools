@@ -264,7 +264,7 @@ static void *fetch_thread(void *arg)
   for (i = parm->beg; i < end; i++) 
     { vgpGotoObject(vf,i);
       vgpReadLine(vf);
-      len[i] = vgpLen(vf,0);
+      len[i] = vgpLen(vf);
     }
 
   return (NULL);
@@ -509,16 +509,18 @@ fprintf(stderr,"Opening %s\n",fobj[f].fname);
           ar = ovl->aread;
           if (ar != al)
             { if (DOGROUP)
-                { vgpInt(vf,0) = 0;
-                  vgpInt(vf,1) = sprintf(groupno,"%d",ar+1);
-                  vgpWriteLine(vf,'g',groupno);
+                { int glen = sprintf(groupno,"%d",ar+1);
+
+                  vgpInt(vf,0) = 0;
+                  vgpInt(vf,1) = glen;
+                  vgpWriteLine(vf,'g',glen,groupno);
                 }
               al = ar;
             }
 
           vgpInt(vf,0) = ar+1;
           vgpInt(vf,1) = ovl->bread+1;
-          vgpWriteLine(vf,'A',NULL);
+          vgpWriteLine(vf,'A',0,NULL);
 
           blen = RLEN2[ovl->bread];
           if (DOCOORD)
@@ -534,22 +536,22 @@ fprintf(stderr,"Opening %s\n",fobj[f].fname);
                   vgpInt(vf,4) = ovl->path.bepos;
                 }
               vgpInt(vf,5) = blen;
-              vgpWriteLine(vf,'I',NULL);
+              vgpWriteLine(vf,'I',0,NULL);
             }
   
           if (DODIFF)
             { vgpInt(vf,0) = ovl->path.diffs;
-              vgpWriteLine(vf,'D',NULL);
+              vgpWriteLine(vf,'D',0,NULL);
             }
   
           if (DOTRACE)
-            { int tlen = ovl->path.tlen;
+            { int tlen = (ovl->path.tlen >> 1);
   
               decon(ovl,bdels,diffs);
            
-              vgpInt(vf,0) = tlen>>1;
-              vgpWriteLine(vf,'W',bdels);
-              vgpWriteLine(vf,'X',diffs);
+              vgpInt(vf,0) = tlen;
+              vgpWriteLine(vf,'W',tlen,bdels);
+              vgpWriteLine(vf,'X',tlen,diffs);
             }
         }
     }
@@ -905,7 +907,7 @@ int main(int argc, char *argv[])
       vgpWriteHeader(vf);
 
       vgpInt(vf,0) = TSPACE;
-      vgpWriteLine(vf,'T',NULL);
+      vgpWriteLine(vf,'T',0,NULL);
 
 #ifdef DEBUG_OUT
       fprintf(stderr,"Opened\n");
