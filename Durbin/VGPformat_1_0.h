@@ -53,6 +53,7 @@ static void defineFormat(VgpFile *vf, FileType fileType)
       info['W'] = vgpDefineLine (INT, INT, INT, REAL, 0, 0);    // well, pulse start & end, score
       info['N'] = vgpDefineLine (REAL, REAL, REAL, REAL, 0, 0); // SNR in A,C,G,T channels
       info['A'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0);        // capped pulse widths 1-4
+      info['C'] = vgpDefineLine (INT, 0, 0, 0, 0, 0);           // count (for kmers)
         info['S']->listCodec = DNAcodec;
           info['S']->isUseListCodec = TRUE;
         info['Q']->listCodec = vcCreate();
@@ -61,6 +62,7 @@ static void defineFormat(VgpFile *vf, FileType fileType)
         info['N']->fieldCodec = vcCreate();
         info['S']->fieldCodec = vcCreate();
         info['Q']->fieldCodec = vcCreate();
+        info['C']->fieldCodec = vcCreate();
       break;
 
     case RMP:
@@ -105,6 +107,19 @@ static void defineFormat(VgpFile *vf, FileType fileType)
           info['W']->isIntListDiff = TRUE;
         info['X']->listCodec = vcCreate();
           info['X']->isIntListDiff = TRUE;
+      break;
+
+    case HIT:
+      vf->objectType = 'H';
+      info['H'] = vgpDefineLine (INT, INT_LIST, 0, 0, 0, 0);    // Hits between objects
+      info['O'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0);      // Offsets of queries in a target
+      info['P'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0);      // Positions of a query in targets
+        info['H']->listCodec = vcCreate();
+          info['H']->isIntListDiff = TRUE;
+        info['O']->listCodec = vcCreate();
+          info['O']->isIntListDiff = TRUE;
+        info['P']->listCodec = vcCreate();
+          info['P']->isIntListDiff = TRUE;
       break;
 
     case JNS:

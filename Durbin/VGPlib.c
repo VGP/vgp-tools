@@ -197,9 +197,11 @@ static void vgpFileDestroy(VgpFile *vf)
           if (lx != NULL)
             { for (j = 1; j < vf->share; j++)
                 { li = vf[j].lineInfo[i];
-                  if (li->buffer != NULL && ! li->isUserBuf)
-                    free (li->buffer);
-                  free(li);
+                  if ( ! vf->isWrite)
+                    { li->fieldCodec = NULL;
+                      li->listCodec  = NULL;
+                    }
+                  lineInfoDestroy(li);
                 }
             }
         }
@@ -667,16 +669,17 @@ BOOL vgpReadLine (VgpFile *vf)
               vcDecode (li->fieldCodec, nBits, vf->codecBuf, (char *) vf->field);
             }
           else
-            if (fread (vf->field, sizeof(Field), nField, vf->f) != (unsigned long) nField)
-              die ("fail to read fields");
+            { if (fread (vf->field, sizeof(Field), nField, vf->f) != (unsigned long) nField)
+                die ("fail to read fields");
+            }
         }
 
       if (t == vf->groupType)
         { I64 *groupIndex = (I64 *) vf->lineInfo['*']->buffer;
-          vf->field[0].i = groupIndex[vf->group] - groupIndex[vf->group-1];
+          vgpInt(vf,0)    = groupIndex[vf->group] - groupIndex[vf->group-1];
         }
 
-      ix =  li->listField-1;
+      ix = li->listField-1;
       if (ix >= 0)
         { listLen = vgpLen(vf);
           li->accum.total += listLen;
@@ -728,8 +731,8 @@ BOOL vgpReadLine (VgpFile *vf)
 }
 
 char *vgpReadComment (VgpFile *vf)
-{
-  char *comment = (char*)(vf->lineInfo['/']->buffer) ;
+{ char *comment = (char*)(vf->lineInfo['/']->buffer) ;
+
   if (comment && *comment != 0)
     return comment ;
   else
@@ -1118,7 +1121,7 @@ I64 vgpGotoGroup (VgpFile *vf, I64 i)
     if (0 <= i && i < vf->lineInfo[(int) vf->groupType]->given.count)
       { I64 *groupIndex = (I64 *) vf->lineInfo['*']->buffer;
         if (!vgpGotoObject(vf,groupIndex[i]))
-	  return 0 ;
+	  return (0);
         return (groupIndex[i+1] - groupIndex[i]);
       }
   return (0);
@@ -1272,6 +1275,7 @@ static BOOL addProvenance(VgpFile *vf, Provenance *from, int n)
   vf->provenance = p;
 
   // finally create self-owned copy of all fields
+
   p = p+o ;
   for (i = 0 ; i < n ; ++i, ++p)
     { p->program = strdup(p->program) ;
@@ -1645,8 +1649,9 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                                                 ms[i].lineInfo[(int) t]->fieldCodec);
 			      vcCreateCodec (lx->fieldCodec, 1);
                               for (i = 1; i < ms->share; i++)
-                                { vcDestroy (ms[i].lineInfo[(int) t]->fieldCodec);
+                                { VGPcode *m = ms[i].lineInfo[(int) t]->fieldCodec;
                                   ms[i].lineInfo[(int) t]->fieldCodec = lx->fieldCodec;
+                                  vcDestroy (m);
                                 }
                               lx->isUseFieldCodec = TRUE;
                               for (i = 1; i < ms->share; i++)
@@ -1728,12 +1733,14 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                                         vcAddHistogram (lx->listCodec,
                                                         ms[i].lineInfo[(int) t]->listCodec);
                                       vcCreateCodec (lx->listCodec, 1);
+                                      for (i = 1; i < ms->share; i++)
+                                        { VGPcode *m = ms[i].lineInfo[(int) t]->listCodec;
+                                          ms[i].lineInfo[(int) t]->listCodec = lx->listCodec;
+                                          vcDestroy (m);
+                                        }
                                       lx->isUseListCodec = TRUE;
                                       for (i = 1; i < ms->share; i++)
-                                        { vcDestroy (ms[i].lineInfo[(int) t]->listCodec);
-                                          ms[i].lineInfo[(int) t]->listCodec = lx->listCodec;
-                                          ms[i].lineInfo[(int) t]->isUseListCodec = TRUE;
-                                        }
+                                        ms[i].lineInfo[(int) t]->isUseListCodec = TRUE;
                                     }
                                 }
  

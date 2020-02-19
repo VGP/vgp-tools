@@ -72,11 +72,13 @@ typedef struct
   // VGPcodecs are a private package for binary vgp file compression
 
 typedef void VGPcodec; // forward declaration of opaque type for compression codecs
-extern  VGPcodec *DNAcodec;
+
   // DNAcodec is a special pre-existing compressor one should use for DNA.
   // It compresses every base to 2-bits, where any non-ACGT letter is
   // effectively converted to an A.  Compression is case insensitive,
   // but decompression always delivers lower-case.
+
+extern  VGPcodec *DNAcodec;
 
   // Record for a particular line type.  There is at most one list element.
 
@@ -318,9 +320,10 @@ FILE *fopenTag(char* root, char* tag, char* mode);  // uses fzopen, silently han
 void  timeUpdate(FILE *f);                          // print time usage since last call
 void  timeTotal(FILE *f);                           // print full time since first call
 
+
 /***********************************************************************************
  *
- *    FORMAT OF BINARY FILES
+ *    A BIT ABOUT THE FORMAT OF BINARY FILES
  *
  **********************************************************************************/
 
@@ -336,7 +339,8 @@ void  timeTotal(FILE *f);                           // print full time since fir
  // The ASCII prolog contains the type, subtype, provenance, reference, and deferred lines
  //   in the ASCII format.  The VGP count statistic lines for each data line type are found
  //   in the footer along with binary '\01' and '\02' lines that encode their compressors as
- //   needed.  The footer also contains a binary '&' line that encodes the object index.
+ //   needed.  The footer also contains binary '&' and '*' lines that encode the object index
+ //   and group indices, respectively.
  //
  //   <Binary line> <- <Binary line code + tags> <fields> [<list data>]
  //
@@ -348,6 +352,8 @@ void  timeTotal(FILE *f);                           // print full time since fir
  // If a field is a list, then the field array element for that field is the list's length
  //   where the low 56 bits encode length, and the high 8 bits encode the # of high-order
  //   0-bytes in every list element if an INT_LIST (0 otherwise).
+
+
 
 /***********************************************************************************
  *

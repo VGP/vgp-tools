@@ -378,13 +378,9 @@ So in the header of a .ctg-file one expects to see the dependency headers:
   > <string:.jns_file_name>
 ```
 
-<br>
-
 ### 2.1.5. Kmer sets, .kmr
 
-This sequence subtype contains lists of kmers.  The S-line gives the kmer sequence.  
-The additional C-line type can be used to specify counts in a set of sequences, in which case there should be a reference line for the sequence file name. 
-If you want to record counts in more than one sequence-set, then give multiple sequence file names, and correspondingly multiple C-lines for each S-line. 
+This sequence subtype contains lists of kmers that are usually expected to all be of the same length.  The S-line gives the kmer sequence.  The additional C-line type can be used to specify counts in a set of sequences, in which case there should be a reference line for the sequence file name.  If you want to record counts in more than one sequence-set, then give multiple sequence file names, and correspondingly multiple C-lines for each S-line. 
 
 ```
   < <string:.seq_file_name>
@@ -392,6 +388,7 @@ If you want to record counts in more than one sequence-set, then give multiple s
   C <int: count>
 ```
 
+<br>
 
 ## 2.2. Restriction Map, .rmp
 
@@ -605,18 +602,10 @@ in a current set of sequences to those in previous sets, and a software tool to 
 desirable.
 
 <br>
-<br>
-
 
 ## 2.4. Sequence to sequence hit file, .hit
 
-This file type is for recording match hits between query sequences in one file and target sequences in another file, 
-optionally together with the locations of the hits.  The typical use of this file type is for kmer 
-matches in sequences, but more generally we can think of it as recording global 
-sequence matches and their start points. In this sense it is another type of alignment file, but .hit 
-files are much lighter weight than .aln files because they do not give start and end coordinates in 
-both sequences, and only have one primary line type and object per query sequence, rather than one 
-object per hit, which simplifies indexing and file reading.
+This file type is for recording match hits between query sequences in one file and target sequences in another file, optionally together with the locations of the hits.  The typical use of this file type is for kmer matches in sequences, but more generally we can think of it as recording global sequence matches and their start points. In this sense it is another type of alignment file, but .hit files are much lighter weight than .aln files because they do not give start and end coordinates in both sequences, alignments, etc. and only have one primary line type and object per query sequence, rather than one object per hit, which simplifies indexing and file reading.
 
 ```
 < <string:a_seq_file>   <int:nseqs>            file sequences
@@ -625,8 +614,7 @@ object per hit, which simplifies indexing and file reading.
 H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of sequences b that have hits with sequence a
 ```
 
-There are two subtypes of .hit files, one in which the queries are the a sequences, and there is an H-line for each kmer that gives the list of target sequences that contain kmer matches (with duplicates for multiple matches), 
-and the other giving the inverse mapping in which there is an H-line for each target that lists the kmers that are found within it.
+There are two subtypes of .hit files, one in which the queries are the a sequences, and there is an H-line for each kmer that gives the list of target sequences that contain kmer matches (with duplicates for multiple matches), and the other giving the inverse mapping in which there is an H-line for each target that lists the kmers that are found within it.
 
 ### 2.4.1 kmer to sequence hit file, .k2s
 
@@ -635,9 +623,7 @@ P <int:nhit> <int:pos_b>^nhit                  positions in each target seq_b of
 ```
 
 In this version the P-line gives the **positions** of the hits of query seq_a within each
-of the targets seq_b listed on the preceding H-line.
-Note that if seq_a is found twice in some seq_b then that seq_b must be listed twice in the H-line, with the positions 
-of each hit given in the corresponding locations in the P line. 
+of the targets seq_b listed on the preceding H-line.  Note that if seq_a is found twice in some seq_b then that seq_b must be listed twice in the H-line, with the positions of each hit given in the corresponding locations in the P line. 
 
 ### 2.4.2 sequence to kmer hit file, .s2k
 
@@ -645,9 +631,9 @@ of each hit given in the corresponding locations in the P line.
 O <int:nhit> <int:pos_a>^nhit                  offsets in query seq_a of each target seq_b
 ```
 
-This version is used in the inverse situation when we want to list for each target the kmers that are found within it. The O-line then gives the **offsets** of the hits of each query seq_b within the target seq_a as listed on the preceding H-line.
-As for .k2s, if a seq_b is found twice in seq_a then that seq_b must be listed twice in the H-line, with the offsets 
-for each hit given in the corresponding locations in the O line. 
+This version is used in the inverse situation when we want to list for each target the kmers that are found within it. The O-line then gives the **offsets** of the hits of each query seq_b within the target seq_a as listed on the preceding H-line.  As for .k2s, if a seq_b is found twice in seq_a then that seq_b must be listed twice in the H-line, with the offsets for each hit given in the corresponding locations in the O line. 
+
+<br>
 
 ## 2.5. Contig join file, .jns
 
@@ -714,7 +700,6 @@ as in practice scaffolding programs typically can only localise possible breaks 
 interval.
 
 <br>
-<br>
 
 ## 2.7. List file, .lis
 
@@ -747,8 +732,6 @@ include the file of base objects.
 The optional N-line give an optional symbolic name to the list.  This is used primarily
 in .scf-files (see below) to name the final scaffold objects output by an assembly pipeline.
 
-<br>
-
 ### 2.7.1. Assembly layout file, .lyo
 
 An assembly layout file consists of a collection of lists over sequence read alignments
@@ -756,8 +739,6 @@ between reads in the same .seq-file.  Each list encodes a path in the string gra
 data set that specifies a contig.  The list is ordered along the path of overlapping alignments
 from left to right and then follow containment alignments of additional shorter reads that fit
 into the contig and provide additional data for consensus.
-
-<br>
 
 ### 2.7.2. Scaffold file, .scf
 
@@ -909,13 +890,13 @@ therefore the .fastq headers encode the instrument, flow cell, lane, etc. in fie
 between :'s where the data is in order of flow cell and lane.  VGPseq uses this
 information to group reads into lanes.
 
-#### <code>4.3. VGPpair [-v] [-T\<int(4)\>] \<forward:.seq> \<reverse:.seq></code>
+#### <code>4.4. VGPpair [-v] [-T\<int(4)\>] \<forward:.seq> \<reverse:.seq></code>
 
 VGPpair reads two, presumably paired .seq files and outputs to stdout a compressed binary
 .irp file in which the sequences with the same indices are paired together, with the forward sequence (and any qualifying lines, e.g. 'Q', 'W', etc) immediately preceding the reverse sequence (and its modulating lines if any).  The only condition is that the two files have
 the same number of sequences.  The group structure, if any, is taken from the forward file.
 
-#### <code>4.4. VGPpacbio [-va] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> ...</code>
+#### <code>4.5. VGPpacbio [-va] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> ...</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
 binary VGP .pbr file to
@@ -929,7 +910,7 @@ The -a option asks VGPpacbio to  output the arrow information in N- and A-lines 
 the default is to not output this information.  The reads are grouped into SMRT cells where each
 input file is assumed to contain the data produced by a single cell.
 
-#### <code>4.5. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<forward:.seq> \<reverse:.seq></code>
+#### <code>4.6. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<forward:.seq> \<reverse:.seq></code>
 
 *Still under development but operational*
 
@@ -947,11 +928,11 @@ The -v option asks VGPcloud to output information on its progress to the standar
 The sorts of VGPcloud are threaded and the -T option specifies how many threads to use (4 by
 default).
 
-#### <code>4.6. VGPbionano [-v] \<source:.bnx></code>
+#### <code>4.7. VGPbionano [-v] \<source:.bnx></code>
 
 *Not yet.*
 
-#### <code>4.7. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db\></code>
+#### <code>4.8. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db\></code>
 
 Dazz2pbr takes a Dazzler database of a Pacbio long read data set and outputs
 a compressed, binary encoding of a VGP .pbr file to the standard output whose contents
@@ -968,7 +949,7 @@ consideration all reads less than a given threshold length, and optionally to ta
 one (the longest) read from a given well.  This is the trimmed data set that is by default
 output by Dazz2pbr.
 
-#### <code>4.8. Dazz2sxs [-vidtg] [-T\<int(4)\>] \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
+#### <code>4.9. Dazz2sxs [-vidtg] [-T\<int(4)\>] \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
 
 Dazz2sxs takes one or more Dazzler .las file encoding a collection of local alignments found by daligner
 and outputs a single compressed, binary VGP .sxs file to the standard output.  To do so, it also needs .pbr
