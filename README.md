@@ -896,7 +896,7 @@ VGPpair reads two, presumably paired .seq files and outputs to stdout a compress
 .irp file in which the sequences with the same indices are paired together, with the forward sequence (and any qualifying lines, e.g. 'Q', 'W', etc) immediately preceding the reverse sequence (and its modulating lines if any).  The only condition is that the two files have
 the same number of sequences.  The group structure, if any, is taken from the forward file.
 
-#### <code>4.5. VGPpacbio [-va] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> ...</code>
+#### <code>4.5. VGPpacbio [-vaq] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] \<data:.subreads.[bam|sam]> ...</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
 binary VGP .pbr file to
@@ -907,7 +907,7 @@ runs about 5.5 times faster than with only one.
 
 The -v option asks VGPpacbio to output information on its progress to the standard error output.
 The -a option asks VGPpacbio to  output the arrow information in N- and A-lines per read bundle,
-the default is to not output this information.  The reads are grouped into SMRT cells where each
+the default is to not output this information.  The -q option asks VGPpacbio to out Phred quality string in Q-lines, the default is to not output this information.  Please note that -q only really makes sense for HiFi data.  The reads are grouped into SMRT cells where each
 input file is assumed to contain the data produced by a single cell.
 
 #### <code>4.6. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<forward:.seq> \<reverse:.seq></code>

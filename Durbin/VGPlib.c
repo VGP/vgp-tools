@@ -197,10 +197,10 @@ static void vgpFileDestroy(VgpFile *vf)
           if (lx != NULL)
             { for (j = 1; j < vf->share; j++)
                 { li = vf[j].lineInfo[i];
-                  if ( ! vf->isWrite)
-                    { li->fieldCodec = NULL;
-                      li->listCodec  = NULL;
-                    }
+                  if (li->fieldCodec == lx->fieldCodec)
+                    li->fieldCodec = NULL;
+                  if (li->listCodec == lx->listCodec)
+                    li->listCodec  = NULL;
                   lineInfoDestroy(li);
                 }
             }
@@ -656,8 +656,8 @@ BOOL vgpReadLine (VgpFile *vf)
     }
 
   else        // binary - block read fields and list, potentially compressed
-    { int nField, ix, nBits;
-      I64 listLen, usedBytes, listSize;
+    { int nField, ix;
+      I64 nBits, listLen, usedBytes, listSize;
 
       nField = li->nField;
       if (nField > 0)
