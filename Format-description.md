@@ -1,4 +1,4 @@
-# VGP Tools: The VGP file structure
+# VGP-tools format description and schema definition
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Last Update: April 13, 2020

@@ -1,4 +1,4 @@
-# VGP Tools: The VGP tool kit and formats
+# VGP-tools: Illustrative assembly work flow
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Date: Spring, 2019

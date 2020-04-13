@@ -1,4 +1,4 @@
-# VGP Tools: The VGP file formats for genome sequence assembly and related activities
+# VGP-tools: The VGP file formats for genome sequence assembly and related activities
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Last Update: April 13, 2020

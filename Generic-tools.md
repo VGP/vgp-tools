@@ -1,4 +1,4 @@
-# VGP Tools: The generic command line tools
+# VGP-tools generic command line tools
 
 Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 
