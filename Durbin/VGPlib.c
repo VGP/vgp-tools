@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Feb 15 11:43 2020 (rd109)
+ * Last edited: Apr 14 11:52 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits + compactify code
  *   * Jul  8 04:28 2019 (rd109): refactored to use lineInfo[]
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
@@ -255,9 +255,9 @@ static char inline vfGetc(VgpFile *vf)
 
 static inline void eatWhite (VgpFile *vf)
 { char x = vfGetc(vf);
-  if (x == ' ' || x == '\t')
+  if (x == ' ') // 200414: removed option to have tab instead of space
     return;
-  parseError (vf, "failed to find expected whitespace");
+  parseError (vf, "failed to find expected space separation character");
 }
 
 static inline char readChar(VgpFile *vf)

@@ -84,7 +84,7 @@ before the first object of that type is described.  We realized this by designin
 so that every file begins with a header section that gives the number of objects, maximum size
 of an object, and total size of all objects, along with the provenance information of Principle 8.
 
-The "1-code" design supports Principle 5.  The sequence of items on the remainder of the line is determined by the code.  Tokens are separated by a single whitespace character (space or tab).  Variable length lists,
+The "1-code" design supports Principle 5.  The sequence of items on the remainder of the line is determined by the code.  Tokens are separated by a single space character.  Variable length lists,
 including strings, are preceded by their length in keeping with Principle 2.  Thus, the 1-code and
 subsequent tokens determine when the encoding of information on a line is at an end. 
 Any additional information to the end of the line, for example the comments in
