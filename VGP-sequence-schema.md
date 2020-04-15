@@ -73,8 +73,7 @@ object types and their fields and how they are aimed to be used.  When reference
 description of the file type, together with what they signify.  We remind the reader that while
 we aim to keep this README up to date, the formal versioned specification of each file type
 is determined by the schema
-**vgp-formats.\<majorversion>.\<minorversion>.fmt** against which the
-validator **VGPvalidate** can validate individual files.
+**vgp-formats.\<majorversion>.\<minorversion>.fmt** against which the utility program **VGPstat** can validate individual files.
 
 ## 1.1. Sequence: .seq
 

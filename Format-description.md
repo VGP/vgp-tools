@@ -25,7 +25,7 @@ We describe here the ASCII version of the format, which gives the specification.
 
 Every VGP file begins with a header segment followed by a data segment.  Headers, relevant for all
 file types, are described in Chapter 1 following this introduction, and the encoding of the data is documented in Chapter 2.
-The utility program **vgpvalidate** validates the format of any given file against the schema, and also
+The utility program **VGPstat** validates the format of any given file against the schema, and also
 can optionally reconstruct a file's header segment given only the data part.
 
 Each line in either the header or data section starts with a single character ("1-code") which determines the encoding of the remainder of the line. Header lines are specified by *non-alphabetic* characters, and data lines by *alphabetic* letters.  Consider as an example the following Illumina read pair (.irp) file:
