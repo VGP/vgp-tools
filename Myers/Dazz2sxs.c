@@ -1,4 +1,4 @@
-/*  Last edited: Feb  4 11:55 2020 (rd109) */
+/*  Last edited: Apr 16 22:07 2020 (rd109) */
 /*******************************************************************************************
  *
  *  Utility for displaying the information in the overlaps of a .las file in a very
@@ -24,7 +24,7 @@
 #include <limits.h>
 
 #include "gene_core.h"
-#include "../Durbin/VGPlib.h"
+#include "../include/VGPlib.h"
 
 #undef  DEBUG_FIND
 #undef  DEBUG_OUT
