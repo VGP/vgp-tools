@@ -1,14 +1,12 @@
 DEST_DIR = ~/bin
 
 all: README.html
-	cd src; make; make install
-	cd Myers; make; make install
-	cd Durbin; make; make install
+	cd Core; make
+	cd VGP; make
 
 clean:
-	cd src; make clean
-	cd Myers; make clean
-	cd Durbin; make clean
+	cd Core; make clean
+	cd VGP; make clean
 	rm *.html
 
 %.html: %.md
