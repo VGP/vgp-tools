@@ -1,14 +1,25 @@
-1 sma 1 0      OneCode schema for VGP genome assembly pipeline and related purposes
+1 def 1 0  OneCode schema for VGP genome assembly pipeline and related purposes
 ! 14 Richard Durbin 1 0 1 0 7 by hand 24 Wed Apr 22 20:00:00 2020
 X
 X these are blank lines, which can also be used for arbitrary comments
 X
-P 3 seq 1 0    SEQUENCE
-S 3 irp        read pairs
-S 3 pbr        pacbio reads
-S 3 10x        10X Genomics data
-S 3 ctg        contigs from an assembly
-S 3 kmr        kmers
+X below P lines give primary file types, and define the objects in this file
+X then S is for secondary file types
+X and L, C, F and B define the legal record types, all taking a CHAR, then STRING_LIST
+X     L for standard linetypes saved with no compression in binary mode
+X     C means compress the list - perhaps all lists should be compressed by default?
+X     F means compress the fields - not default because it slows IO down for small gain
+X     B means compress both
+X note we can, and do, also add arbitrary comments/descriptions after the data on each line
+X
+V 1 0  versions: major, minor.  This is a global that carries forward until changed.
+X					
+P 3 seq SEQUENCE
+S 3 irp   read pairs
+S 3 pbr   pacbio reads
+S 3 10x   10X Genomics data
+S 3 ctg   contigs from an assembly
+S 3 kmr   kmers
 L g 2 3 INT 6 STRING               group: size, name
 L S 1 6 DNA                        sequence: the DNA string
 C Q 1 6 STRING                     quality: Q values (ascii string = q+33)
@@ -19,10 +30,10 @@ C A 1 6 STRING                     PacBio capped pulse widths: values between 1 
 L C 1 3 INT                        count (for kmers)   
 X
 X
-P 3 rmp 1 0    RESTRICTION MAP
-S 3 rmm        maps of single molecules, e.g. BioNano primary data
-S 3 rms        maps from sequence
-S 3 rma        maps from assembly of molecule level data
+P 3 rmp RESTRICTION MAP
+S 3 rmm   maps of single molecules, e.g. BioNano primary data
+S 3 rms   maps from sequence
+S 3 rma   maps from assembly of molecule level data
 L r 2 3 INT 11 STRING_LIST  group: number of 'enzymes', corresponding patterns
 C R 2 3 INT 8 INT_LIST      map: length, site locations (both in base pairs)
 C E 1 8 INT_LIST            enzyme: for each site the enzyme index from the list in line r
@@ -31,11 +42,11 @@ C N 1 9 REAL_LIST           noise: signal to noise ratio at each site in map
 L O 1 3 INT                 index of the sequence object from which map is calculated
 X
 X
-P 3 aln 1 0    ALIGNMENT
-S 3 sxs        sequence to sequence alignment
-S 3 rxr        restriction map to restriction map alignment
-S 3 sxr        sequence to restriction map alignment
-S 3 map        relationship between two versions of an object, e.g. contigs before/after polishing
+P 3 aln ALIGNMENT
+S 3 sxs   sequence to sequence alignment
+S 3 rxr   restriction map to restriction map alignment
+S 3 sxr   sequence to restriction map alignment
+S 3 map   relationship between two versions of an object, e.g. contigs before/after polishing
 L g 2 1 INT 6 STRING                       group: number, name
 F A 2 3 INT 2 INT                          alignment: a index in its file, b index in its file
 F I 6 3 INT 3 INT 3 INT 3 INT 3 INT 3 INT  indices: aStart, aEnd, aLength, bStart, bEnd, bLength
@@ -50,30 +61,32 @@ C W 1 8 INT_LIST                           trace point separations in b
 C X 1 8 INT_LIST                           number of differences in alignment per trace interval
 X
 X
-P 3 hit 1 0    HIT_LIST
-S 3 s2k        sequence to kmer hit list
-S 3 k2s        kmer to sequence hit list
+P 3 hit HIT_LIST
+S 3 s2k   sequence to kmer hit list
+S 3 k2s   kmer to sequence hit list
 C H 2 3 INT 8 INT_LIST     hits: indices of query a in its file, targets b in their file
 C O 1 8 INT_LIST           offsets: in query a of each target b
 C P 1 8 INT_LIST           positions: in each target b of query a
 X
 X
-P 3 jns 1 0    JOIN
+P 3 jns JOIN
 F J 6 3 INT 3 INT 4 CHAR 3 INT 3 INT 4 CHAR join: a, pos in a, dirxn s or e, b, pos in b, dirxn 
 F G 2 3 INT 3 INT                           gap: size estimate, standard deviation estimate (bp)
 L Q 1 3 INT                                 quality: confidence in phred units
 C E 1 8 INT_LIST                            evidence: list of alignments supporting the join
 X
 X
-P 3 brk 1 0    BREAK
+P 3 brk BREAK
 L B 3 3 INT 3 INT 3 INT    break: object, start, end - material between start and end uncertain
 L Q 1 3 INT                quality: confidence in phred units
 C E 1 8 INT_LIST           evidence: list of alignments supporting the break
 X
 X
-P 3 lis 1 0    LIST   
-S 3 lyo        layout for assembly: selection of alignments generating a contig
-S 3 scf        scaffold: list over joins
+P 3 lis LIST   
+S 3 lyo   layout for assembly: selection of alignments generating a contig
+S 3 scf   scaffold: list over joins
 C L 1 8 INT_LIST           list: indexes of objects in list in reference file  
 C N 1 6 STRING             name: optional name for list
 L S 1 3 INT                seed: optional seed sequence for scaffold
+X
+X end of file
