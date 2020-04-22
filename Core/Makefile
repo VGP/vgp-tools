@@ -2,19 +2,17 @@
 
 DEST_DIR = ~/bin
 
-IDIR = ../include
-
 #CFLAGS= -O3 -I$(IDIR) -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 CFLAGS= -g -I$(IDIR) -Wall -Wextra -Wno-unused-result -fno-strict-aliasing  # for debugging
 #CFLAGS= -03-I$(IDIR) -DOMP -fopenmp	# for OMP parallelisation - doesn't compile on Mac
 
-LIB = ../lib/libVGP.a
-PROGS = VGPstat VGPview
+LIB = libONE.a
+PROGS = ONEstat ONEview
 
 all: $(LIB) $(PROGS)
 
 clean:
-	$(RM) *.o VGPstat VGPview
+	$(RM) *.o ONEstat ONEview $(LIB)
 	$(RM) -r *.dSYM
 
 install:
@@ -22,14 +20,13 @@ install:
 
 package:
 	make clean
-	tar -zcf VGP-core.tar.gz *.c *.h Makefile
+	tar -zcf ONE-core.tar.gz *.c *.h Makefile
 
 ### library
 
-LIB_OBJS = VGPlib.o compression.o
+LIB_OBJS = ONElib.o
 
-VGPlib.o: $(IDIR)/VGPlib.h
-compression.o: compression.h
+ONElib.o: ONElib.h
 
 $(LIB): $(LIB_OBJS)
 	ar -cr $@ $^
@@ -37,10 +34,10 @@ $(LIB): $(LIB_OBJS)
 
 ### programs
 
-VGPstat: VGPstat.c $(LIB)
+ONEstat: ONEstat.c utils.o $(LIB)
 	$(CC) $(CFLAGS) -o $@ $^ -lm -lz
 
-VGPview: VGPview.c $(LIB)
+ONEview: ONEview.c utils.o $(LIB)
 	$(CC) $(CFLAGS) -o $@ $^ -lm -lz
 
 ### end of file
