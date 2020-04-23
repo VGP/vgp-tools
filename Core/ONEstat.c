@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Apr 22 23:22 2020 (rd109)
+ * Last edited: Apr 23 01:42 2020 (rd109)
  *   * Dec 27 09:20 2019 (gene): style edits
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *
@@ -63,11 +63,9 @@ int main (int argc, char **argv)
     die ("need to give a schema file and a single data file as arguments") ;
 
   //  Open subject file for reading and read header (if present)
-  printf ("about to read schema\n") ;
   OneSchema *vs = oneSchemaCreateFromFile (argv[0]) ;
   if (!vs) die ("failed to read schema file %s", argv[0]) ;
-  printf ("about to read file\n") ;
-  OneFile *vf = oneFileOpenRead (*argv, vs, fileType, 1) ;
+  OneFile *vf = oneFileOpenRead (argv[1], vs, fileType, 1) ;
   if (!vf) die ("failed to open onecode file %s", argv[1]) ;
   vf->isCheckString = TRUE ;
   oneSchemaDestroy (vs) ; // no longer needed

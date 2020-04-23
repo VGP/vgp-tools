@@ -7,8 +7,9 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Apr 22 23:22 2020 (rd109)
- * * Apr 20 11:27 2020 (rd109): added OneSchema to make schema dynamic
+ * Last edited: Apr 23 02:46 2020 (rd109)
+ * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
+ * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
  * * Jul  8 04:28 2019 (rd109): refactored to use info[]
  * * Created: Thu Feb 21 22:40:28 2019 (rd109)
@@ -30,6 +31,11 @@
 #include <math.h>
 
 #include "ONElib.h"
+
+// set major and minor code versions
+
+#define MAJOR 1
+#define MINOR 1
 
 //  utilities with implementation at the end of the file
 
@@ -106,13 +112,13 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
   // return value is vs unless a new primary type is declared, in which case vs->nxt
   char t ;
 
-  printf ("schema load line %d %c\n", (int)vf->line, vf->lineType) ;
   switch (vf->lineType)
     {
     case 'X':  // ignore - blank or comment line in schema file
       break ;
     case 'P':
-      if (!vs->objectType) die ("schema: file type %s has no object type", vs->primary) ;
+      if (*vs->primary && !vs->objectType)
+	die ("schema: file type %s has no object type", vs->primary) ;
       if (oneLen(vf) != 3) die ("schema: primary name %s is not 3 letters", oneString(vf)) ;
       OneSchema *vsNxt = new0 (1, OneSchema) ;
       vsNxt->major = vs->major ; vsNxt->minor = vs->minor ;
@@ -124,15 +130,16 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
       break ;
     case 'S':
       if (oneLen(vf) != 3) die ("schema: secondary name %s is not 3 letters", oneString(vf)) ;
-      if (vs->nSecondary++)
-	{ char **t = vs->secondary ;
-	  vs->secondary = new (vs->nSecondary, char*) ;
-	  memcpy (vs->secondary+1, t, vs->nSecondary-1) ;
+      if (vs->nSecondary)
+	{ char **temp = vs->secondary ;
+	  vs->secondary = new (vs->nSecondary+1, char*) ;
+	  memcpy (vs->secondary, temp, vs->nSecondary*sizeof(char*)) ;
+	  free (temp) ;
 	}
       else
-	vs->secondary = new (vs->nSecondary, char*) ;
-      *vs->secondary = new0 (4, char) ;
-      strcpy (*vs->secondary, oneString(vf)) ;
+	vs->secondary = new (1, char*) ;
+      vs->secondary[vs->nSecondary] = new0 (4, char) ;
+      strcpy (vs->secondary[vs->nSecondary++], oneString(vf)) ;
       break ;
     case 'V':
       vs->major = oneInt(vf,0) ; vs->minor = oneInt(vf,1) ;
@@ -164,7 +171,9 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	    vi->listCodec = DNAcodec ; vi->isUseListCodec = TRUE ;
 	    if (vf->lineType != 'L') die ("linetype in schema for DNA lines must be L") ;
 	  }
-	else die ("ONE schema error: bad field type %s in line %d", s, vf->line) ;
+	else
+	  die ("ONE schema error: bad field %d of %d type %s in line %d",
+	       i, vi->nField, s, vf->line) ;
       vi->isIntListDiff = TRUE ; // harmless if not INT_LIST (and will go)
       if (vf->lineType == 'C' || vf->lineType == 'B') vi->listCodec = vcCreate () ;
       if (vf->lineType == 'F' || vf->lineType == 'B') vi->fieldCodec = vcCreate () ;
@@ -193,20 +202,26 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   OneFile *vf = new0 (1, OneFile) ;      // shell object to support bootstrap
   // bootstrap specification of linetypes to read schemas
   vf->info['A'] = infoCreate (2) ;       // ASCII only linetype - used for many header line types
-  vf->info['A']->fieldType[0] = vCHAR ; vf->info['A']->fieldType[1] = vSTRING_LIST ;
+  vf->info['A']->fieldType[0] = vCHAR ;
+  vf->info['A']->fieldType[1] = vSTRING_LIST ; vf->info['A']->listField = 1 ;
   vf->info['L'] = infoCreate (2) ;       // general line type, which can be binary
-  vf->info['L']->fieldType[0] = vCHAR ; vf->info['L']->fieldType[1] = vSTRING_LIST ;
+  vf->info['L']->fieldType[0] = vCHAR ;
+  vf->info['L']->fieldType[1] = vSTRING_LIST ; vf->info['L']->listField = 1 ;
+  vf->info['P'] = infoCreate (1) ;       // to define the schema for parsing a .def file
+  vf->info['P']->fieldType[0] = vSTRING ; vf->info['P']->listField = 0 ;
+  vf->info['/'] = infoCreate (0) ;       // to store comments
   vf->field = new (2, OneField) ;
 
   // first load the universal header and footer (non-alphabetic) line types 
   // do this by writing their schema into a temporary file and parsing it into the base schema
-  vf->f = tmpfile () ;                   // unique temp file destroyed on program exit
+  //  vf->f = tmpfile () ;                   // unique temp file destroyed on program exit
+  vf->f = fopen ("TEST","w+") ;              // unique temp file destroyed on program exit
   fprintf (vf->f, "A 1 3 6 STRING 3 INT 3 INT         first line: 3-letter type, major, minor version\n") ;
   fprintf (vf->f, "A 2 1 6 STRING                     subtype: 3-letter subtype\n") ;
   fprintf (vf->f, "A # 2 4 CHAR 3 INT                 linetype, count\n") ;
   fprintf (vf->f, "A @ 2 4 CHAR 3 INT                 linetype, list max\n") ;
   fprintf (vf->f, "A + 2 4 CHAR 3 INT                 linetype, list total\n") ;
-  fprintf (vf->f, "A %% 4 4 CHAR 4 CHAR 4 CHAR 3 INT   group, #/+, linetype, value\n") ;
+  fprintf (vf->f, "A %% 4 4 CHAR 4 CHAR 4 CHAR 3 INT  group, #/+, linetype, value\n") ;
   fprintf (vf->f, "A ! 1 11 STRING_LIST               provenance: program, version, command, date\n") ;
   fprintf (vf->f, "A < 2 6 STRING 3 INT               reference: filename, object count\n") ;
   fprintf (vf->f, "A > 1 6 STRING                     deferred: filename\n") ;
@@ -221,7 +236,7 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
   while (oneReadLine (vf))
     schemaLoadRecord (vs, vf) ;
-  printf ("  4\n") ;
+  vs->major = MAJOR ; vs->minor = MINOR ;
 
   // next reuse the temp file to load the schema for reading schemas
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
@@ -234,21 +249,23 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "L F 2 4 CHAR 11 STRING_LIST  linetype with field compression\n") ;
   fprintf (vf->f, "L B 2 4 CHAR 11 STRING_LIST  linetype with both list and field compression\n") ;
   fprintf (vf->f, "L X 0                        blank lines, for spacers or comments\n") ;
+  fprintf (vf->f, "\n") ; // terminator
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
-  OneSchema *vs0 = vs0 ;  // need this because loadInfo() updates vs on reading P lines
+  OneSchema *vs0 = vs ;  // need this because loadInfo() updates vs on reading P lines
+  vf->line = 0 ;
   while (oneReadLine (vf))
     vs = schemaLoadRecord (vs, vf) ;
-  OneSchema *vsScm = vs ; // will need this to destroy it once the true schema is read
+  OneSchema *vsDef = vs ; // will need this to destroy it once the true schema is read
   oneFileDestroy (vf) ;   // this will also effectively remove the temp file on closing
 
   // finally read the schema itself
-  if (!(vf = oneFileOpenRead (filename, vs0, "scm", 1)))
+  if (!(vf = oneFileOpenRead (filename, vs0, "def", 1)))
     return 0 ;
   vs = vs0 ; // set back to vs0, so next filetype spec will replace vsScm
   while (oneReadLine (vf))
     vs = schemaLoadRecord (vs, vf) ;
   oneFileDestroy (vf) ;
-  oneSchemaDestroy (vsScm) ; // no longer need this, and can destroy because unlinked from vs0
+  oneSchemaDestroy (vsDef) ; // no longer need this, and can destroy because unlinked from vs0
   
   return vs0 ;
 }
@@ -270,10 +287,12 @@ void oneSchemaDestroy (OneSchema *vs)
 /*************************************/
 
 static OneFile *oneFileCreate (OneSchema *vs, char *type)
-{
-  int      i, j ;
-  OneFile *vf = new0 (1, OneFile) ;
-  char    *secondary = 0 ;
+{ // searches through the linked list of vs to find type, either as primary or a secondary
+  // if found fills and returns vf, else returns 0
+  
+  int         i, j ;
+  OneFile    *vf = new0 (1, OneFile) ;
+  char       *secondary = 0 ;
 
   // transfer header info
   for (i = 0 ; i < 128 ; ++i)
@@ -303,6 +322,7 @@ static OneFile *oneFileCreate (OneSchema *vs, char *type)
   if (secondary) strcpy (vf->subType, secondary) ;
   vf->codecTrainingSize = 100000;
   vf->nFieldMax = vs->nFieldMax ;
+  vf->field = new (vf->nFieldMax, OneField) ;
 
   // determine endian of machine
   { int   t = 1;
@@ -377,7 +397,7 @@ static void oneFileDestroy (OneFile *vf)
 
   free (vf->field) ;
 
-  free(vf);
+  free (vf) ;
 }
 
 /***********************************************************************************
@@ -453,7 +473,7 @@ static inline I64 readInt(OneFile *vf)
     parseError (vf, "empty int field");
   if (*e != '\0')
     parseError (vf, "bad int");
-  return (x);
+  return x;
 }
 
 static inline double readReal(OneFile *vf)
@@ -762,7 +782,7 @@ BOOL oneReadLine (OneFile *vf)
   if (t == vf->groupType)
     updateGroupCount (vf, TRUE);
 
-  fprintf (stderr, "reading line %lld type %c\n", vf->line, t) ;
+  // fprintf (stderr, "reading line %lld type %c - expecting %d fields\n", vf->line, t, li->nField) ;
 
   if (isAscii)           // read field by field according to ascii spec
     { int     i, j;
@@ -773,12 +793,14 @@ BOOL oneReadLine (OneFile *vf)
         switch (li->fieldType[i])
         { case vINT:
             vf->field[i].i = readInt (vf);
-            break;
+	    //	    printf ("  field %d int %d\n", i, (int)oneInt(vf,i)) ; 
+	    break;
           case vREAL:
             vf->field[i].r = readReal (vf);
             break;
           case vCHAR:
             vf->field[i].c = readChar (vf);
+	    //	    printf ("  field %d char %c\n", i, (int)oneChar(vf,i)) ;
             break;
           case vSTRING:
             len = readInt (vf);
@@ -805,6 +827,7 @@ BOOL oneReadLine (OneFile *vf)
           case vSTRING_LIST: // vSTRING_LIST - inefficient for now - also used for binary
             len = readInt (vf);
             vf->field[i].len = len;
+	    //	    printf ("  field %d string list len %d\n", i, (int)oneLen(vf)) ;
             readStringList (vf, t, len);
             break;
         }
@@ -882,7 +905,7 @@ BOOL oneReadLine (OneFile *vf)
       }
     }
 
-  return (t);
+  return t;
 }
 
 char *oneReadComment (OneFile *vf)
@@ -912,6 +935,7 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
   int      curLine = 0;
   int      i, j;
   off_t    startOff, footOff;
+  U8       c ;
 
   if (strcmp (path, "-") == 0)
     f = stdin;
@@ -920,58 +944,53 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
       if (f == NULL)
         return NULL;
     }
-
-  // EWM: New logic, either has '1' line or doesn't.  If it does then get it now and
-  //   determine or check fileType.  Avoid uncessary checks in core loop and especially
-  //   creating and then destroying a OneFile object of type 0.
-
-  { U8       c;
-    int      major, minor, slen;
-    char     name[4];
-
+    
 #define OPEN_ERROR1(x) { fprintf (stderr,"ONE file error: %s\n",x); fclose(f) ; return NULL; }
 #define OPEN_ERROR3(x,y,z) { fprintf (stderr,"ONE file error: ") ; \
       fprintf (stderr,x,y,z) ; fprintf (stderr, "\n") ; fclose(f) ; return NULL ; }
     
-    c = getc(f);
-    if (feof(f))
-      OPEN_ERROR1("file is empty") ;
+  c = getc(f);
+  if (feof(f))
+    OPEN_ERROR1("file is empty") ;
 
-    if (c == '1')
-      { if (fscanf (f, " %d", &slen) != 1)
-	  OPEN_ERROR1("line 1: failed to read type name length") ;
-	if (slen != 3)
-	  OPEN_ERROR1("line 1: type name is not three letters") ;
-        if (fscanf (f, " %s %d %d", name, &major, &minor) != 2)
-	  OPEN_ERROR1("line 1: failed to read remainder of line") ;
-        while (getc(f) != '\n')
-	  if (feof(f))
-	    OPEN_ERROR1("end of file before end of line 1") ;
-	++curLine ;
+  if (c == '1')
+    { int  major, minor, slen;
+      char name[4];
+      
+      if (fscanf (f, " %d", &slen) != 1)
+	OPEN_ERROR1("line 1: failed to read type name length") ;
+      if (slen != 3)
+	OPEN_ERROR1("line 1: type name is not three letters") ;
+      if (fscanf (f, " %s %d %d", name, &major, &minor) != 3)
+	OPEN_ERROR1("line 1: failed to read remainder of line") ;
+      while (getc(f) != '\n')
+	if (feof(f))
+	  OPEN_ERROR1("end of file before end of line 1") ;
+      ++curLine ;
 
-	vf = oneFileCreate (vs, name) ;
-	if (!vf)
-          OPEN_ERROR3("unknown primary file type %s in header line %d", name, 1);
-        if (major != vf->major)
-          { oneFileDestroy (vf) ;
-	    OPEN_ERROR3("major version file %d != code %d", major, (int) vf->major) ;
-	  }
-        if (minor > vf->minor)
-          { oneFileDestroy (vf) ;
-	    OPEN_ERROR3("minor version file %d > code %d", minor, (int) vf->minor) ;
-	  }
-        if (fileType && strcmp (fileType, vf->fileType))
-	  { oneFileDestroy (vf) ;
-	    OPEN_ERROR3("primary fileType mismatch file %s != %s", fileType, vf->fileType) ;
-	  }
-      }
-    else
-      { if (fileType == NULL)
-	  OPEN_ERROR1("fileType not defined in file or code") ;
-	ungetc(c,f);
-	vf = oneFileCreate (vs, fileType) ;
-      }
-  }
+      vf = oneFileCreate (vs, name) ;
+      if (!vf)
+	OPEN_ERROR3("unknown primary file type %s in header line %d", name, 1);
+
+      if (major != vf->major)
+	{ oneFileDestroy (vf) ;
+	  OPEN_ERROR3("major version file %d != code %d", major, (int) vf->major) ;
+	}
+      if (minor > vf->minor)
+	{ oneFileDestroy (vf) ;
+	  OPEN_ERROR3("minor version file %d > code %d", minor, (int) vf->minor) ;
+	}
+      if (fileType && strcmp (fileType, vf->fileType))
+	{ oneFileDestroy (vf) ;
+	  OPEN_ERROR3("primary fileType mismatch file %s != %s", fileType, vf->fileType) ;
+	}
+    }
+  else
+    { if (fileType == NULL)
+	OPEN_ERROR1("fileType not defined in file or code") ;
+      ungetc(c,f);
+      vf = oneFileCreate (vs, fileType) ;
+    }
 
   vf->f = f;
   vf->line = curLine;
@@ -1033,22 +1052,19 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
           break;
 
         case '2':
-          { /*
-	      char   *s;
-            SubType t;
-            t = 0;
-            s = oneString(vf);
-            for (i = 1; i < MAX_SUB; ++i)
-              if (!strcmp (s, subTypeName[i]))
-                t = i
-
-            if (t == 0)
-              parseError(vf, "unknown secondary subType %s", s);
-            if (subPrimary[t] != vf->fileType)
-              parseError(vf, "subtype %s not compatible with primary type %d",
-                                s, fileTypeName[vf->fileType]);
-            vf->subType = t;
-	    */
+          { char   *sub = oneString(vf) ;
+	    OneSchema *os = vs ;
+	    while ((os = os->nxt))
+	      { for (j = 0 ; j < os->nSecondary ; ++j)
+		  if (!strcmp (sub, os->secondary[j])) break ;
+		if (j < os->nSecondary) break ;
+	      }
+            if (!os)
+              parseError (vf, "unknown secondary subType %s", sub);
+            if (strcmp (os->primary, vf->fileType))
+              parseError (vf, "subtype %s not compatible with primary type %d",
+			  sub, vf->fileType);
+            strcpy (vf->subType, sub) ;
             break;
           }
 

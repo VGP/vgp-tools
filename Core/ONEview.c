@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Apr 22 23:21 2020 (rd109)
+ * Last edited: Apr 23 02:51 2020 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -109,13 +109,14 @@ int main (int argc, char **argv)
 
   OneSchema *vs = oneSchemaCreateFromFile (argv[0]) ;
   if (!vs) die ("failed to read schema file %s", argv[0]) ;
-  OneFile *vfIn = oneFileOpenRead (*argv, vs, fileType, 1) ; /* reads the header */
-  if (!vfIn) die ("failed to open one file %s", *argv) ;
-  oneSchemaDestroy (vs) ; // no longer needed
+  OneFile *vfIn = oneFileOpenRead (argv[1], vs, fileType, 1) ; /* reads the header */
+  if (!vfIn) die ("failed to open one file %s", argv[1]) ;
 
   if ((objList || groupList) && !vfIn->isBinary)
-    die ("%s is ascii - you can only access objects and groups by index in binary files", *argv) ;
+    die ("%s is ascii - you can only access objects and groups by index in binary files", argv[1]) ;
   
+  printf ("about to open write\n") ;
+
   OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vs, vfIn, FALSE, isBinary, 1) ;
   if (!vfOut) die ("failed to open output file %s", outFileName) ;
   
@@ -164,7 +165,8 @@ int main (int argc, char **argv)
   
   oneFileClose (vfIn) ;
   oneFileClose (vfOut) ;
-
+  oneSchemaDestroy (vs) ;
+  
   free (command) ;
   timeTotal (stderr) ;
 }

@@ -1,4 +1,4 @@
-1 def 1 0  OneCode schema for VGP genome assembly pipeline and related purposes
+1 3 def 1 0  OneCode schema for VGP genome assembly pipeline and related purposes
 ! 14 Richard Durbin 1 0 1 0 7 by hand 24 Wed Apr 22 20:00:00 2020
 X
 X these are blank lines, which can also be used for arbitrary comments
@@ -13,7 +13,7 @@ X     B means compress both
 X note we can, and do, also add arbitrary comments/descriptions after the data on each line
 X
 V 1 0  versions: major, minor.  This is a global that carries forward until changed.
-X					
+X
 P 3 seq SEQUENCE
 S 3 irp   read pairs
 S 3 pbr   pacbio reads
@@ -21,7 +21,7 @@ S 3 10x   10X Genomics data
 S 3 ctg   contigs from an assembly
 S 3 kmr   kmers
 L g 2 3 INT 6 STRING               group: size, name
-L S 1 6 DNA                        sequence: the DNA string
+L S 1 3 DNA                        sequence: the DNA string
 C Q 1 6 STRING                     quality: Q values (ascii string = q+33)
 L P 0                              marks start of a readpair
 F W 4 3 INT 3 INT 3 INT 4 REAL     PacBio metadata: well, pulse start, pulse end, score
@@ -47,8 +47,8 @@ S 3 sxs   sequence to sequence alignment
 S 3 rxr   restriction map to restriction map alignment
 S 3 sxr   sequence to restriction map alignment
 S 3 map   relationship between two versions of an object, e.g. contigs before/after polishing
-L g 2 1 INT 6 STRING                       group: number, name
-F A 2 3 INT 2 INT                          alignment: a index in its file, b index in its file
+L g 2 3 INT 6 STRING                       group: number, name
+F A 2 3 INT 3 INT                          alignment: a index in its file, b index in its file
 F I 6 3 INT 3 INT 3 INT 3 INT 3 INT 3 INT  indices: aStart, aEnd, aLength, bStart, bEnd, bLength
 F Q 1 3 INT                                quality: alignment confidence in phred units
 F M 1 3 INT                                match: number of matching bases
