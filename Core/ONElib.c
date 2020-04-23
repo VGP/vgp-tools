@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Apr 23 03:34 2020 (rd109)
+ * Last edited: Apr 23 09:51 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -114,7 +114,7 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 
   switch (vf->lineType)
     {
-    case 'X':  // ignore - blank or comment line in schema file
+    case '.':  // ignore - blank or comment line in schema file
       break ;
     case 'P':
       if (*vs->primary && !vs->objectType)
@@ -224,6 +224,7 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "A ! 1 11 STRING_LIST               provenance: program, version, command, date\n") ;
   fprintf (vf->f, "A < 2 6 STRING 3 INT               reference: filename, object count\n") ;
   fprintf (vf->f, "A > 1 6 STRING                     deferred: filename\n") ;
+  fprintf (vf->f, "A . 0                              blank line, anywhere in file\n") ;
   fprintf (vf->f, "A $ 1 3 INT                        binary file - goto footer: isBigEndian\n") ;
   fprintf (vf->f, "A ^ 0                              binary file: end of footer designation\n") ;
   fprintf (vf->f, "A - 1 3 INT                        binary file: offset of start of footer\n") ;
@@ -248,7 +249,6 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "L C 2 4 CHAR 11 STRING_LIST  linetype with list compression\n") ;
   fprintf (vf->f, "L F 2 4 CHAR 11 STRING_LIST  linetype with field compression\n") ;
   fprintf (vf->f, "L B 2 4 CHAR 11 STRING_LIST  linetype with both list and field compression\n") ;
-  fprintf (vf->f, "L X 0                        blank lines, for spacers or comments\n") ;
   fprintf (vf->f, "\n") ; // terminator
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
   OneSchema *vs0 = vs ;  // need this because loadInfo() updates vs on reading P lines
@@ -1144,6 +1144,9 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
           vf->info['>']->accum.count -= 1; // to avoid double counting
           oneAddDeferred (vf, oneString(vf));
           break;
+
+	case '.': // blank line for spacing, ignore
+	  break ;
 
         // Below here are binary file header types - requires given.count/given.max first
 
