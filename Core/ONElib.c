@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Apr 23 02:46 2020 (rd109)
+ * Last edited: Apr 23 03:34 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -172,8 +172,8 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	    if (vf->lineType != 'L') die ("linetype in schema for DNA lines must be L") ;
 	  }
 	else
-	  die ("ONE schema error: bad field %d of %d type %s in line %d",
-	       i, vi->nField, s, vf->line) ;
+	  die ("ONE schema error: bad field %d of %d type %s in line %d type %c",
+	       i, vi->nField, s, vf->line, t) ;
       vi->isIntListDiff = TRUE ; // harmless if not INT_LIST (and will go)
       if (vf->lineType == 'C' || vf->lineType == 'B') vi->listCodec = vcCreate () ;
       if (vf->lineType == 'F' || vf->lineType == 'B') vi->fieldCodec = vcCreate () ;
@@ -214,8 +214,7 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
 
   // first load the universal header and footer (non-alphabetic) line types 
   // do this by writing their schema into a temporary file and parsing it into the base schema
-  //  vf->f = tmpfile () ;                   // unique temp file destroyed on program exit
-  vf->f = fopen ("TEST","w+") ;              // unique temp file destroyed on program exit
+  vf->f = tmpfile () ;                   // unique temp file destroyed on program exit
   fprintf (vf->f, "A 1 3 6 STRING 3 INT 3 INT         first line: 3-letter type, major, minor version\n") ;
   fprintf (vf->f, "A 2 1 6 STRING                     subtype: 3-letter subtype\n") ;
   fprintf (vf->f, "A # 2 4 CHAR 3 INT                 linetype, count\n") ;
@@ -237,6 +236,7 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   while (oneReadLine (vf))
     schemaLoadRecord (vs, vf) ;
   vs->major = MAJOR ; vs->minor = MINOR ;
+  vs->nBinaryHeader = vs->nBinary ;
 
   // next reuse the temp file to load the schema for reading schemas
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
@@ -314,6 +314,16 @@ static OneFile *oneFileCreate (OneSchema *vs, char *type)
   for (i = 0 ; i < 128 ; ++i)
     if (vs->info[i]) vf->info[i] = infoDeepCopy (vs->info[i]) ;
 
+  // build binaryTypeUnpack[]
+  for (i = 0 ; i < 128 ; ++i)
+    if (vf->info[i] && vf->info[i]->binaryTypePack)
+      { U8 x = vf->info[i]->binaryTypePack ;
+	vf->binaryTypeUnpack[x] = i ;
+	vf->binaryTypeUnpack[x+1] = i ;
+	vf->binaryTypeUnpack[x+2] = i ;
+	vf->binaryTypeUnpack[x+3] = i ;
+      }
+  
   // set other information
   vf->major = vs->major ; vf->minor = vs->minor ;
   vf->objectType = vs->objectType ;

@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Apr 23 02:51 2020 (rd109)
+ * Last edited: Apr 23 03:13 2020 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -115,15 +115,13 @@ int main (int argc, char **argv)
   if ((objList || groupList) && !vfIn->isBinary)
     die ("%s is ascii - you can only access objects and groups by index in binary files", argv[1]) ;
   
-  printf ("about to open write\n") ;
-
   OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vs, vfIn, FALSE, isBinary, 1) ;
   if (!vfOut) die ("failed to open output file %s", outFileName) ;
   
   if (isHeaderOnly)
     oneWriteHeader (vfOut) ;
   else
-    { oneAddProvenance (vfOut, "oneview", "0.0", command, 0) ;
+    { oneAddProvenance (vfOut, "ONEview", "0.0", command, 0) ;
       if (!isNoHeader) oneWriteHeader (vfOut) ;
       
       static size_t fieldSize[128] ;
