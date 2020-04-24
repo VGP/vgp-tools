@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Apr 23 09:51 2020 (rd109)
+ * Last edited: Apr 24 12:17 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -162,7 +162,7 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	if (!strcmp (s, "INT")) vi->fieldType[i] = vINT ;
 	else if (!strcmp (s, "REAL")) vi->fieldType[i] = vREAL ;
 	else if (!strcmp (s, "CHAR")) vi->fieldType[i] = vCHAR ;
-	else if (!strcmp (s, "STRING")) vi->fieldType[i] = vSTRING ;
+	else if (!strcmp (s, "STRING")) { vi->fieldType[i] = vSTRING ; VL(vi,i,t,vs) ; }
 	else if (!strcmp (s, "INT_LIST")) { vi->fieldType[i] = vINT_LIST ; VL(vi,i,t,vs) ; }
 	else if (!strcmp (s, "REAL_LIST")) { vi->fieldType[i] = vREAL_LIST ; VL(vi,i,t,vs) ; }
 	else if (!strcmp (s, "STRING_LIST")) { vi->fieldType[i] = vSTRING_LIST; VL(vi,i,t,vs) ; }
@@ -201,20 +201,38 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
 
   OneFile *vf = new0 (1, OneFile) ;      // shell object to support bootstrap
   // bootstrap specification of linetypes to read schemas
-  vf->info['A'] = infoCreate (2) ;       // ASCII only linetype - used for many header line types
-  vf->info['A']->fieldType[0] = vCHAR ;
-  vf->info['A']->fieldType[1] = vSTRING_LIST ; vf->info['A']->listField = 1 ;
-  vf->info['L'] = infoCreate (2) ;       // general line type, which can be binary
-  vf->info['L']->fieldType[0] = vCHAR ;
-  vf->info['L']->fieldType[1] = vSTRING_LIST ; vf->info['L']->listField = 1 ;
-  vf->info['P'] = infoCreate (1) ;       // to define the schema for parsing a .def file
-  vf->info['P']->fieldType[0] = vSTRING ; vf->info['P']->listField = 0 ;
-  vf->info['/'] = infoCreate (0) ;       // to store comments
-  vf->field = new (2, OneField) ;
+  { OneInfo *vi ;
+    vi = vf->info['A'] = infoCreate (2) ;  // ASCII only linetype - used for many header lines
+    vi->fieldType[0] = vCHAR ;
+    vi->fieldType[1] = vSTRING_LIST ; vi->listEltSize = 1 ; vi->listField = 1 ;
+    vi = vf->info['L'] = infoCreate (2) ;  // general line type, which can be binary
+    vi->fieldType[0] = vCHAR ;
+    vi->fieldType[1] = vSTRING_LIST ; vi->listEltSize = 1 ; vi->listField = 1 ;
+    vi = vf->info['P'] = infoCreate (1) ;  // to define the schema for parsing a .def file
+    vi->fieldType[0] = vSTRING ; vi->listEltSize = 1 ; vi->listField = 0 ;
+    vf->info['/'] = infoCreate (0) ;       // to store comments
+    vf->field = new (2, OneField) ;
+  }
 
   // first load the universal header and footer (non-alphabetic) line types 
   // do this by writing their schema into a temporary file and parsing it into the base schema
-  vf->f = tmpfile () ;                   // unique temp file destroyed on program exit
+  { errno = 0 ;
+    static char template[32] ;
+#define VALGRIND_MACOS
+#ifdef VALGRIND_MACOS // MacOS valgrind is missing functions to make temp files it seems
+    sprintf (template, "/tmp/OneSchema.%d", getpid()) ;
+    vf->f = fopen (template, "w+") ;
+    if (errno) die ("failed to open temporary file %s errno %d\n", template, errno) ;
+#else
+    strcpy (template, "/tmp/OneSchema.XXXXXX") ;
+    int fd = mkstemp (template) ;
+    if (errno) die ("failed to open temporary file %s errno %d\n", template, errno) ;
+    vf->f = fdopen (fd, "w+") ;
+    if (errno) die ("failed to assign temporary file to stream: errno %d\n", errno) ;
+#endif
+    unlink (template) ;                  // this ensures that the file is removed on closure
+    if (errno) die ("failed to unlink temporary file %s errno %d\n", template, errno) ;
+  }
   fprintf (vf->f, "A 1 3 6 STRING 3 INT 3 INT         first line: 3-letter type, major, minor version\n") ;
   fprintf (vf->f, "A 2 1 6 STRING                     subtype: 3-letter subtype\n") ;
   fprintf (vf->f, "A # 2 4 CHAR 3 INT                 linetype, count\n") ;
