@@ -2,12 +2,12 @@ DEST_DIR = ~/bin
 
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe
+ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe VGPc2 VGPcopt
 
-all: deflate.lib $(ALL)
+all: deflate.lib libhts.a $(ALL)
 
-VGP_LIB = -L../lib -lVGP
-VGP_DPND = ../include/VGPlib.h
+VGP_LIB = ../Core/VGPlib.c
+VGP_DPND = $(VGP_LIB) ../Core/VGPlib.h
 
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h
@@ -15,11 +15,14 @@ GENE_DPND = $(GENE_CORE) gene_core.h
 deflate.lib: LIBDEFLATE
 	cd LIBDEFLATE; make; cd ..
 
+libhts.a: HTSLIB
+	cd HTSLIB; make; cd ..
+
 VGPzip: VGPzip.c $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPzip VGPzip.c $(GENE_CORE) -lpthread
 
-VGPseq: VGPseq.c $(VGP_DPND) $(GENE_DPND)
-	gcc $(CFLAGS) -o VGPseq VGPseq.c $(VGP_LIB) $(GENE_CORE) -lpthread
+VGPseq: VGPseq.c $(VGP_DPND) $(GENE_DPND) libhts.a
+	gcc $(CFLAGS) -o VGPseq -I./HTSLIB VGPseq.c $(VGP_LIB) $(GENE_CORE) HTSLIB/libhts.a -lpthread -lz -lm -lbz2 -llzma -lcurl
 
 VGPpair: VGPpair.c $(VGP_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPpair VGPpair.c $(VGP_LIB) $(GENE_CORE) -lpthread
@@ -38,6 +41,12 @@ Dazz2sxs: Dazz2sxs.c $(VGP_DPND) $(GENE_DPND)
 
 VGPcloud: VGPcloud.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPcloud VGPcloud.c lsd.sort.c exsort.c $(GENE_CORE) -lpthread
+
+VGPc2: VGPc2.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(VGP_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPc2 VGPc2.c lsd.sort.c exsort.c $(VGP_LIB) $(GENE_CORE) -lpthread
+
+VGPcopt: VGPcopt.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(VGP_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPcopt VGPcopt.c lsd.sort.c exsort.c $(VGP_LIB) $(GENE_CORE) -lpthread
 
 clean:
 	rm -f $(ALL)

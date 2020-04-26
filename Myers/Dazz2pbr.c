@@ -1,4 +1,4 @@
-/*  Last edited: Apr 16 22:06 2020 (rd109) */
+/*  Last edited: Feb  4 11:54 2020 (rd109) */
 
 /*******************************************************************************************
  *
@@ -19,7 +19,7 @@
 #include <unistd.h>
 
 #include "gene_core.h"
-#include "../include/VGPlib.h"
+#include "../Core/VGPlib.h"
 
 #define PATHSEP "/."
 
