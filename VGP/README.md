@@ -5,16 +5,14 @@
 
 # 0. Introduction
 
-# The VGP schema and tool kit
-
 This document describes the VGP tools data schema developed for the
 [Vertebrate Genomes Project](http://www.vertebrategenomes.org) to
 represent source data, process intermediates, and the resulting
 reconstructed genome assemblies for a large-scale DNA sequencing
 project.  Along with these formats there is a growing set of separately
-documented [command line tools](https://github.com/VGP/vgp-tools/blob/master/VGP-sequence-tools.md)
+documented [command line tools](https://github.com/VGP/vgp-tools/VGP/docs/VGP-sequence-tools.md)
 for carrying out file conversions and other operations on these objects. There is also
-available an illustrative hypothetical [work flow](https://github.com/VGP/vgp-tools/blob/master/VGP-sequence-workflow.md)
+available an illustrative hypothetical [work flow](https://github.com/VGP/vgp-tools/VGP/docs/VGP-sequence-workflow.md)
 using these formats and tools (including some tools not yet written).
 
 Apart from genome assembly, we believe that these formats and some of
@@ -215,7 +213,7 @@ distinct recognition sites.
 The figure below gives an example of an encoding where there are two recognition sites, the first
 colored red and the second colored green to provide emphasis.  
 
-![](figures/RM.ex.png)
+![](docs/RM.ex.png)
 
 The file is always partitioned by group r-lines, although it would be typical for there to be
 only 1.  Each R-line is followed by an E-line if and only if s > 1, i.e. there artse multiple
@@ -306,7 +304,7 @@ If two objects align in opposite orientation to each other then the b-segment is
 which is encoded by having *bs > be* in which case *b[bs,be]* denotes
 the Watson-Crick complement of *b[be,bs]*.
 
-![](figures/Coord.ex.png)
+![](docs/Coord.ex.png)
 
 The details of an alignment can be specified with a SAM-style CIGAR string restricted to the
 symbols I (insertion in A), D (deletion in A), = (match), and X (mismatch).
@@ -355,7 +353,7 @@ if the alignment is divided at *n/&delta;* trace points with a spacing of *&delt
 then reconstructing the alignment takes only *O(&epsilon;&delta;n)* time at the expense
 of having to store the *n/&delta;* trace point divisions in U and V lines.
 
-![](figures/UV.ex.png)
+![](docs/UV.ex.png)
 
 The UV-lines give one a general mechanism for splitting an alignment into a collection of panels
 at a specified set of trace points.  Even more efficient encoding is possible by choosing the
@@ -376,7 +374,7 @@ each panel of the alignment partition.  The Dazzler
 [Dazzler](https://dazzlerblog.wordpress.com).
 assembly framework uses this value to assess the overall accuracy of panel-sized segments of reads.
 
-![](figures/TW.ex.png)
+![](docs/TW.ex.png)
 
 All line types following the A-line are optional.  Typically an I-line will be present and only
 one of C- or UV[TWX]-lines will be used downstream by any one application.
@@ -476,7 +474,7 @@ Frequently the coordinates will be either 0 or the length of the relevant sequen
 the beginning or end of the contig.
 However, the specification of an internal position allows merging overlapping sequences.  Material beyond the coordinate is implicitly deleted.  If the user wishes to retain sequence then a Break (.brk) object should be used before the join (see next section).
 
-![](figures/Link.ex.png)
+![](docs/Link.ex.png)
 
 An optional Q line encodes confidence in the assertion of the link. As in .sxs files, this is
 encoded in Phred-scaled units *q* = -10log<sub>10</sub> p(link is false).  Further
