@@ -5,27 +5,32 @@
 
 # 0. Introduction
 
-This document describes the VGP tools schema developed for the
+# The VGP schema and tool kit
+
+This document describes the VGP tools data schema developed for the
 [Vertebrate Genomes Project](http://www.vertebrategenomes.org) to
 represent source data, process intermediates, and the resulting
 reconstructed genome assemblies for a large-scale DNA sequencing
-project.
-
-Along with these formats there are a set of separately documented
-[command line tools](https://github.com/VGP/vgp-tools/blob/master/VGP-sequence-tools.md) for carrying out
-file conversions and other operations on these objects. There is also
+project.  Along with these formats there is a growing set of separately
+documented [command line tools](https://github.com/VGP/vgp-tools/blob/master/VGP-sequence-tools.md)
+for carrying out file conversions and other operations on these objects. There is also
 available an illustrative hypothetical [work flow](https://github.com/VGP/vgp-tools/blob/master/VGP-sequence-workflow.md)
 using these formats and tools (including some tools not yet written).
 
 Apart from genome assembly, we believe that these formats and some of
-the early step tools will be potentially useful for other high
+the current tools will be potentially useful for other high
 throughput DNA sequencing operations, and hope that the core elements
 of the schema will become standardised to facilitate broad modular
 data processing in large scale sequence data analysis.
 
-For descriptions of the basic principles and properties of VGP tools
-and formats, and other VGP tools documentation, see the top level
-[README.md](https://github.com/VGP/vgp-tools/blob/master/README.md).
+The VGP tools data schema is a specific instance of a "One-Code" schema
+which is a general framework for representing and manipulating data wwhose
+primary advantages are a very simple ASCII format for each data object type
+that is easy for both humans and programs to read and interpret, side-by-side
+with a corresponding compressed and indexed binary version so that production
+sofwtare can be used for serious large scale data intensive applications.
+We highly recommend that you read about the One-Code system
+at the directory above (.i.e. [here]](https://github.com/VGP/vgp-tools/blob/master/README.md).
 
 # 1 File Formats by Type
 
