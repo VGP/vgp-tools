@@ -28,7 +28,7 @@ that is easy for both humans and programs to read and interpret,
 with a corresponding compressed and indexed binary version so that production
 sofwtare can be used for large scale data intensive applications.  Furthermore,
 adding and modifying data types is simply a matter of editing the simple
-specification of the schema [VGP_1_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP_1_0.def).
+specification of the schema [VGP_1_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP_1_0.def).
 We highly recommend that you read about the One-Code system
 at the directory above (i.e. [here](https://github.com/VGP/vgp-tools/blob/master/README.md)).
 
