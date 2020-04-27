@@ -590,8 +590,8 @@ static void *fast_output_thread(void *arg)
                       if (GROUP)
                         { if (strncmp(lane,last,glen) != 0)
                             { vgpInt(vf,0) = 0;
-                              vgpInt(vf,1) = llen;
-                              vgpWriteLine(vf,'g',llen,lane);
+                              vgpInt(vf,1) = glen;
+                              vgpWriteLine(vf,'g',glen,lane);
                             }
                         }
 
@@ -2304,6 +2304,7 @@ int main(int argc, char *argv[])
 #ifdef DEBUG_OUT
       for (i = 0; i < NTHREADS; i++)
         { parm[i].vf = vf+i;
+          fprintf(stderr,"Thread %d\n",i);
           output_thread(parm+i);
         }
 #else
@@ -2316,13 +2317,6 @@ int main(int argc, char *argv[])
         pthread_join(threads[i],NULL);
 #endif
 
-      if (VERBOSE)
-        { fprintf(stderr,"  Cat'ing .seq segments\n");
-          fflush(stderr);
-        }
-
-      vgpFileClose(vf);
-
       //  If asked for paired reads make the files support it
 
       error = 0;
@@ -2333,6 +2327,13 @@ int main(int argc, char *argv[])
         { fprintf(stderr,"%s: Input file(s) are not properly sorted for pairing\n",Prog_Name);
           exit (1);
         }
+
+      if (VERBOSE)
+        { fprintf(stderr,"  Cat'ing .seq segments\n");
+          fflush(stderr);
+        }
+
+      vgpFileClose(vf);
     }
 
     //  Free everything as a matter of good form
