@@ -32,7 +32,7 @@ adding and modifying data types is simply a matter of editing the simple
 specification of the schema [VGP_1_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP_1_0.def).
 For descriptions of the basic principles and properties of the One-Code
 framework, we highly recommend you begin by reading the
-[top level document](https://github.com/VGP/vgp-tools/blob/master/README.md)).
+[top level document](https://github.com/VGP/vgp-tools/blob/master/README.md).
 
 # File Formats by Type
 
