@@ -1,4 +1,4 @@
-# VGP Tools: Command line tools for <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; sequence data and genome assembly
+# VGP Tools: Command line tools for <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; sequence data and genome assembly
 
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Last Update: April 27, 2020
@@ -29,11 +29,31 @@ bioinformatics applications and are competitive or superior to similar tools in 
 
 # List of Tools
 
-### <code>1. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
+### <code>1. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
+
+This tool is a replacement for gzip.  It offers two big advantages:
+
+* it is threaded and uses the libdeflate library as opposed to zlib, thus
+providing much faster compression.  For example compressing a 35GB file
+with ```gzip``` takes over an hour, but VGPzip takes just 2.25 minutes with the 6 cores
+on a 2019 MacBook Pro (at the default compression levels).
+
+* it automatically produces a small .vzi index file that allows applications
+(like VGPseq below) to read and decompress a file with parallel threads.
+
+Moreover, it produces a .gz file that can be used exactly as a file produced with gzip,
+e.g., gunzip works on the file.  So we highly recommend that if you are going to use
+the VGP tools, that you compress your fasta or fastq data with VGPzip.
+
+VGPzip compresses the given file ```<file>``` into a blocked gzip file with the name ```<file>.gz``` and
+produces an associated index in ```<file>.vzi``` if the -x option is *not* set.  The ```.gz``` file can be treated just like any other gzip'd file.  The compression is parallized with threads,
+either 4 by default or the number requested by the ```-T``` option.
+
+### <code>2. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
 
 VGPseq reads one or more cram, bam, sam, fastq, or fasta files and outputs a single file in .seq format to the standard output.
 If more than one file is given then they must all be of the same type, a mix is currently not allowed.  In addition, fasta or
-fastq files can optionally be compressed with either ONEzip or gzip.  ONEzip'd files are decompressed on the fly, whereas gzip'd
+fastq files can optionally be compressed with either VGPzip or gzip.  VGPzip'd files are decompressed on the fly, whereas gzip'd
 files must be less-efficiently expanded into a temporary file.
 
 The file names given to VGPseq do not need to have a complete suffix designation, the
@@ -66,13 +86,13 @@ a prefix of a sequence's identifier.  Specifically, the prefix ends at the ```#`
 symbol ```x```.  For example, to group Illumina data into lanes use ```-g3:```, or to group Pacbio data
 into cells use ```-g1/```.
 
-### <code>2. VGPpair [-v] [-T\<int(4)\>] \<forward:.seq> \<reverse:.seq></code>
+### <code>3. VGPpair [-v] [-T\<int(4)\>] \<forward:.seq> \<reverse:.seq></code>
 
 VGPpair reads two, presumably paired .seq files and outputs to stdout a compressed binary
 .irp file in which the sequences with the same indices are paired together, with the forward sequence (and any qualifying lines, e.g. 'Q', 'W', etc) immediately preceding the reverse sequence (and its modulating lines if any).  The only condition is that the two files have
 the same number of sequences.  The group structure, if any, is taken from the forward file.
 
-### <code>3. VGPpacbio [-vaq] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<data:.subreads.[bam|sam]> ...</code>
+### <code>4. VGPpacbio [-vaq] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>]</code> <br><code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<data:.subreads.[bam|sam]> ...</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
 binary VGP .pbr file to
@@ -86,7 +106,7 @@ The -a option asks VGPpacbio to  output the arrow information in N- and A-lines 
 the default is to not output this information.  The -q option asks VGPpacbio to out Phred quality string in Q-lines, the default is to not output this information.  Please note that -q only really makes sense for HiFi data.  The reads are grouped into SMRT cells where each
 input file is assumed to contain the data produced by a single cell.
 
-### <code>4. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<pairs:.irp></code>
+### <code>5. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<pairs:.irp></code>
 
 *Still under development but operational*
 
@@ -104,7 +124,7 @@ The -v option asks VGPcloud to output information on its progress to the standar
 The sorts of VGPcloud are threaded and the -T option specifies how many threads to use (4 by
 default).
 
-### <code>5. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db\></code>
+### <code>6. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db\></code>
 
 Dazz2pbr takes a Dazzler database of a Pacbio long read data set and outputs
 a compressed, binary encoding of a VGP .pbr file to the standard output whose contents
@@ -121,7 +141,7 @@ consideration all reads less than a given threshold length, and optionally to ta
 one (the longest) read from a given well.  This is the trimmed data set that is by default
 output by Dazz2pbr.
 
-### <code>6. Dazz2sxs [-vidtg] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
+### <code>7. Dazz2sxs [-vidtg] [-T\<int(4)\>] \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
 
 Dazz2sxs takes one or more Dazzler .las file encoding a collection of local alignments found by daligner
 and outputs a single compressed, binary VGP .sxs file to the standard output.  To do so, it also needs .pbr
