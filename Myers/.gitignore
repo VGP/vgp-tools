@@ -8,14 +8,7 @@ VGPcloud
 VGPpipe
 VGPzip
 VGPpair
-MSDsort.c
-frag.c
-VGPc2.c
 VGPc2
-VGPcopt.c
 VGPcopt
-lsd.mono.c
-VGPsimPB.c
-Makefile2
 HTSLIB
 .DS_Store

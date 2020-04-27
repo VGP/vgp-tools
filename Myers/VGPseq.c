@@ -2185,7 +2185,6 @@ int main(int argc, char *argv[])
           else
             parm[i].end.fpos = parm[i].end.boff = 0;
 
-#define DEBUG_FIND
 #ifdef DEBUG_FIND
           fprintf(stderr," %2d: %1d %10lld (%10lld / %5d)\n",
                          i,f,b,parm[i].end.fpos,parm[i].end.boff);
@@ -2198,7 +2197,13 @@ int main(int argc, char *argv[])
           work -= wper;
           while (work < .01*IO_BLOCK)
             { if (f == nfiles)
-                { NTHREADS = i+1;
+                { if (VERBOSE && NTHREADS != i+1)
+                    { if (i > 0)
+                        fprintf(stderr,"  File is so small dividing into only %d parts\n",i+1);
+                      else
+                        fprintf(stderr,"  File is so small will not divide it\n");
+                    }
+                  NTHREADS = i+1;
                   break;
                 }
               work += fobj[++f].fsize;
@@ -2207,11 +2212,19 @@ int main(int argc, char *argv[])
           if (b < 0)
             { work += b;
               b = 0;
+              if (f == nfiles)
+                { if (VERBOSE && NTHREADS != i+1)
+                    { if (i > 0)
+                        fprintf(stderr,"  File is so small dividing into only %d parts\n",i+1);
+                      else
+                        fprintf(stderr,"  File is so small will not divide it\n");
+                    }
+                  NTHREADS = i+1;
+                  break;
+                }
             }
         }
     }
-
-fprintf(stderr,"A\n"); fflush(stderr);
 
     { int i, f;
 
@@ -2222,9 +2235,7 @@ fprintf(stderr,"A\n"); fflush(stderr);
 
       for (i = 0; i < NTHREADS; i++)
         { if (parm[i].beg.fpos != 0)
-{ fprintf(stderr,"I %d %lld\n",i,parm[i].beg.fpos); fflush(stderr);
-             find_nearest(parm+i);
-fprintf(stderr,"Z %lld\n",parm[i].beg.fpos); fflush(stderr);
+           { find_nearest(parm+i);
               if (parm[i].beg.fpos < 0)
                 { parm[i].beg.fpos = 0;
                   parm[i].bidx += 1;
@@ -2241,8 +2252,6 @@ fprintf(stderr,"Z %lld\n",parm[i].beg.fpos); fflush(stderr);
       //    certainly never happen unless files very small and threads very large),
       //    remove the redundant threads.
 
-fprintf(stderr,"B\n"); fflush(stderr);
-
       f = 0;
       for (i = 1; i < NTHREADS; i++)
         if (parm[i].bidx > parm[f].bidx || parm[i].beg.fpos > parm[f].beg.fpos)
@@ -2253,6 +2262,12 @@ fprintf(stderr,"B\n"); fflush(stderr);
             if (need_decon)
               libdeflate_free_decompressor(parm[i].decomp);
           }
+      if (VERBOSE && NTHREADS != f+1)
+        { if (f > 0)
+            fprintf(stderr,"  File is so small will divide into only %d parts\n",f+1);
+          else
+            fprintf(stderr,"  File is so small will not divide it\n");
+        }
       NTHREADS = f+1;
 
       //  Develop end points of each threads work using the start point of the next thread
@@ -2284,8 +2299,6 @@ fprintf(stderr,"B\n"); fflush(stderr);
 #endif
     }
 
-fprintf(stderr,"C\n"); fflush(stderr);
-
     //  Produce output in parallel threads based on partition
 
     { VgpFile *vf;
@@ -2304,7 +2317,10 @@ fprintf(stderr,"C\n"); fflush(stderr);
 #endif
 
       if (VERBOSE)
-        { fprintf(stderr,"  Producing .seq segments in parallel\n");
+        { if (NTHREADS > 1)
+            fprintf(stderr,"  Producing .seq segments in parallel\n");
+          else
+            fprintf(stderr,"  Producing .seq segments\n");
           fflush(stderr);
         }
 

@@ -1,4 +1,3 @@
-/*  Last edited: Feb  4 11:52 2020 (rd109) */
 /*******************************************************************************************
  *
  *  VGPpacbio: Converte Pacbio subreads.bam file to a VGP .pbr file
