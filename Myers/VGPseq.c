@@ -2185,6 +2185,7 @@ int main(int argc, char *argv[])
           else
             parm[i].end.fpos = parm[i].end.boff = 0;
 
+#define DEBUG_FIND
 #ifdef DEBUG_FIND
           fprintf(stderr," %2d: %1d %10lld (%10lld / %5d)\n",
                          i,f,b,parm[i].end.fpos,parm[i].end.boff);
@@ -2210,6 +2211,8 @@ int main(int argc, char *argv[])
         }
     }
 
+fprintf(stderr,"A\n"); fflush(stderr);
+
     { int i, f;
 
       //  For each non-zero start point find synchronization point in
@@ -2219,7 +2222,9 @@ int main(int argc, char *argv[])
 
       for (i = 0; i < NTHREADS; i++)
         { if (parm[i].beg.fpos != 0)
-            { find_nearest(parm+i);
+{ fprintf(stderr,"I %d %lld\n",i,parm[i].beg.fpos); fflush(stderr);
+             find_nearest(parm+i);
+fprintf(stderr,"Z %lld\n",parm[i].beg.fpos); fflush(stderr);
               if (parm[i].beg.fpos < 0)
                 { parm[i].beg.fpos = 0;
                   parm[i].bidx += 1;
@@ -2235,6 +2240,8 @@ int main(int argc, char *argv[])
       //  Paranoid: if one thread's synch point overtakes the next one (will almost
       //    certainly never happen unless files very small and threads very large),
       //    remove the redundant threads.
+
+fprintf(stderr,"B\n"); fflush(stderr);
 
       f = 0;
       for (i = 1; i < NTHREADS; i++)
@@ -2276,6 +2283,8 @@ int main(int argc, char *argv[])
       fflush(stderr);
 #endif
     }
+
+fprintf(stderr,"C\n"); fflush(stderr);
 
     //  Produce output in parallel threads based on partition
 

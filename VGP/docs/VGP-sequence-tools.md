@@ -31,8 +31,10 @@ bioinformatics applications and are competitive or superior to similar tools in 
 
 ### <code>1. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
 
-VGPseq reads one or more cram, bam, sam, fastq, or fasta files and outputs a single file in .seq format to the standard output.  If more than one file is given then they must all be of the same type, a mix is currently not allowed.  In addition, fasta or
-fastq files can optionally be compressed with either VGPzip or gzip.  VGPzip'd files are compressed on the fly, whereas gzip'd files must be less-efficiently expanded into a temporary file.
+VGPseq reads one or more cram, bam, sam, fastq, or fasta files and outputs a single file in .seq format to the standard output.
+If more than one file is given then they must all be of the same type, a mix is currently not allowed.  In addition, fasta or
+fastq files can optionally be compressed with either ONEzip or gzip.  ONEzip'd files are decompressed on the fly, whereas gzip'd
+files must be less-efficiently expanded into a temporary file.
 
 The file names given to VGPseq do not need to have a complete suffix designation, the
 program will find the appropriate extension.  That is, if a user wishes to refer to a
@@ -48,7 +50,8 @@ information is output as directed by the following flags:
 
 * ```-q```: Q-lines encoding the QV scores of each base are output, *if* the information is in the files.
 
-* ```-i```:  I-lines giving the read identifier are output.  For fasta and fastq the identifier is considered to be the header line (that begins with > or @) up to the first white space character or new-line.
+* ```-i```:  I-lines giving the read identifier are output.  For fasta and fastq the identifier is considered
+to be the header line (that begins with > or @) up to the first white space character or new-line.
 
 * ```-p```: Read pairs are output indicated by a P-line proceeding each pair.  This
 option is only if the data in the file is *pairable*.  Basically, this amounts to the
@@ -58,7 +61,10 @@ identify the forward and reverse reads.  For fasta and fastq, the identifiers of
 pair are expected to be identical.  Pairability is checked and the program exits
 prematurely with an error message if it cannot parse all the input files into pairs.
 
-* ```-g#x```: The -g option asks VGPseq to group the data (using g-lines, see the specification) according to a prefix of a sequence's identifier.  Specifically, the prefix ends at the ```#```<sup>th</sup> occurence of the symbol ```x```.  For example, to group Illumina data into lanes use ```-g3:```.  Or to group Pacbio data into cells use ```-g1/```.
+* ```-g#x```: The -g option asks VGPseq to group the data (using g-lines, see the specification) according to
+a prefix of a sequence's identifier.  Specifically, the prefix ends at the ```#```<sup>th</sup> occurence of the
+symbol ```x```.  For example, to group Illumina data into lanes use ```-g3:```, or to group Pacbio data
+into cells use ```-g1/```.
 
 ### <code>2. VGPpair [-v] [-T\<int(4)\>] \<forward:.seq> \<reverse:.seq></code>
 

@@ -80,7 +80,7 @@ we aim to keep this README up to date, the formal versioned specification of eac
 is determined by the schema
 **vgp-formats.\<majorversion>.\<minorversion>.fmt** against which the utility program **VGPstat** can validate individual files.
 
-# 1. Sequencess: .seq
+# 1. Sequences: .seq
 
 This is the primary file type for encoding DNA sequences and auxiliary information such as
 their quality values and whether or not the sequences are paired having come from the two
@@ -388,7 +388,7 @@ This subtype is always between two sequence collections in .seq files.  I-lines 
 and for every alignment either a C-line or a U[T]-, V[W]-line pair is present to allow rapid
 recomputation of the alignment's details.
 
-## 3.2. Restriction map alignment, .rxr
+## 3.2. Restriction map alignments, .rxr
 
 This subtype is always between two restriction map collections in .rmp files,
 as in the .xmap files produced by the BioNano Hybrid Scaffold process.
