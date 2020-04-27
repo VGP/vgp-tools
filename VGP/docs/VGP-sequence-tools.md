@@ -29,7 +29,7 @@ bioinformatics applications and are competitive or superior to similar tools in 
 
 # List of Tools
 
-### <code>1. VGPseq [-viqp] [-g#x] [-T\<int(4)\>]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
+### <code>1. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
 
 VGPseq reads one or more cram, bam, sam, fastq, or fasta files and outputs a single file in .seq format to the standard output.  If more than one file is given then they must all be of the same type, a mix is currently not allowed.  In addition, fasta or
 fastq files can optionally be compressed with either VGPzip or gzip.  VGPzip'd files are compressed on the fly, whereas gzip'd files must be less-efficiently expanded into a temporary file.
@@ -66,7 +66,7 @@ VGPpair reads two, presumably paired .seq files and outputs to stdout a compress
 .irp file in which the sequences with the same indices are paired together, with the forward sequence (and any qualifying lines, e.g. 'Q', 'W', etc) immediately preceding the reverse sequence (and its modulating lines if any).  The only condition is that the two files have
 the same number of sequences.  The group structure, if any, is taken from the forward file.
 
-### <code>3. VGPpacbio [-vaq] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\<data:.subreads.[bam|sam]> ...</code>
+### <code>3. VGPpacbio [-vaq] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<data:.subreads.[bam|sam]> ...</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
 binary VGP .pbr file to
@@ -115,7 +115,7 @@ consideration all reads less than a given threshold length, and optionally to ta
 one (the longest) read from a given well.  This is the trimmed data set that is by default
 output by Dazz2pbr.
 
-### <code>6. Dazz2sxs [-vidtg] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
+### <code>6. Dazz2sxs [-vidtg] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
 
 Dazz2sxs takes one or more Dazzler .las file encoding a collection of local alignments found by daligner
 and outputs a single compressed, binary VGP .sxs file to the standard output.  To do so, it also needs .pbr
