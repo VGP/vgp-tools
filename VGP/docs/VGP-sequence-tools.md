@@ -29,7 +29,7 @@ bioinformatics applications and are competitive or superior to similar tools in 
 
 # List of Tools
 
-### <code>1. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
+### <code>1. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
 
 VGPseq reads one or more cram, bam, sam, fastq, or fasta files and outputs a single file in .seq format to the standard output.
 If more than one file is given then they must all be of the same type, a mix is currently not allowed.  In addition, fasta or
