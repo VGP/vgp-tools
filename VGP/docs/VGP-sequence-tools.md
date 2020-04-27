@@ -121,7 +121,7 @@ consideration all reads less than a given threshold length, and optionally to ta
 one (the longest) read from a given well.  This is the trimmed data set that is by default
 output by Dazz2pbr.
 
-### <code>6. Dazz2sxs [-vidtg] [-T\<int(4)\>] <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
+### <code>6. Dazz2sxs [-vidtg] [-T\<int(4)\>] \<src1:.pbr> [\<src2:.pbr>] \<dazzler:.las\> ...</code>
 
 Dazz2sxs takes one or more Dazzler .las file encoding a collection of local alignments found by daligner
 and outputs a single compressed, binary VGP .sxs file to the standard output.  To do so, it also needs .pbr
