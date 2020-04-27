@@ -3,13 +3,13 @@
 ### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 ### Last Update: April 13, 2020
 
-# 0. Introduction
+# Introduction
 
 This document describes the VGP tools data schema developed for the
 [Vertebrate Genomes Project](http://www.vertebrategenomes.org) to
 represent source data, process intermediates, and the resulting
 reconstructed genome assemblies for a large-scale DNA sequencing
-project.  Along with these formats there is a growing set of separately
+project.  Along with these formats there is a growing set of 
 documented [command line tools](https://github.com/VGP/vgp-tools/blob/master/VGP/docs/VGP-sequence-tools.md)
 for carrying out file conversions and other operations on these objects. There is also
 available an illustrative hypothetical [work flow](https://github.com/VGP/vgp-tools/blob/master/VGP/docs/VGP-assembly-workflow.md)
@@ -22,15 +22,17 @@ of the schema will become standardised to facilitate broad modular
 data processing in large scale sequence data analysis.
 
 The VGP tools data schema is a specific instance of a "One-Code" schema
-which is a general framework for representing and manipulating data wwhose
+which is a general framework for representing and manipulating data whose
 primary advantages are a very simple ASCII format for each data object type
-that is easy for both humans and programs to read and interpret, side-by-side
+that is easy for both humans and programs to read and interpret,
 with a corresponding compressed and indexed binary version so that production
-sofwtare can be used for serious large scale data intensive applications.
+sofwtare can be used for large scale data intensive applications.  Furthermore,
+adding and modifying data types is simply a matter of editing the simple
+specification of the schema [VGP_1_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP_1_0.def).
 We highly recommend that you read about the One-Code system
-at the directory above (.i.e. [here](https://github.com/VGP/vgp-tools/blob/master/README.md)).
+at the directory above (i.e. [here](https://github.com/VGP/vgp-tools/blob/master/README.md)).
 
-# 1 File Formats by Type
+# File Formats by Type
 
 In the standard VGP sequence schema there are seven **primary file types**, one for each of *sequences*, *restriction maps*,
 *alignments*, *joins*, *breaks*, and *lists*, that contain a collection of objects of the given type.  Each
@@ -78,7 +80,7 @@ we aim to keep this README up to date, the formal versioned specification of eac
 is determined by the schema
 **vgp-formats.\<majorversion>.\<minorversion>.fmt** against which the utility program **VGPstat** can validate individual files.
 
-## 1.1. Sequence: .seq
+# 1. Sequence: .seq
 
 This is the primary file type for encoding DNA sequences and auxiliary information such as
 their quality values and whether or not the sequences are paired having come from the two
@@ -120,7 +122,7 @@ The syntax of the data portion of a .seq-file can be summarized as follows:
 ```
 We introduce the 4 secondary specializations of sequence files below.
 
-### 1.1.1. Illumina read pairs, .irp
+## 1.1. Illumina read pairs, .irp
 
 This subtype of .seq-files requires that all sequences and their associated QV's if present
 are organized in read-pairs with P-lines.  If group lines are present then they should
@@ -128,7 +130,7 @@ correspond to sequencing lanes or the equivalent, as in SAM read groups.  For th
 \#S = 2 #P and #Q = #S or #Q = 0.  See the documentation of **VGPseq** and **VGPpair** in Chapter 4 for an example
 of how to produce a .irp file from a pair of possibly gzip'd .fasta or .fastq files.
 
-### 1.1.2. 10X Genomics read clouds, .10x
+## 1.2. 10X Genomics read clouds, .10x
 
 This subtype is for processed 10x sequencing data. It requires paired reads as for a .irp, and
 furthermore, that these pairs are organized into groups that correspond to read clouds, with
@@ -137,7 +139,7 @@ every forward/first read (the first 23bp = 16bp of barcode and 7bp of linker).
 See the documentation of **VGPcloud** in Chapter 4 for a tool that takes a .irp file of unsorted
 Illumina read pairs and barcode-sorts, trims, and groups the pairs into a .10x-file.
 
-### 1.1.3. PacBio long reads, .pbr
+## 1.3. PacBio long reads, .pbr
 
 The .pbr subtype encodes the essential assembly information of a long read data set produced by
 Pacific Biosciences.  P- and Q-lines do not occur and the S-lines are grouped according to the
@@ -175,7 +177,7 @@ See the documentation of **VGPpbr** in Chapter 4 for a tool that takes
 that takes one or more Pacbio subreads.bam or .sam files as input
 and extracts the information to make a .pbr file.
 
-### 1.1.4. Contig files from assemblies, .ctg
+## 1.4. Contig files from assemblies, .ctg
 
 This sequence subtype is the product of an assembler and contains only S-lines, one for each
 (consensus) sequence for each contig.  Ideally there should be an associated **.sxs**
@@ -188,7 +190,7 @@ So in the header of a .ctg-file one expects to see the dependency headers:
   > <string:.jns_file_name>
 ```
 
-### 1.1.5. Kmer sets, .kmr
+## 1.5. Kmer sets, .kmr
 
 This sequence subtype contains lists of kmers that are usually expected to all be of the same length.  The S-line gives the kmer sequence.  The additional C-line type can be used to specify counts in a set of sequences, in which case there should be a reference line for the sequence file name.  If you want to record counts in more than one sequence-set, then give multiple sequence file names, and correspondingly multiple C-lines for each S-line. 
 
@@ -200,7 +202,7 @@ This sequence subtype contains lists of kmers that are usually expected to all b
 
 <br>
 
-## 1.2. Restriction Map, .rmp
+# 2. Restriction Map, .rmp
 
 This file type encodes restriction maps, potentially with multiple enzymes with
 distinct recognition sites. 
@@ -228,7 +230,7 @@ The syntax of the data portion of a .rmp-file can be summarized as follows:
 ```
 We introduce the 3 secondary specializations of restriction map files below.
 
-### 1.2.1 BioNano raw data, .rmm
+## 2.1 BioNano raw data, .rmm
 
 This subtype supports restriction maps of high molecular weight DNA strands from a Bionano
 device adding two additional required lines for each R line:
@@ -242,7 +244,7 @@ as that of the R-line they are associated with.
 See the documentation of **VGPbionano** in Chapter 4 for an example
 of a tool that can produce a .rmm-file from Bionano's proprietary .bnx raw data files.
 
-### 1.2.2. Restriction Map from Sequence, .rms
+## 2.2. Restriction Map from Sequence, .rms
 
 When the file is used to represent *in silico* maps of the recognitions sites from a sequences,
 then there must be a reference header giving the source of the sequence, and for each R-line
@@ -254,7 +256,7 @@ an associated O-line referring back to the relevant sequence object.
   O <int>
 ```
 
-### 1.2.3. BioNano assembled map, .rma
+## 2.3. BioNano assembled map, .rma
 
 **To Be Designed**
 This is a subtype with the potential to record additional information from map assembly.
@@ -266,7 +268,7 @@ any of these that we feel is important to be recorded for downstream analysis.
 
 <br>
 
-## 1.3. Alignment files, .aln
+# 3. Alignment, .aln
 
 This is the primary file type for encoding local alignments or matches between segments of
 both sequences and restriction maps.  Every alignment file must contain two references to
@@ -380,25 +382,25 @@ All line types following the A-line are optional.  Typically an I-line will be p
 one of C- or UV[TWX]-lines will be used downstream by any one application.
 We introduce the 3 secondary specializations of alignment files below.
 
-### 1.3.1. Sequence match file, .sxs
+## 3.1. Sequence match file, .sxs
 
 This subtype is always between two sequence collections in .seq files.  I-lines are mandatory
 and for every alignment either a C-line or a U[T]-, V[W]-line pair is present to allow rapid
 recomputation of the alignment's details.
 
-### 1.3.2. Restriction map match file, .rxr
+## 3.2. Restriction map match file, .rxr
 
 This subtype is always between two restriction map collections in .rmp files,
 as in the .xmap files produced by the BioNano Hybrid Scaffold process.
 
-### 1.3.2. Sequence vs. Restriction map match file, .sxr
+## 3.3. Sequence vs. Restriction map match file, .sxr
 
 While there is currently no software that we are aware of that does such comparisons directly,
 producing first a .rms-file that give a putatitve restriction map from a sequence and then
 comparing this with a restriction map, in effect does so.  A uutility VGP program is needed
 that takes the .rms- and .rxr- files and produces a .sxr-flle that directly encodes the matches.
 
-### 1.3.3. Sequence map file, .map
+## 3.4. Sequence map file, .map
 
 Another special case of a .aln file is when a sequence is derived from one or more previous
 sequences, for example following an edit process during assembly polishing, or as the golden
@@ -413,7 +415,7 @@ desirable.
 
 <br>
 
-## 1.4. Sequence to sequence hit file, .hit
+# 4. Sequence to sequence hit, .hit
 
 This file type is for recording match hits between query sequences in one file and target sequences in another file, optionally together with the locations of the hits.  The typical use of this file type is for kmer matches in sequences, but more generally we can think of it as recording global sequence matches and their start points. In this sense it is another type of alignment file, but .hit files are much lighter weight than .aln files because they do not give start and end coordinates in both sequences, alignments, etc. and only have one primary line type and object per query sequence, rather than one object per hit, which simplifies indexing and file reading.
 
@@ -426,7 +428,7 @@ H <int:seq_a> <int:nhit> <int:seq_b>^nhit      list of sequences b that have hit
 
 There are two subtypes of .hit files, one in which the queries are the a sequences, and there is an H-line for each kmer that gives the list of target sequences that contain kmer matches (with duplicates for multiple matches), and the other giving the inverse mapping in which there is an H-line for each target that lists the kmers that are found within it.
 
-### 1.4.1 kmer to sequence hit file, .k2s
+## 4.1 kmer to sequence hit file, .k2s
 
 ```
 P <int:nhit> <int:pos_b>^nhit                  positions in each target seq_b of query seq_a
@@ -435,7 +437,7 @@ P <int:nhit> <int:pos_b>^nhit                  positions in each target seq_b of
 In this version the P-line gives the **positions** of the hits of query seq_a within each
 of the targets seq_b listed on the preceding H-line.  Note that if seq_a is found twice in some seq_b then that seq_b must be listed twice in the H-line, with the positions of each hit given in the corresponding locations in the P line. 
 
-### 1.4.2 sequence to kmer hit file, .s2k
+## 4.2 sequence to kmer hit file, .s2k
 
 ```
 O <int:nhit> <int:pos_a>^nhit                  offsets in query seq_a of each target seq_b
@@ -445,7 +447,7 @@ This version is used in the inverse situation when we want to list for each targ
 
 <br>
 
-## 1.5. Contig join file, .jns
+# 5. Contig join, .jns
 
 For assemblies, we expect that our assembly process will create a **.seq** file of contigs,
 and that various methods will be applied to use 10X Genomics, BioNano, HiC and/or other data
@@ -489,7 +491,7 @@ If the gap is negative then the contigs overlap by the specified number of bases
 For technologoies such as Hi-C or 10X read clouds that do not provide such estimates
 on gap size, the G-line is simply not given.
 
-## 1.6. Contig break file, .brk
+## 6. Contig break, .brk
 
 In counterpoint to joins, the same secondary information can also indicate intervals of a
 contig where it was misassembled and a break should actually occur.  We consider both the .jns
@@ -505,7 +507,7 @@ A B-line explicitly indicates a potential break.  The meaning is that there is e
 the given sequence should be broken somewhere between positions ```start``` and ```end```, as in practice scaffolding programs typically can only localise possible breaks to a wider
 interval.  To be safe, a program that implements breaks listed in a .brk file should delete the intervening sequence.  Of course multiple lines of evidence might be used to refine the break endpoints before this is done.
 
-## 1.7. List file, .lis
+## 7. List, .lis
 
 This file type just keeps lists of indices into other VGP file types.  We use this to define
 subsets of objects in existing VGP files, without needing to create an explicit listing of
@@ -536,7 +538,7 @@ include the file of base objects.
 The optional N-line give an optional symbolic name to the list.  This is used primarily
 in .scf-files (see below) to name the final scaffold objects output by an assembly pipeline.
 
-### 1.7.1. Assembly layout file, .lyo
+## 7.1. Assembly layout file, .lyo
 
 An assembly layout file consists of a collection of lists over sequence read alignments
 between reads in the same .seq-file.  Each list encodes a path in the string graph of the
@@ -544,7 +546,7 @@ data set that specifies a contig.  The list is ordered along the path of overlap
 from left to right and then follow containment alignments of additional shorter reads that fit
 into the contig and provide additional data for consensus.
 
-### 1.7.2. Scaffold file, .scf
+## 7.2. Scaffold file, .scf
 
 A scaffold file consists of a collection of lists over a joins (.jns) file, each of which
 gives a linear order of links defining a proposed assembly scaffold.
