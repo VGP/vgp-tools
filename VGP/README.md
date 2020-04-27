@@ -21,6 +21,7 @@ throughput DNA sequencing operations, and hope that the core elements
 of the schema will become standardised to facilitate broad modular
 data processing in large scale sequence data analysis.
 
+
 The VGP tools data schema is a specific instance of a "One-Code" schema
 which is a general framework for representing and manipulating data whose
 primary advantages are a very simple ASCII format for each data object type
@@ -29,8 +30,9 @@ with a corresponding compressed and indexed binary version so that production
 sofwtare can be used for large scale data intensive applications.  Furthermore,
 adding and modifying data types is simply a matter of editing the simple
 specification of the schema [VGP_1_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP_1_0.def).
-We highly recommend that you read about the One-Code system
-at the directory above (i.e. [here](https://github.com/VGP/vgp-tools/blob/master/README.md)).
+For descriptions of the basic principles and properties of the One-Code
+framework, we highly recommend you begin by reading the
+[top level document](https://github.com/VGP/vgp-tools/blob/master/README.md)).
 
 # File Formats by Type
 

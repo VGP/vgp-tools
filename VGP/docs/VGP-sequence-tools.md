@@ -6,22 +6,11 @@
 
 # Introduction
 
-This document describes the VGP tools command line tools developed to
-interconvert with and operate on the
-[sequencing data and genome assembly VGP tools formats](file://VGP-assembly-schema.md)
-developed for the
+This document describes the VGP command line tools developed to
+import aand operate on the
+sequencing and assembly data in the [VGP tools format](file://VGP-assembly-schema.md)
+that has been developed for the
 [Vertebrate Genomes Project](http://www.vertebrategenomes.org).
-
-Apart from genome assembly, we believe that these formats and some of
-the current tools will be potentially useful for other high
-throughput DNA sequencing operations, and hope that the core elements
-of the schema will become standardised to facilitate broad modular
-data processing in large scale sequence data analysis.
-
-For descriptions of the basic principles and properties of VGP tools
-and formats, and other VGP tools documentation, see the top level
-[README.md](file://README.md). Included in these is a an illustrative hypothetical [work flow](file://vgp-sequence-workflow.md)
-using some of the tools listed here.
 
 All of the tools of the library output compressed binary One-Code files and accept as input either binary or ascii One-Code files (when the input is such).  Furthermore,
 every tool takes advantage of threading to obtain speedups dependent on the number
