@@ -19,7 +19,7 @@ bioinformatics applications and are competitive or superior to similar tools in 
 
 # List of Tools
 
-### <code>1. VGPzip [-x] [-T\<int(4)\>] \<file\></code>
+### <code>1. VGPzip [-x] [-C\<int(6)\>] [-T\<int(4)\>] \<file\></code>
 
 This tool is a replacement for gzip.  It offers two big advantages:
 
@@ -37,7 +37,9 @@ the VGP tools, that you compress your fasta or fastq data with VGPzip.
 
 VGPzip compresses the given file ```<file>``` into a blocked gzip file with the name ```<file>.gz``` and
 produces an associated index in ```<file>.vzi``` if the -x option is *not* set.  The ```.gz``` file can be treated just like any other gzip'd file.  The compression is parallized with threads,
-either 4 by default or the number requested by the ```-T``` option.
+either 4 by default or the number requested by the ```-T``` option.  The default compression level is 6 but may
+be set with the -C option to a level between 1 and 12, where lower numbers are less time and compression, and higher
+number are more time and better compresssion.
 
 ### <code>2. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
 

@@ -32,7 +32,7 @@ int    CLEVEL;   //  Compression level (in [1,9]);
 static int64 OUT_BLOCK;
 static int64 SEEK_STEP;
 
-static char *Usage = "[-x] [-T<int(4)>] [-C<int(6)>] <input>";
+static char *Usage = "[-x] [-C<int(6)>] [-T<int(4)>] <file>";
 
 typedef struct
   { int    inp;    //  Input file descriptor (independent for each thread even though same file)
@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"\n");
         fprintf(stderr,"      -x: Do not make an index file.\n");
         fprintf(stderr,"      -T: Number of threads to use\n");
-        fprintf(stderr,"      -C: Compression level in [0,9]\n");
+        fprintf(stderr,"      -C: Compression level in [1,12]\n");
         exit (1);
       }
   }

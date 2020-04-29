@@ -18,18 +18,23 @@ alluded to above, and a C-library supporting the development of One-Code applica
 To make all libraries and command line tools just type ```make``` in this top
 level directory.  Both packages have no dependencies on other software.
 
-Further documentation is available in the following files:
+Further documentation is available as follows:
 
-- [Core/Format-description.md](https://github.com/VGP/vgp-tools/blob/master/Core/Format-description.md) definition of One-Code schemas and data representation
-- [Core/Generic-tools.md](https://github.com/VGP/vgp-tools/blob/master/Core/Generic-tools.md) generic One-Code command line tools
-- [Core/Library-interface.md](https://github.com/VGP/vgp-tools/blob/master/Core/Library-interface.md) the standard C library interface for One-Code developers
-- [VGP/VGP-sequence-schema.md](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP-sequence-schema.md) the VGP-formats schema for sequence data and genome assembly
-- [VGP/VGP-sequence-tools.md](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP-sequence-tools.md) command line tools for importing and operating on data in VGP-formats.  Many of these are useful for general file conversions and other
+**CORE**
+
+- [Framework Description](https://github.com/VGP/vgp-tools/blob/master/Core/Format-description.md): definition of One-Code schemas and data representation
+- [Generic Tools](https://github.com/VGP/vgp-tools/blob/master/Core/Generic-tools.md): generic One-Code command line tools
+- [Library Interface](https://github.com/VGP/vgp-tools/blob/master/Core/Library-interface.md): the standard C library interface for One-Code developers
+
+**VGP**
+
+- [The VGP Schema](https://github.com/VGP/vgp-tools/blob/master/VGP/docs/VGP-sequence-schema.md): the VGP formats schema for sequence data and genome assembly
+- [The VGP Tools](https://github.com/VGP/vgp-tools/blob/master/VGP/docs/VGP-sequence-tools.md): command line tools for importing and operating on data in VGP-formats.  Many of these are useful for general file conversions and other
   basic operations on arbitrary DNA sequence data sets
-- [VGP/VGP-assembly-workflow.md](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP-assembly-workflow.md) a hypothetical work flow for genome assembly to illustrate
+- [Assembly Workflow Example](https://github.com/VGP/vgp-tools/blob/master/VGP/docs/VGP-assembly-workflow.md): a hypothetical work flow for genome assembly to illustrate
   potential use of VGP formats and tools.  Note that this is *not* all implemented - it is just for illustrative purposes.
 
-in addition to specific technical documentation within individual files.
+In addition, specific technical documentation can be found within individual source files.
 
 Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
 
