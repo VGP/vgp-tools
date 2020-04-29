@@ -144,15 +144,21 @@ static char read_raw_seq(VgpFile *vf)
 
   x = getc(vf->f);
   if (feof(vf->f) || x == '\n')
+{ printf("eof or \n");
     return (0);
+}
 
   if (x & 0x80)
     { t = vf->binaryTypeUnpack[x];
       if (t != 'S')
+{ printf("not S %c %x %x\n",t,t,x);
         return (0);
+}
     }
   else
+{ printf("not binary %x\n",x);
     return (0);
+}
   vf->lineType = t;
 
   li = vf->lineInfo['S'];
@@ -199,6 +205,7 @@ typedef struct
     uint32      *codes;
     int64        usedqvs[256];
     int          error;
+    int64        where;
     int          flen;
     int          rlen;
   } BarCode_Arg;
@@ -209,22 +216,28 @@ typedef struct
 #define ERROR_QLINE 4
 #define ERROR_QLEN  5
 
+#define ERROR_SLINE2 6
+
 static void error_report(int error, int64 line)
 { switch (error)
   { case ERROR_PLINE:
-      fprintf(stderr,"%s: Expecting P-line, line %lld\n",Prog_Name,line);
+      fprintf(stderr,"%s: Expecting P-line, at or after S-line %lld\n",Prog_Name,line);
       break;
     case ERROR_SLINE:
-      fprintf(stderr,"%s: Expecting S-line, line %lld\n",Prog_Name,line);
+    case ERROR_SLINE2:
+      fprintf(stderr,"%s: Expecting S-line, at or after S-line %lld (%d)\n",Prog_Name,line,error);
       break;
     case ERROR_SLEN:
-      fprintf(stderr,"%s: S-strings are not all the same size, line %lld\n",Prog_Name,line);
+      fprintf(stderr,"%s: S-strings are not all the same size, at or after S-line %lld\n",
+                     Prog_Name,line);
       break;
     case ERROR_QLINE:
-      fprintf(stderr,"%s: Expecting Q-line, line %lld\n",Prog_Name,line);
+      fprintf(stderr,"%s: Expecting Q-line, at or after S-line %lld\n",
+                     Prog_Name,line);
       break;
     case ERROR_QLEN:
-      fprintf(stderr,"%s: Q-string is not the same length as S-string, line %lld\n",Prog_Name,line);
+      fprintf(stderr,"%s: Q-string is not the same length as S-string, at or after S-line %lld\n",
+                     Prog_Name,line);
       break;
   }
 }
@@ -250,6 +263,8 @@ static void *barcodes_thread(void *arg)
 
   vgpGotoObject(vf,beg);
 
+printf(" %lld - %lld\n",beg,end);
+
   coll  = beg + 10000000/NTHREADS;
   rlen  = 0;
   flen  = 0;
@@ -257,6 +272,7 @@ static void *barcodes_thread(void *arg)
     { t = read_raw_seq(vf);
       if (t != 'S')
         { parm->error = ERROR_SLINE;
+          parm->where = o;
           return (NULL);
 	}
 
@@ -272,16 +288,19 @@ static void *barcodes_thread(void *arg)
         flen = n;
       else if (flen != n)
         { parm->error = ERROR_SLEN;
+          parm->where = o;
           return (NULL);
         }
 
       t = vgpReadLine(vf);
       if (t != 'Q')
         { parm->error = ERROR_QLINE;
+          parm->where = o;
           return (NULL);
         }
       if (vgpInt(vf,0) != flen)
         { parm->error = ERROR_QLEN;
+          parm->where = o;
           return (NULL);
         }
 
@@ -291,6 +310,7 @@ static void *barcodes_thread(void *arg)
       t = read_raw_seq(vf);
       if (t != 'S')
         { parm->error = ERROR_SLINE;
+          parm->where = o+1;
           return (NULL);
         }
       n = vgpInt(vf,0);
@@ -298,16 +318,19 @@ static void *barcodes_thread(void *arg)
         rlen = n;
       else if (rlen != n)
         { parm->error = ERROR_SLEN;
+          parm->where = o+1;
           return (NULL);
         }
 
       t = vgpReadLine(vf);
       if (t != 'Q')
         { parm->error = ERROR_QLINE;
+          parm->where = o+1;
           return (NULL);
         }
       if (vgpInt(vf,0) != rlen)
         { parm->error = ERROR_QLEN;
+          parm->where = o+1;
           return (NULL);
         }
       for (n = 0; n < rlen; n++)
@@ -319,9 +342,12 @@ static void *barcodes_thread(void *arg)
 
       if (t != 'P')
         { parm->error = ERROR_PLINE;
+          parm->where = o+1;
           return (NULL);
         }
     }
+
+printf("I am at the end\n");
 
   parm->error = 0;
   parm->flen  = flen;
@@ -1237,14 +1263,15 @@ int main(int argc, char *argv[])
     pthread_t   threads[NTHREADS];
     
     int64     usedqvs[256];
-    int64     line;
     int       i, n, c, p;
 
+#define DEBUG
     for (i = 0; i < NTHREADS; i++)
       { parm[i].beg   = (npairs * i) / NTHREADS;
         parm[i].end   = (npairs * (i+1)) / NTHREADS;
         parm[i].vf    = vf+i;
         parm[i].codes = codes + (parm[i].beg + i);
+parm[i].where = i;
 #ifdef DEBUG
         barcodes_thread(parm+i);
 #else
@@ -1254,21 +1281,20 @@ int main(int argc, char *argv[])
 
     bzero(usedqvs,sizeof(int64)*256);
 
-    line = 0;
     for (i = 0; i < NTHREADS; i++)
       { 
 #ifndef DEBUG
         pthread_join(threads[i],NULL);
 #endif
         if (parm[i].error > 0)
-          { error_report(parm[i].error,line + vf[i].line);
+          { error_report(parm[i].error,parm[i].where);
             exit (1);
           }
         if (i == 0)
           flen = parm[0].flen;
         else
           { if (flen != parm[i].flen)
-              { error_report(ERROR_SLEN,line);
+              { error_report(ERROR_SLEN,parm[i].beg);
                 exit (1);
               }
           }
@@ -1276,11 +1302,10 @@ int main(int argc, char *argv[])
           rlen = parm[0].rlen;
         else
           { if (rlen != parm[i].rlen)
-              { error_report(ERROR_SLEN,line);
+              { error_report(ERROR_SLEN,parm[i].beg);
                 exit (1);
               }
           }
-        line += vf[i].line;
         for (n = 0; n < 256; n++)
           usedqvs[n] += parm[i].usedqvs[n];
       }

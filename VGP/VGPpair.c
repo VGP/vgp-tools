@@ -23,7 +23,9 @@
 #include <limits.h>
 
 #include "gene_core.h"
-#include "../Core/VGPlib.h"
+#include "../Core/ONElib.h"
+
+#include "VGP_1_0.h"
 
 #undef  DEBUG_OUT
 
@@ -38,15 +40,15 @@ static char *Usage =
 /*******************************************************************************************
  *
  *  Parallel:  Each thread processes is a contiguous stripe across the .las input files
- *               sending the compressed binary data lines to their assigned VgpFile.
+ *               sending the compressed binary data lines to their assigned OneFile.
  *
  ********************************************************************************************/
 
 
 typedef struct
-  { VgpFile     *vf;       //  VgpFile for output
-    VgpFile     *v1;       //  VgpFiles for input
-    VgpFile     *v2;
+  { OneFile     *vf;       //  OneFile for output
+    OneFile     *v1;       //  OneFiles for input
+    OneFile     *v2;
     int          beg;      //  Range of reads to process
     int          end;
   } Thread_Arg;
@@ -57,34 +59,34 @@ static void *output_thread(void *arg)
 { Thread_Arg *parm = (Thread_Arg *) arg;
   int64       beg  = parm->beg;
   int64       end  = parm->end;
-  VgpFile    *vf   = parm->vf;
-  VgpFile    *v1   = parm->v1;
-  VgpFile    *v2   = parm->v2;
+  OneFile    *vf   = parm->vf;
+  OneFile    *v1   = parm->v1;
+  OneFile    *v2   = parm->v2;
   int         i, j, n, t1, t2;
 
 #define TRANSFER(vi,ti,vo)				\
-{ for (j = 0; j < vi->lineInfo[ti]->nField; j++)	\
+{ for (j = 0; j < vi->info[ti]->nField; j++)		\
     vo->field[j] = vi->field[j];			\
-  vgpWriteLine(vo,ti,vgpLen(vi),vgpString(vi));		\
+  oneWriteLine(vo,ti,oneLen(vi),oneString(vi));		\
 }
 
-  vgpGotoObject(v1,beg);
-  vgpGotoObject(v2,beg);
-  t1 = vgpReadLine(v1);
-  t2 = vgpReadLine(v2);
+  oneGotoObject(v1,beg);
+  oneGotoObject(v2,beg);
+  t1 = oneReadLine(v1);
+  t2 = oneReadLine(v2);
   if (t1 != 'S' || t2 != 'S')
     { fprintf(stderr,"%s: Fatal, goto line is not 'S' (%c,%c,%lld)\n",Prog_Name,t1,t2,beg);
       exit (1);
     }
   for (i = beg; i < end; i++)
-    { vgpWriteLine(vf,'P',0,NULL);
+    { oneWriteLine(vf,'P',0,NULL);
 
       TRANSFER(v1,t1,vf)
-      n  = vgpLen(v1);
-      t1 = vgpReadLine(v1);
+      n  = oneLen(v1);
+      t1 = oneReadLine(v1);
       while (t1 != 'S')
         { if (t1 == 'Q')
-            { if (n != vgpLen(v1))
+            { if (n != oneLen(v1))
                 { fprintf(stderr,"%s: Q string not same length in forward file, line %lld\n",
                                  Prog_Name,v1->line);
                   exit (1);
@@ -94,7 +96,7 @@ static void *output_thread(void *arg)
           else if (t1 == 0 || t1 == 'g')
             break; 
           TRANSFER(v1,t1,vf)
-          t1 = vgpReadLine(v1);
+          t1 = oneReadLine(v1);
         }
       if (HAS_QVS && n > 0)
         { fprintf(stderr,"%s: Missing Q-line\n",Prog_Name);
@@ -102,11 +104,11 @@ static void *output_thread(void *arg)
         }
 
       TRANSFER(v2,t2,vf)
-      n  = vgpLen(v2);
-      t2 = vgpReadLine(v2);
+      n  = oneLen(v2);
+      t2 = oneReadLine(v2);
       while (t2 != 'S')
         { if (t2 == 'Q')
-            { if (n != vgpLen(v2))
+            { if (n != oneLen(v2))
                 { fprintf(stderr,"%s: Q string not same length in reverse file, line %lld\n",
                                  Prog_Name,v2->line);
                   exit (1);
@@ -117,7 +119,7 @@ static void *output_thread(void *arg)
             break; 
           if (t2 != 'g')
             TRANSFER(v2,t2,vf)
-          t2 = vgpReadLine(v2);
+          t2 = oneReadLine(v2);
         }
       if (HAS_QVS && n > 0)
         { fprintf(stderr,"%s: Missing Q-line\n",Prog_Name);
@@ -126,7 +128,7 @@ static void *output_thread(void *arg)
 
       if (t1 == 'g')
         { TRANSFER(v1,t1,vf)
-          t1 = vgpReadLine(v1);
+          t1 = oneReadLine(v1);
           if (t1 != 'S' && t1 != 0)
             { fprintf(stderr,"%s: group line does not precede sequence line",Prog_Name);
               fprintf(stderr," in forward file, line %lld\n",v1->line);
@@ -146,10 +148,11 @@ static void *output_thread(void *arg)
  ****************************************************************************************/
 
 int main(int argc, char *argv[])
-{ char     *fname1, *fname2;
-  char     *command;
+{ char      *fname1, *fname2;
+  char      *command;
+  OneSchema *schema;
 
-  //  Capture command line for provenance
+  //  Capture command line for provenance & load VGP schema
 
   { int   n, i;
     char *c;
@@ -169,6 +172,8 @@ int main(int argc, char *argv[])
           c += sprintf(c," %s",argv[i]);
       }
     *c = '\0';
+
+    schema = Startup_Schema();
   }
 
   //  Process options
@@ -245,7 +250,7 @@ int main(int argc, char *argv[])
 
     //  Produce output in parallel threads based on partition
 
-    { VgpFile *vf, *v1, *v2;
+    { OneFile *vf, *v1, *v2;
       int      i, j;
       int64    nreads;
 
@@ -254,26 +259,26 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
 
-      v1 = vgpFileOpenRead(fname1,SEQ,NTHREADS);
-      v2 = vgpFileOpenRead(fname2,SEQ,NTHREADS);
+      v1 = oneFileOpenRead(fname1,schema,"seq",NTHREADS);
+      v2 = oneFileOpenRead(fname2,schema,"seq",NTHREADS);
 
-      nreads = v1->lineInfo['S']->given.count;
-      if (nreads != v2->lineInfo['S']->given.count)
+      nreads = v1->info['S']->given.count;
+      if (nreads != v2->info['S']->given.count)
         { fprintf(stderr,"%s: The files do nat have the same number of sequences!\n",Prog_Name);
           exit (1);
         }
 
-      HAS_QVS = (v1->lineInfo['Q']->given.count > 0);
+      HAS_QVS = (v1->info['Q']->given.count > 0);
 
-      vf = vgpFileOpenWriteNew("-",SEQ,IRP,TRUE,NTHREADS);
+      vf = oneFileOpenWriteNew("-",schema,"irp",TRUE,NTHREADS);
 
-      vgpInheritProvenance(vf,v1);
-      vgpInheritProvenance(vf,v2);
-      vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+      oneInheritProvenance(vf,v1);
+      oneInheritProvenance(vf,v2);
+      oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
 
-      vgpWriteHeader(vf);
+      oneWriteHeader(vf);
 
-      if (vgpReadLine(v1) == 'g')
+      if (oneReadLine(v1) == 'g')
         TRANSFER(v1,'g',vf);
 
 #ifdef DEBUG_OUT
@@ -312,9 +317,9 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
 
-      vgpFileClose(vf);
-      vgpFileClose(v1);
-      vgpFileClose(v2);
+      oneFileClose(vf);
+      oneFileClose(v1);
+      oneFileClose(v2);
     }
 
     //  Free everything as a matter of good form

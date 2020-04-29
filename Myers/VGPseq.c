@@ -1509,7 +1509,7 @@ static void *bam_output_thread(void *arg)
       else 
         { epos  = parm->end.fpos;
           eoff  = parm->end.boff;
-          extra = 1;
+          extra = GROUP;
         }
       if (f > parm->bidx || parm->beg.fpos == 0)
         { parm->beg.fpos = 0;
@@ -1521,7 +1521,7 @@ static void *bam_output_thread(void *arg)
           skip1 = 0;
         }
       else
-        skip1 = 1;
+        skip1 = GROUP;
 
       if (isbam)
         bam_start(bam,fid,buf,&(parm->beg));
@@ -1547,11 +1547,6 @@ static void *bam_output_thread(void *arg)
           else
             hasQV = sam_record_scan(bam,theR);
 
-          if (skip1)
-            { skip1 = 0;
-              continue;
-            }
-
 #ifdef DEBUG_BAM_RECORD
           fprintf(stderr,"S = '%s'\n",theR->seq);
           if (hasQV)
@@ -1559,8 +1554,8 @@ static void *bam_output_thread(void *arg)
 #endif
 
           if (GROUP)
-            { char *s, x;
-              int   i;
+            { char *s;
+              int   i, glen;
 
               s = theR->header-1;
               for (i = 0; i < GROUP_REP; i++)
@@ -1570,27 +1565,29 @@ static void *bam_output_thread(void *arg)
                       break;
                     }
                 }
-              x = *s;
-              *s = '\0';
 #ifdef DEBUG_AUTO
                   fprintf(stderr,"  group = %s\n",theR->header);
 #endif
-              if (strcmp(theR->header,last) != 0)
-                { int glen = s-theR->header;
-
-                  if (glen >= lmax)
+              glen = s-theR->header;
+              if (strncmp(theR->header,last,glen) != 0)
+                { if (glen >= lmax)
                     { lmax = lmax*1.2 + 1000;
                       last = (char *) Realloc(last,lmax+1,"Reallocating lane name");
                       if (last == NULL)
                         exit (1);
                     }
-                  strcpy(last,theR->header);
+                  strncpy(last,theR->header,glen);
+                  last[glen] = '\0';
+
+                  if (skip1)
+                    { skip1 = 0;
+                      continue;
+                    }
 
                   vgpInt(vf,0) = 0;
                   vgpInt(vf,1) = glen;
                   vgpWriteLine(vf,'g',glen,theR->header);
                 }
-              *s = x;
             }
 
           if (PAIRING)
@@ -1833,7 +1830,7 @@ static void *cram_output_thread(void *arg)
         }
       else
         { epos  = parm->end.fpos;
-          extra = 1;
+          extra = GROUP;
         }
       if (f > parm->bidx || parm->beg.fpos < inp->zoffs[0])
         { bpos  = inp->zoffs[0];
@@ -1841,7 +1838,7 @@ static void *cram_output_thread(void *arg)
         }
       else
         { bpos  = parm->beg.fpos;
-          skip1 = 1;
+          skip1 = GROUP;
         }
       hseek(fid->fp,bpos,SEEK_SET);
 
@@ -1854,6 +1851,10 @@ static void *cram_output_thread(void *arg)
         { cram_record *rec;
           uint8       *qual;
 
+          rec = cram_get_seq(fid);
+          if (rec == NULL)
+            break;
+
           if (htell(fid->fp) > epos)
             { if (extra)
                 extra = 0;
@@ -1861,18 +1862,9 @@ static void *cram_output_thread(void *arg)
                 break;
             }
 
-          rec = cram_get_seq(fid);
-          if (rec == NULL)
-            break;
-
-          if (skip1)
-            { skip1 = 0;
-              continue;
-            }
-
           if (GROUP)
-            { char *s, x, *h;
-              int   i;
+            { char *s, *h;
+              int   i, glen;
 
               h = (char *) rec->s->name_blk->data + rec->name;
               s = h-1;
@@ -1883,27 +1875,29 @@ static void *cram_output_thread(void *arg)
                       break;
                     }
                 }
-              x = *s;
-              *s = '\0';
 #ifdef DEBUG_AUTO
               fprintf(stderr,"  group = %s\n",h);
 #endif
-              if (strcmp(h,last) != 0)
-                { int glen = s-h;
-
-                  if (glen >= lmax)
-                    { lmax = lmax*1.2 + 1000;
+              glen = s-h;
+              if (strncmp(h,last,s-h) != 0)
+                { if (glen >= lmax)
+                    { lmax = glen*1.2 + 1000;
                       last = (char *) Realloc(last,lmax+1,"Reallocating lane name");
                       if (last == NULL)
                         exit (1);
                     }
-                  strcpy(last,h);
+                  strncpy(last,h,glen);
+                  last[glen] = '\0';
+
+                  if (skip1)
+                    { skip1 = 0;
+                      continue;
+                    }
 
                   vgpInt(vf,0) = 0;
                   vgpInt(vf,1) = glen;
                   vgpWriteLine(vf,'g',glen,h);
                 }
-              *s = x;
             }
 
           if (PAIRING)
