@@ -146,7 +146,7 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
       break ;
     case 'A': case 'L': case 'C': case 'F': case 'E':
       t = oneChar(vf,0) ;
-      if (vs->info[t])
+      if (vs->info[(int) t])
 	die ("duplicate schema specification for linetype %c in filetype %s", t, vs->primary) ;
       if (t >= 'a' && t <= 'z') // the group type
 	{ if (vs->groupType) die ("second group type in schema for filetype %s", vs->primary) ;
@@ -156,7 +156,7 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	vs->objectType = t ;
       else if ((t < 'A' || t > 'Z') && *vs->primary) // allow non-alphabetic lines in header
 	die ("non-alphabetic linetype %c (ascii %d) in schema for filetype %s",t,t,vs->primary) ;
-      OneInfo *vi = vs->info[t] = infoCreate (oneInt(vf,1)) ;
+      OneInfo *vi = vs->info[(int) t] = infoCreate (oneInt(vf,1)) ;
       int i = 0 ; char *s = oneString(vf) ;
       for (i = 0 ; i < vi->nField ; ++i, s = oneNextString(vf,s))
 	if (!strcmp (s, "INT")) vi->fieldType[i] = vINT ;

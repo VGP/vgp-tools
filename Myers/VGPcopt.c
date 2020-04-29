@@ -263,8 +263,6 @@ static void *barcodes_thread(void *arg)
 
   vgpGotoObject(vf,beg);
 
-printf(" %lld - %lld\n",beg,end);
-
   coll  = beg + 10000000/NTHREADS;
   rlen  = 0;
   flen  = 0;
@@ -346,8 +344,6 @@ printf(" %lld - %lld\n",beg,end);
           return (NULL);
         }
     }
-
-printf("I am at the end\n");
 
   parm->error = 0;
   parm->flen  = flen;
@@ -1265,13 +1261,11 @@ int main(int argc, char *argv[])
     int64     usedqvs[256];
     int       i, n, c, p;
 
-#define DEBUG
     for (i = 0; i < NTHREADS; i++)
       { parm[i].beg   = (npairs * i) / NTHREADS;
         parm[i].end   = (npairs * (i+1)) / NTHREADS;
         parm[i].vf    = vf+i;
         parm[i].codes = codes + (parm[i].beg + i);
-parm[i].where = i;
 #ifdef DEBUG
         barcodes_thread(parm+i);
 #else
