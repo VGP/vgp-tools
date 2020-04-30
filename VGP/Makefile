@@ -33,6 +33,9 @@ VGPpair: VGPpair.c $(ONE_DPND) $(GENE_DPND)
 VGPpacbio: VGPpacbio.c pb_expr.c pb_expr.h $(VGP_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPpacbio VGPpacbio.c pb_expr.c $(VGP_LIB) $(GENE_CORE) -lpthread
 
+VGPcloud: VGPcloud.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(VGP_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPcloud VGPcloud.c lsd.sort.c exsort.c $(VGP_LIB) $(GENE_CORE) -lpthread
+
 Dazz2pbr: Dazz2pbr.c $(VGP_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o Dazz2pbr Dazz2pbr.c $(VGP_LIB) $(GENE_CORE) -lpthread
 
