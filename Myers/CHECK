@@ -1,0 +1,13 @@
+#!/bin/bash
+KERNEL=( 'VGPzip.c' 'VGPseq.c' 'VGPpair.c' 'VGPpacbio.c' 'Dazz2pbr.c' 'Dazz2sxs.c' 'gene_core.c' 'gene_core.h' 'pb_expr.c' 'pb_expr.h' )
+echo `pwd`
+for ((j = 0; j < ${#KERNEL[@]}; j++)); do
+  FILE=${KERNEL[${j}]}
+  OBJECT="../VGP/"$FILE
+  if [ -e $OBJECT ]; then
+    echo $OBJECT
+    diff -q $FILE $OBJECT
+  else
+    NULL=0
+  fi
+done

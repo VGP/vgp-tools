@@ -36,7 +36,7 @@
 
 #include "VGPlib.h"
 
-#include "compression.c" // directly include compression package - cleaner because only used here
+#include "../Myers/compression.c" // directly include compression package - cleaner because only used here
 
 static pthread_mutex_t mutexInit = PTHREAD_MUTEX_INITIALIZER;
 
