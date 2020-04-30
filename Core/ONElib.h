@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Apr 24 12:21 2020 (rd109)
+ * Last edited: Apr 30 09:44 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -40,7 +40,8 @@ static const I64 I64MAX = 0x7fffffffffffffffll;
 
 #endif // TRUE
 
-typedef enum { vINT = 1, vREAL, vCHAR, vSTRING, vINT_LIST, vREAL_LIST, vSTRING_LIST } OneType;
+typedef enum { vINT = 1, vREAL, vCHAR, vSTRING, vINT_LIST, vREAL_LIST, vSTRING_LIST, vDNA } OneType;
+static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING", "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
 
 typedef union
   { I64    i;
@@ -83,22 +84,22 @@ extern  OneCodec *DNAcodec;
   // Record for a particular line type.  There is at most one list element.
 
 typedef struct
-  { OneCounts  accum;           // counts read or written to this moment
-    OneCounts  given;           // counts read from header
-    I64        gCount;          // used internally to calculate groupCount and groupTotal
-    I64        gTotal;
-    I64        oCount;          // # of objects in prefix before first group (if any)
-    I64        oTotal;          // + of objects in prefix (these 2 are for thread parallel apps)
+  { OneCounts accum;            // counts read or written to this moment
+    OneCounts given;            // counts read from header
+    I64       gCount;           // used internally to calculate groupCount and groupTotal
+    I64       gTotal;
+    I64       oCount;           // # of objects in prefix before first group (if any)
+    I64       oTotal;           // + of objects in prefix (these 2 are for thread parallel apps)
 
-    int        nField;          // number of fields
-    OneType   *fieldType;       // type of each field
-    int        listEltSize;     // size of list field elements (if present, else 0)
-    int        listField;       // field index of list
-    BOOL       isIntListDiff;   // diff int lists before compressing with codec
-
-    BOOL       isUserBuf;       // flag for whether buffer is owned by user
-    I64        bufSize;         // system buffer and size if not user supplied
-    void      *buffer;
+    int       nField;           // number of fields
+    OneType  *fieldType;        // type of each field
+    int       listEltSize;      // size of list field elements (if present, else 0)
+    int       listField;        // field index of list
+    char     *comment;          // the comment on the definition line in the schema
+    
+    BOOL      isUserBuf;        // flag for whether buffer is owned by user
+    I64       bufSize;          // system buffer and size if not user supplied
+    void     *buffer;
 
     OneCodec *fieldCodec;       // compression codecs and flags
     OneCodec *listCodec;
@@ -190,6 +191,10 @@ typedef struct
 //  CREATING AND DESTROYING SCHEMAS
 
 OneSchema *oneSchemaCreateFromFile (char *path) ;
+OneSchema *oneSchemaCreateFromText (char *text) ; // alternative for code to set the schema
+BOOL oneSchemaCheckSchema (OneFile *vs, char *textSchema) ;
+  // Checks if file schema is consistent with text schema.  Mismatches are reported to stderr.
+  // Filetype and all linetypes in text must match.  File schema can contain additional linetypes.
 void oneSchemaDestroy (OneSchema *vs) ;
 
 //  READING ONE FILES:

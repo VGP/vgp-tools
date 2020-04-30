@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Apr 24 12:17 2020 (rd109)
+ * Last edited: Apr 30 10:49 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -94,6 +94,7 @@ static void infoDestroy (OneInfo *vi)
   if (vi->fieldCodec) vcDestroy (vi->fieldCodec) ;
   if (vi->listCodec) vcDestroy (vi->listCodec) ;
   if (vi->fieldType) free (vi->fieldType) ;
+  //  if (vi->comment) free (vi->comment) ;
   free(vi);
 }
 
@@ -174,7 +175,6 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	else
 	  die ("ONE schema error: bad field %d of %d type %s in line %d type %c",
 	       i, vi->nField, s, vf->line, t) ;
-      vi->isIntListDiff = TRUE ; // harmless if not INT_LIST (and will go)
       if (vf->lineType == 'C' || vf->lineType == 'B') vi->listCodec = vcCreate () ;
       if (vf->lineType == 'F' || vf->lineType == 'B') vi->fieldCodec = vcCreate () ;
       if (vf->lineType != 'A') // create binary encoding
@@ -183,6 +183,8 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	die ("ONE schema error file type %s: too many line specs >= 32", vs->primary) ;
       if (vi->nField > vs->nFieldMax)
 	vs->nFieldMax = vi->nField ;
+      if (oneReadComment (vf))
+	vi->comment = strdup (oneReadComment (vf)) ;
       break ;
     default:
       die ("unrecognized schema line %d starting with %c", vf->line, vf->lineType) ;
@@ -242,6 +244,7 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "A ! 1 11 STRING_LIST               provenance: program, version, command, date\n") ;
   fprintf (vf->f, "A < 2 6 STRING 3 INT               reference: filename, object count\n") ;
   fprintf (vf->f, "A > 1 6 STRING                     deferred: filename\n") ;
+  fprintf (vf->f, "A ~ 3 4 CHAR 4 CHAR 11 STRING_LIST embedded schema linetype definition\n") ;
   fprintf (vf->f, "A . 0                              blank line, anywhere in file\n") ;
   fprintf (vf->f, "A $ 1 3 INT                        binary file - goto footer: isBigEndian\n") ;
   fprintf (vf->f, "A ^ 0                              binary file: end of footer designation\n") ;
@@ -640,9 +643,8 @@ static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
 
   ibuf = (I64 *) buf;
 
-  if (li->isIntListDiff)
-    for (i = len-1; i > 0; i--)
-      ibuf[i] -= ibuf[i-1];
+  for (i = len-1; i > 0; i--)  // convert to differences - often a big win, else harmless
+    ibuf[i] -= ibuf[i-1];
 
   mask = 0;                    // find how many top bytes can be skipped
   for (i = 0; i < len; i++)
@@ -727,11 +729,10 @@ static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
         while (s > buf);
     }
   
-  if (li->isIntListDiff)
-    { x = (I64 *) buf;
-      for (i = 1; i < len; i++)
-        x[i] += x[i-1];
-    }
+  { x = (I64 *) buf;             // revert differencing
+    for (i = 1; i < len; i++)
+      x[i] += x[i-1];
+  }
 }
 
 
@@ -819,7 +820,8 @@ BOOL oneReadLine (OneFile *vf)
 
       for (i = 0; i < li->nField; i++)
         switch (li->fieldType[i])
-        { case vINT:
+	  {
+	  case vINT:
             vf->field[i].i = readInt (vf);
 	    //	    printf ("  field %d int %d\n", i, (int)oneInt(vf,i)) ; 
 	    break;
@@ -830,7 +832,8 @@ BOOL oneReadLine (OneFile *vf)
             vf->field[i].c = readChar (vf);
 	    //	    printf ("  field %d char %c\n", i, (int)oneChar(vf,i)) ;
             break;
-          case vSTRING:
+	  case vSTRING:
+	  case vDNA:
             len = readInt (vf);
             vf->field[i].len = len;
             updateCountsAndBuffer (vf, t, len, 1);
@@ -858,7 +861,7 @@ BOOL oneReadLine (OneFile *vf)
 	    //	    printf ("  field %d string list len %d\n", i, (int)oneLen(vf)) ;
             readStringList (vf, t, len);
             break;
-        }
+	  }
       readFlush (vf);
     }
 
@@ -1164,6 +1167,9 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
           break;
 
 	case '.': // blank line for spacing, ignore
+	  break ;
+
+	case '~': // schema definition line - ignore for now
 	  break ;
 
         // Below here are binary file header types - requires given.count/given.max first
@@ -1559,38 +1565,45 @@ BOOL oneAddDeferred (OneFile *vf, char *filename)
  *
  **********************************************************************************/
 
+static void writeInfoSpec (OneFile *vf, char ci)
+{
+  char c ;
+  int i ;
+  OneInfo *vi = vf->info[ci] ;
+  
+  if (vi->fieldCodec && vi->listCodec) c = 'B' ;
+  else if (vi->fieldCodec && !vi->listCodec) c = 'F' ;
+  else if (!vi->fieldCodec && vi->listCodec) c = 'C' ;
+  else if (!vi->fieldCodec && !vi->listCodec) c = 'L' ;
+
+  fprintf (vf->f, "\n~ %c %c %d", c, ci, vi->nField) ;
+  for (i = 0 ; i < vi->nField ; ++i)
+    fprintf (vf->f, " %d %s",
+	     (int)strlen(oneTypeString[vi->fieldType[i]]), oneTypeString[vi->fieldType[i]]) ;
+  if (vi->comment)
+    oneWriteComment (vf, vi->comment) ;
+}
+
 void oneWriteHeader (OneFile *vf)
 { int         i,n;
   OneReference  *r;
   OneProvenance *p;
   OneInfo   *li;
 
-  if ( ! vf->isWrite)
+  if (!vf->isWrite)
     die ("ONE error: trying to write header to a file open for reading");
   if (vf->line > 0)
     die ("ONE error: cannot write header after writing one or more data lines");
   if (vf->info[(int) vf->objectType]->given.count == 0 && ! vf->isBinary)
     die ("ONE error: information for ASCII header is not present, use oneFileOpenWriteFrom");
 
+  vf->isLastLineBinary = FALSE; // header is in ASCII
+
   fprintf (vf->f, "1 %lu %s %lld %lld", strlen(vf->fileType), vf->fileType, vf->major, vf->minor);
   vf->line += 1;
 
   if (*vf->subType)
     { fprintf (vf->f, "\n2 %lu %s", strlen(vf->subType), vf->subType);
-      vf->line += 1;
-    }
-
-  r = vf->reference;
-  n = vf->info['<']->accum.count;
-  for (i = 0; i < n; i++, r++)
-    { fprintf (vf->f, "\n< %lu %s %lld", strlen(r->filename), r->filename, r->count);
-      vf->line += 1;
-    }
-
-  r = vf->deferred;
-  n = vf->info['>']->accum.count;
-  for (i = 0; i < n; i++, r++)
-    { fprintf (vf->f, "\n> %lu %s", strlen(r->filename), r->filename);
       vf->line += 1;
     }
   
@@ -1602,6 +1615,33 @@ void oneWriteHeader (OneFile *vf)
                      strlen (p->command), p->command, strlen (p->date), p->date);
       vf->line += 1;
     }
+
+  fprintf (vf->f, "\n.") ;
+
+  if (vf->info['<']->accum.count || vf->info['>']->accum.count)
+    { r = vf->reference;
+      n = vf->info['<']->accum.count;
+      for (i = 0; i < n; i++, r++)
+	{ fprintf (vf->f, "\n< %lu %s %lld", strlen(r->filename), r->filename, r->count);
+	  vf->line += 1;
+	}
+      
+      r = vf->deferred;
+      n = vf->info['>']->accum.count;
+      for (i = 0; i < n; i++, r++)
+	{ fprintf (vf->f, "\n> %lu %s", strlen(r->filename), r->filename);
+	  vf->line += 1;
+	}
+      fprintf (vf->f, "\n.") ;
+    }
+
+  // write the schema into the header - no need for file type, version etc. since already given
+  if (vf->groupType) writeInfoSpec (vf, vf->groupType) ;
+  writeInfoSpec (vf, vf->objectType) ;
+  for (i = 'A' ; i <= 'Z' ; ++i)
+    if (vf->info[i] && i != vf->objectType)
+      writeInfoSpec (vf, i) ;
+  fprintf (vf->f, "\n.") ;
 
   if (vf->isBinary)         // defer writing rest of header
     { fprintf (vf->f, "\n$ %d", vf->isBig);
@@ -1640,10 +1680,8 @@ void oneWriteHeader (OneFile *vf)
     }
   fflush (vf->f);
 
-  vf->isLastLineBinary = FALSE;
   vf->isHeaderOut = TRUE;
 }
-
 
 /***********************************************************************************
  *
@@ -1947,7 +1985,8 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
     { fputc (t, vf->f);
       for (i = 0; i < li->nField; i++)
         switch (li->fieldType[i])
-        { case vINT:
+	  {
+	  case vINT:
             fprintf (vf->f, " %lld", vf->field[i].i);
             break;
           case vREAL:
@@ -1957,6 +1996,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
             fprintf (vf->f, " %c", vf->field[i].c);
             break;
           case vSTRING:
+	  case vDNA:
           case vINT_LIST:
           case vREAL_LIST:
           case vSTRING_LIST:
@@ -1965,7 +2005,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
               li->accum.max = listLen;
 
             fprintf (vf->f, " %lld", listLen);
-            if (li->fieldType[i] == vSTRING)
+            if (li->fieldType[i] == vSTRING || li->fieldType[i] == vDNA)
               { if (listLen > INT_MAX)
                   die ("ONE write error: string length %lld > current max %d", listLen, INT_MAX);
                 fprintf (vf->f, " %.*s", (int) listLen, (char *) listBuf);
