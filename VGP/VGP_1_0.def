@@ -1,7 +1,7 @@
 1 3 def 1 0  OneCode schema for VGP genome assembly pipeline and related purposes
 ! 14 Richard Durbin 1 0 1 0 7 by hand 24 Wed Apr 22 20:00:00 2020
 .
-. these are blank lines, which can also be used for arbitrary comments
+. these are blank lines, which can also be used for arbitrary comments, anywhere in the file
 .
 . below P lines give primary file types, and define the objects in this file
 . then S is for secondary file types
@@ -11,8 +11,6 @@
 .     F means compress the fields - not default because it slows IO down for small gain
 .     B means compress both
 . note we can, and do, also add arbitrary comments/descriptions after the data on each line
-.
-V 1 0  versions: major, minor.  This is a global that carries forward until changed.
 .
 P 3 seq SEQUENCE
 S 3 irp   read pairs

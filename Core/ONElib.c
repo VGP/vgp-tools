@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May  1 00:15 2020 (rd109)
+ * Last edited: May  1 17:17 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -168,7 +168,6 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	die ("schema: file type %s has no object type", vs->primary) ;
       if (oneLen(vf) != 3) die ("schema: primary name %s is not 3 letters", oneString(vf)) ;
       OneSchema *vsNxt = new0 (1, OneSchema) ;
-      vsNxt->major = vs->major ; vsNxt->minor = vs->minor ;
       vsNxt->nBinaryHeader = vs->nBinaryHeader ; // transfer the header count
       vsNxt->nBinary = vsNxt->nBinaryHeader ; // start count for this schema at header count
       vs->nxt = vsNxt ;
@@ -187,9 +186,6 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 	vs->secondary = new (1, char*) ;
       vs->secondary[vs->nSecondary] = new0 (4, char) ;
       strcpy (vs->secondary[vs->nSecondary++], oneString(vf)) ;
-      break ;
-    case 'V':
-      vs->major = oneInt(vf,0) ; vs->minor = oneInt(vf,1) ;
       break ;
     case 'A': case 'L': case 'C': case 'F': case 'E':
       vs->info[oneChar(vf,0)] = infoCreateFromLine (vf, oneChar(vf,0), vf->lineType, vs) ;
@@ -265,7 +261,6 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
   while (oneReadLine (vf))
     schemaLoadRecord (vs, vf) ;
-  vs->major = MAJOR ; vs->minor = MINOR ;
   vs->nBinaryHeader = vs->nBinary ;
 
   // next reuse the temp file to load the schema for reading schemas
@@ -273,7 +268,6 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "P 3 def                      this is the primary file type for schemas\n") ;
   fprintf (vf->f, "L P 1 6 STRING               primary type name\n") ;
   fprintf (vf->f, "L S 1 6 STRING               secondary type names\n") ;
-  fprintf (vf->f, "L V 2 3 INT 3 INT            versions: major, minor - group field\n") ;
   fprintf (vf->f, "L L 2 4 CHAR 11 STRING_LIST  basic linetype no compression\n") ;
   fprintf (vf->f, "L C 2 4 CHAR 11 STRING_LIST  linetype with list compression\n") ;
   fprintf (vf->f, "L F 2 4 CHAR 11 STRING_LIST  linetype with field compression\n") ;
@@ -374,7 +368,6 @@ static OneFile *oneFileCreate (OneSchema *vs, char *type)
       }
   
   // set other information
-  vf->major = vs->major ; vf->minor = vs->minor ;
   vf->objectType = vs->objectType ;
   vf->groupType = vs->groupType ;
   strcpy (vf->fileType, vs->primary) ;
@@ -1031,13 +1024,13 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
       if (!vf)
 	OPEN_ERROR3("unknown primary file type %s in header line %d", name, 1);
 
-      if (major != vf->major)
+      if (major != MAJOR)
 	{ oneFileDestroy (vf) ;
-	  OPEN_ERROR3("major version file %d != code %d", major, (int) vf->major) ;
+	  OPEN_ERROR3("major version file %d != code %d", major, MAJOR) ;
 	}
-      if (minor > vf->minor)
+      if (minor > MINOR)
 	{ oneFileDestroy (vf) ;
-	  OPEN_ERROR3("minor version file %d > code %d", minor, (int) vf->minor) ;
+	  OPEN_ERROR3("minor version file %d > code %d", minor, MINOR) ;
 	}
       if (fileType && strcmp (fileType, vf->fileType))
 	{ oneFileDestroy (vf) ;
@@ -1627,7 +1620,7 @@ void oneWriteHeader (OneFile *vf)
 
   vf->isLastLineBinary = FALSE; // header is in ASCII
 
-  fprintf (vf->f, "1 %lu %s %lld %lld", strlen(vf->fileType), vf->fileType, vf->major, vf->minor);
+  fprintf (vf->f, "1 %lu %s %d %d", strlen(vf->fileType), vf->fileType, MAJOR, MINOR);
   vf->line += 1;
 
   if (*vf->subType)

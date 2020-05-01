@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Apr 30 09:44 2020 (rd109)
+ * Last edited: May  1 17:16 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -116,7 +116,6 @@ typedef struct
 
 typedef struct OneSchema
   {
-    int               major, minor ;
     char              primary[4] ;
     int               nSecondary ;
     char            **secondary ;
@@ -141,8 +140,6 @@ typedef struct
 
     char           fileType[4];
     char           subType[4];
-    I64            major;              // actual major and minor versions of this file
-    I64            minor;
     char           lineType;           // current lineType
     char           objectType;         // line designation character for primary objects
     char           groupType;          // line designation character for groups (optional)
