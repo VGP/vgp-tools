@@ -17,13 +17,12 @@
 
 #undef DEBUG
 
-int    VERBOSE;    //  Verbose mode?
-char  *SORT_PATH;  //  Directory to do external sort in
-int    NTHREADS;   //  # of threads to use for parallized sorts
+int    VERBOSE;        //  Verbose mode?
+int    NTHREADS;       //  # of threads to use for parallized sorts
+int    HISTOGRAM;      //  Histogram barcode counts
+int    VALID;          //  Threshold above which barcode is considered valid
 
-#define VALID_THRESH 100
-
-static char *Usage = "[-v] [-P<dir(/tmp)>] [-T<int(4)>] <clouds:irp>";
+static char *Usage = "[-vH] [-t<int(100)>] [-T<int(4)>] <clouds:irp>";
 
 static uint8 bit[8] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
 
@@ -144,21 +143,15 @@ static char read_raw_seq(VgpFile *vf)
 
   x = getc(vf->f);
   if (feof(vf->f) || x == '\n')
-{ printf("eof or \n");
     return (0);
-}
 
   if (x & 0x80)
     { t = vf->binaryTypeUnpack[x];
       if (t != 'S')
-{ printf("not S %c %x %x\n",t,t,x);
         return (0);
-}
     }
   else
-{ printf("not binary %x\n",x);
     return (0);
-}
   vf->lineType = t;
 
   li = vf->lineInfo['S'];
@@ -379,6 +372,9 @@ typedef struct
     int64        vend;
     int64        nrepair;
 
+    int64        hist10[101];
+    int64        hist1[50];
+
     int64       *bucks;   //  To seed top level sort
   } Sort_Arg;
 
@@ -545,14 +541,13 @@ static void *sort_thread(void *arg)
 
   LSD_sort(end-beg,codes+beg,vlist+beg);
 
-#undef CHECK_SORT
 #ifdef CHECK_SORT
   for (i = beg+1; i < end; i++)
     if (codes[i-1] > codes[i])
       printf("Out of order %lld: %u vs %u\n",i,codes[i-1],codes[i]);
 #endif
 
-  codes[end] = codes[end-1]+1;
+  codes[end] = codes[end-1]+1;  // != codes[end-1]
 
   f = beg;
   g = beg;
@@ -582,7 +577,7 @@ static void *sort_thread(void *arg)
 
     sum = count[beg];
     for (i = beg+1; i < f; i++)
-      { if (codes[i-1] > codes[i])
+      { if (codes[i-1] > codes[i] || (codes[i] == codes[i-1] && count[i-1] != 255))
           printf("Out of order %lld: %u vs %u\n",i,codes[i-1],codes[i]);
         sum += count[i];
       }
@@ -606,7 +601,7 @@ static void *sort_thread(void *arg)
 static int64 find(uint32 *codes, int64 n, uint32 x)
 { int64 l, r, m;
 
-  // smallest k s.t. codes[k] >= value (or n if does not exist)
+  // smallest k s.t. codes[k] >= x (or n if does not exist)
 
   l = 0;
   r = n;
@@ -617,6 +612,12 @@ static int64 find(uint32 *codes, int64 n, uint32 x)
       else
         r = m;
     }
+#ifdef CHECK_SORT
+  if (l > 0 && codes[l-1] >= x)
+    printf("Find failed\n");
+  if (l < n && codes[l] < x) 
+    printf("Find failed\n");
+#endif
   return (l);
 }
 
@@ -658,21 +659,22 @@ static void reheap(int s, int64 *heap, uint32 *code, int hsize)
 }
 
 static void *merge_thread(void *arg)
-{ Sort_Arg *parm  = (Sort_Arg *) arg;
-  uint32   *codes = parm->codes;
-  uint32   *vlist = parm->vlist;
-  uint8    *count = parm->count;
-  uint8    *ctype = parm->ctype;
-  uint8    *first = parm->first;
-  int64    *heap  = parm->finger-1;
-  int64     vbeg  = parm->vbeg; 
-  int64     vlen  = parm->vlen;
+{ Sort_Arg *parm   = (Sort_Arg *) arg;
+  uint32   *codes  = parm->codes;
+  uint32   *vlist  = parm->vlist;
+  uint8    *count  = parm->count;
+  uint8    *ctype  = parm->ctype;
+  uint8    *first  = parm->first;
+  int64    *heap   = parm->finger-1;
+  int64     vbeg   = parm->vbeg; 
+  int64     vlen   = parm->vlen;
+  int64    *hist10 = parm->hist10;
+  int64    *hist1  = parm->hist1;
 
   int    v, cum, hsize;
   int64  f, i, p;
   uint32 bar, x;
 #ifdef CHECK_SORT
-  int64  n;
   uint32 a;
 #endif
   int64 s, e;
@@ -680,6 +682,11 @@ static void *merge_thread(void *arg)
   s = (0x100000000ll * parm->tid) / NTHREADS;
   e = (0x100000000ll * (parm->tid+1)) / NTHREADS;
   bzero(ctype+s,e-s);
+
+  if (HISTOGRAM)
+    { bzero(hist10,101*sizeof(int64));
+      bzero(hist1,50*sizeof(int64));
+    }
 
   hsize = NTHREADS;
   for (i = hsize/2; i >= 1; i--)
@@ -689,57 +696,72 @@ static void *merge_thread(void *arg)
   bar = codes[heap[1]] + 1;
   cum = 0;
 #ifdef CHECK_SORT
-  n = 0;
   a = codes[heap[1]];
+  if (a < s)
+    printf("Merge start not in range\n");
 #endif
   for (i = 0; i < vlen; i++)
     { p = heap[1];
       v = count[p];
-      if (v == 0)
+      while (v == 0)
         { heap[1] = heap[hsize];
           hsize -= 1;
+          reheap(1,heap,codes,hsize);
+          p = heap[1];
+          v = count[p];
+        }
+      x = codes[p];
+#ifdef CHECK_SORT
+      if (x < bar && i > 0)
+        printf("Out of order heap\n");
+#endif
+      if (x != bar)
+        { if (cum >= VALID)
+            { vlist[f++] = bar;
+              ctype[bar] = 0x40;
+            }
+          if (HISTOGRAM)
+            { if (cum >= 1000)
+                hist10[100] += 1;
+              else if (cum >= 50)
+                hist10[cum/10] += 1;
+              else
+                hist1[cum] += 1;
+            }
+          bar = x;
+          cum = v;
         }
       else
-        { x = codes[p];
-#ifdef CHECK_SORT
-          if (x < bar)
-            printf("Out of order heap\n");
-#endif
-          if (x != bar)
-            { if (cum >= VALID_THRESH)
-                { vlist[f++] = bar;
-                  ctype[bar] = 0x40;
-#ifdef CHECK_SORT
-                  n += cum;
-#endif
-                }
-              bar = x;
-              cum = v;
-            }
-          else
-            cum += v;
-          heap[1] = p+1;
-        }
+        cum += v;
+      heap[1] = p+1;
       reheap(1,heap,codes,hsize);
     }
-  if (cum >= VALID_THRESH)
+  if (cum >= VALID)
     { vlist[f++] = bar;
-#ifdef CHECK_SORT
-      n += cum;
-#endif
+      ctype[bar] = 0x40;
+      if (HISTOGRAM)
+        { if (cum >= 1000)
+            hist10[100] += 1;
+          else if (cum >= 50)
+            hist10[cum/10] += 1;
+          else
+            hist1[cum] += 1;
+        }
     }
+
 #ifdef CHECK_SORT
-  printf("Codea Range: %08x - %08x [%08llx - %08llx] (%lld / %lld / %lld)\n",
-          a,bar,s,e,n,vlen,f-vbeg);
+  if (bar >= e)
+    printf("Merge end beyond range\n");
+  for (i = 1; i <= hsize; i++)
+    if (count[heap[i]] > 0 && codes[heap[i]] < e)
+      printf("Heap is not exhausted\n");
+  printf("Code Range: %08x - %08x [%08llx - %08llx] (%lld / %lld / %d)\n",
+          a,bar,s,e,vlen,f-vbeg,hsize);
 #endif
 
   bzero(first,0x20000000ll);
 
   parm->vend  = f;
-
-#ifdef CHECK_SORT
-  parm->nrepair = n;
-#endif
 
   return (NULL);
 }
@@ -1151,27 +1173,21 @@ int main(int argc, char *argv[])
   { int    i, j, k;
     int    flags[128];
     char  *eptr;
-    DIR   *dirp;
 
     ARG_INIT("VGPcloud")
 
-    SORT_PATH = "/tmp";
     NTHREADS  = 4;
+    VALID     = 100;
 
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("v")
+            ARG_FLAGS("vH")
             break;
-          case 'P':
-            SORT_PATH = argv[i]+2;
-            if ((dirp = opendir(SORT_PATH)) == NULL)
-              { fprintf(stderr,"%s: -P option: cannot open directory %s\n",Prog_Name,SORT_PATH);
-                exit (1);
-              }
-            closedir(dirp);
+          case 't':
+            ARG_POSITIVE(VALID,"Valid code threshhold")
             break;
           case 'T':
             ARG_POSITIVE(NTHREADS,"Number of threads")
@@ -1181,13 +1197,15 @@ int main(int argc, char *argv[])
         argv[j++] = argv[i];
     argc = j;
 
-    VERBOSE = flags['v'];
+    VERBOSE   = flags['v'];
+    HISTOGRAM = flags['H'];
 
     if (argc != 2)
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: Verbose mode, show progress as proceed.\n");
-        fprintf(stderr,"      -P: Do external sorts in this directory.\n");
+        fprintf(stderr,"      -H: Display histogram of all bar code counts.\n");
+        fprintf(stderr,"      -t: Threshold for valid barcodes.\n");
         fprintf(stderr,"      -T: Use -T threads.\n");
  
         exit (1);
@@ -1230,6 +1248,10 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"%s: The number of sequences and QV's are not equal\n",Prog_Name);
         exit (1);
       }
+    if (2*vf->lineInfo['P']->given.count != vf->lineInfo['S']->given.count)
+      { fprintf(stderr,"%s: The sequences are not all paired\n",Prog_Name);
+        exit (1);
+      }
   }
 
 
@@ -1265,7 +1287,7 @@ int main(int argc, char *argv[])
       { parm[i].beg   = (npairs * i) / NTHREADS;
         parm[i].end   = (npairs * (i+1)) / NTHREADS;
         parm[i].vf    = vf+i;
-        parm[i].codes = codes + (parm[i].beg + i);
+        parm[i].codes = codes + (parm[i].beg + i);  // leave room for a terminal entry
 #ifdef DEBUG
         barcodes_thread(parm+i);
 #else
@@ -1273,40 +1295,37 @@ int main(int argc, char *argv[])
 #endif
       }
 
-    bzero(usedqvs,sizeof(int64)*256);
-
-    for (i = 0; i < NTHREADS; i++)
-      { 
 #ifndef DEBUG
-        pthread_join(threads[i],NULL);
+    for (i = 0; i < NTHREADS; i++)
+      pthread_join(threads[i],NULL);
 #endif
-        if (parm[i].error > 0)
+
+    //  Merge QV histograms and check for errors
+
+    bzero(usedqvs,sizeof(int64)*256);
+    
+    flen = parm[0].flen;
+    rlen = parm[0].rlen;
+    for (i = 0; i < NTHREADS; i++)
+      { if (parm[i].error > 0)
           { error_report(parm[i].error,parm[i].where);
             exit (1);
           }
-        if (i == 0)
-          flen = parm[0].flen;
-        else
-          { if (flen != parm[i].flen)
-              { error_report(ERROR_SLEN,parm[i].beg);
-                exit (1);
-              }
+        if (flen != parm[i].flen)
+          { error_report(ERROR_SLEN,parm[i].beg);
+            exit (1);
           }
-        if (i == 0)
-          rlen = parm[0].rlen;
-        else
-          { if (rlen != parm[i].rlen)
-              { error_report(ERROR_SLEN,parm[i].beg);
-                exit (1);
-              }
+        if (rlen != parm[i].rlen)
+          { error_report(ERROR_SLEN,parm[i].beg);
+            exit (1);
           }
         for (n = 0; n < 256; n++)
           usedqvs[n] += parm[i].usedqvs[n];
       }
 
-    n = 0;                         //  Map non-emty QV histogram entries to a bit code, and
-    for (i = 0; i < 256; i++)      //    all empty entries to the nearest code,
-      if (usedqvs[i])              //    and determine # of bits to encode largest
+    n = 0;                         //  Map non-emty QV histogram entries to consecutive integers
+    for (i = 0; i < 256; i++)      //    and all empty entries to the nearest code,
+      if (usedqvs[i])              //    and determine # of bits to encode the # of ints used
         { map[i] = n;
           inv[n] = i;
           if (n == 0)
@@ -1356,7 +1375,7 @@ int main(int argc, char *argv[])
     int    i;
 
     count = (uint8 *) Malloc(sizeof(uint8)*(npairs+NTHREADS),"Allocating count array");
-    first = (uint8 *) Malloc(sizeof(uint8)*NTHREADS*0x20000000ll,"Allocating count array");
+    first = (uint8 *) Malloc(sizeof(uint8)*NTHREADS*0x20000000ll,"Allocating first array");
     if (count == NULL || first == NULL)
       exit (1);
 
@@ -1381,7 +1400,10 @@ int main(int argc, char *argv[])
     //  2. Merge NTHREAD unique+count lists and make list of valid codes in vlist
 
     { int64 s, e, n;
-      int   t;
+      int64 hist10[101], hist1[50];
+      int   t, j;
+
+      //  parts[i][t] = index of 1st code of input panel t >= (2^32)*(i/NTHREADS)
 
       for (t = 0; t < NTHREADS; t++)
         { s = sparm[t].beg;
@@ -1391,6 +1413,8 @@ int main(int argc, char *argv[])
             parts[i][t] = s + find(codes+s,e-s,(uint32) ((0x100000000llu * i) / NTHREADS));
           parts[NTHREADS][t] = e;
         }
+
+      //  slice[i] = # of codes in the i (out of NTHREADS) slices of [0,2^32]
 
       for (i = 0; i < NTHREADS; i++)
         { n = 0;
@@ -1410,6 +1434,27 @@ int main(int argc, char *argv[])
 
       for (i = 0; i < NTHREADS; i++)
         pthread_join(threads[i],NULL);
+
+      if (HISTOGRAM)
+        { for (j = 0; j <= 100; j++)
+            hist10[j] = sparm[0].hist10[j];
+          for (j = 0; j < 50; j++)
+            hist1[j] = sparm[0].hist1[j];
+          for (i = 1; i < NTHREADS; i++)
+            { for (j = 0; j <= 100; j++)
+                hist10[j] += sparm[i].hist10[j];
+              for (j = 0; j < 50; j++)
+                hist1[j] += sparm[i].hist1[j];
+            }
+     
+          fprintf(stderr,"  Histogram:\n");
+          fprintf(stderr,"    >999: %7lld\n",hist10[100]);
+          for (t = 99; t >= 5; t--)
+            if (hist10[t] > 0)
+              fprintf(stderr,"    %4d: %7lld\n",t*10,hist10[t]);
+          for (t = 49; t >= 1; t--)
+            fprintf(stderr,"    %4d: %7lld\n",t,hist1[t]);
+        }
     }
 
     ndist = 0;
@@ -1555,6 +1600,8 @@ printf("%10lld Added untouched 2\n",ngood);
       }
   }
 
+exit (1);
+
 
   //  Pass 2: Correct barcodes when possible, output compressed pairs for sorting
 
@@ -1627,6 +1674,9 @@ printf("%10lld Added untouched 2\n",ngood);
 
 exit (1);
   }
+
+  (void) Uncompress_QV;
+  (void) Uncompress_SEQ;
 
 #ifdef XXX
   //  External sort on barcode (1st 4 bytes of each record)

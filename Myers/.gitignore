@@ -2,13 +2,13 @@ A.TESTING
 A.GRAVEYARD
 VGPseq
 VGPpacbio
-Dazz2pbr
-Dazz2sxs
 VGPcloud
 VGPpipe
 VGPzip
 VGPpair
+Dazz2pbr
+Dazz2sxs
 VGPc2
-VGPcopt
+VGPcold
 HTSLIB
 .DS_Store

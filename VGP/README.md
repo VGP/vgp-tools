@@ -4,7 +4,7 @@
 ### Last Update: April 13, 2020
 
 This subdirectory contains the documents and tools designed within the One-Code
-frameowrk to support the [Vertebrate Genomes Project](http://www.vertebrategenomes.org)
+framework to support the [Vertebrate Genomes Project](http://www.vertebrategenomes.org)
 with data representations for all the source data, process intermediates, and resulting
 reconstructed genome assemblies involved in a large-scale DNA sequencing project.
 Along with these formats there is a growing set of documented
@@ -25,7 +25,7 @@ which is a general framework for representing and manipulating data whose
 primary advantages are a very simple ASCII format for each data object type
 that is easy for both humans and programs to read and interpret,
 with a corresponding compressed and indexed binary version so that production
-sofwtare can be used for large scale data intensive applications.  Furthermore,
+software can be used for large scale data intensive applications.  Furthermore,
 adding and modifying data types is simply a matter of editing the simple
 specification of the schema [VGP_1\_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP_1_0.def).
 For descriptions of the basic principles and properties of the One-Code
