@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Apr 23 03:13 2020 (rd109)
+ * Last edited: Apr 28 10:32 2020 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -61,6 +61,7 @@ int main (int argc, char **argv)
   I64 i ;
   char *fileType = 0 ;
   char *outFileName = "-" ;
+  char *schemaFileName = 0 ;
   BOOL isNoHeader = FALSE, isHeaderOnly = FALSE, isBinary = FALSE ;
   IndexList *objList = 0, *groupList = 0 ;
   
@@ -70,8 +71,9 @@ int main (int argc, char **argv)
   --argc ; ++argv ;		/* drop the program name */
 
   if (!argc)
-    { fprintf (stderr, "ONEview [options] schemafile datafile\n") ;
+    { fprintf (stderr, "ONEview [options] onefile\n") ;
       fprintf (stderr, "  -t --type <abc>           file type, e.g. seq, aln - required if no header\n") ;
+      fprintf (stderr, "  -S --schema <schemafile>  schema file name\n") ;
       fprintf (stderr, "  -h --noHeader             skip the header in ascii output\n") ;
       fprintf (stderr, "  -H --headerOnly           only write the header (in ascii)\n") ;
       fprintf (stderr, "  -b --binary               write in binary (default is ascii)\n") ;
@@ -85,6 +87,10 @@ int main (int argc, char **argv)
   while (argc && **argv == '-')
     if (!strcmp (*argv, "-t") || !strcmp (*argv, "--type"))
       { fileType = argv[1] ;
+	argc -= 2 ; argv += 2 ;
+      }
+    else if (!strcmp (*argv, "-S") || !strcmp (*argv, "--schema"))
+      { schemaFileName = argv[1] ;
 	argc -= 2 ; argv += 2 ;
       }
     else if (!strcmp (*argv, "-h") || !strcmp (*argv, "--header"))
@@ -104,16 +110,17 @@ int main (int argc, char **argv)
   if (isBinary) isNoHeader = FALSE ;
   if (isHeaderOnly) isBinary = FALSE ;
     
-  if (argc != 2)
-    die ("need to give a schema file and a single data file as arguments") ;
+  if (argc != 1)
+    die ("need a single data one-code file as argument") ;
 
-  OneSchema *vs = oneSchemaCreateFromFile (argv[0]) ;
-  if (!vs) die ("failed to read schema file %s", argv[0]) ;
-  OneFile *vfIn = oneFileOpenRead (argv[1], vs, fileType, 1) ; /* reads the header */
-  if (!vfIn) die ("failed to open one file %s", argv[1]) ;
+  if (!schemaFileName) die ("for now need to specify a schema with -S") ;
+  OneSchema *vs = oneSchemaCreateFromFile (schemaFileName) ;
+  if (!vs) die ("failed to read schema file %s", schemaFileName) ;
+  OneFile *vfIn = oneFileOpenRead (argv[0], vs, fileType, 1) ; /* reads the header */
+  if (!vfIn) die ("failed to open one file %s", argv[0]) ;
 
   if ((objList || groupList) && !vfIn->isBinary)
-    die ("%s is ascii - you can only access objects and groups by index in binary files", argv[1]) ;
+    die ("%s is ascii - you can only access objects and groups by index in binary files", argv[0]) ;
   
   OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vs, vfIn, FALSE, isBinary, 1) ;
   if (!vfOut) die ("failed to open output file %s", outFileName) ;

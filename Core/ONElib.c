@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Apr 30 10:49 2020 (rd109)
+ * Last edited: May  1 00:15 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -107,11 +107,57 @@ static int listEltSize[8] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1 };
     vi->listEltSize = listEltSize[vi->fieldType[i]] ; \
     vi->listField = i
 
+static OneInfo *infoCreateFromLine (OneFile *vf, char t, char c, OneSchema *vs)
+{ // assumes field specification is in the STRING_LIST of the current vf line
+  // use during the bootstrap, while parsing .def files, and while parsing ~ lines in other files
+  
+  if (vs->info[(int) t])
+    die ("duplicate schema specification for linetype %c in filetype %s", t, vs->primary) ;
+  if (t >= 'a' && t <= 'z') // the group type
+    { if (vs->groupType) die ("second group type in schema for filetype %s", vs->primary) ;
+      vs->groupType = t ;
+    }
+  else if (!vs->objectType && t >= 'A' && t <= 'Z')
+    vs->objectType = t ;
+  else if ((t < 'A' || t > 'Z') && *vs->primary) // allow non-alphabetic lines in header
+    die ("non-alphabetic linetype %c (ascii %d) in schema for filetype %s",t,t,vs->primary) ;
+
+  OneInfo *vi = infoCreate (oneLen(vf)) ;
+  int i = 0 ; char *s = oneString(vf) ;
+  for (i = 0 ; i < vi->nField ; ++i, s = oneNextString(vf,s))
+    if (!strcmp (s, "INT")) vi->fieldType[i] = vINT ;
+    else if (!strcmp (s, "REAL")) vi->fieldType[i] = vREAL ;
+    else if (!strcmp (s, "CHAR")) vi->fieldType[i] = vCHAR ;
+    else if (!strcmp (s, "STRING")) { vi->fieldType[i] = vSTRING ; VL(vi,i,t,vs) ; }
+    else if (!strcmp (s, "INT_LIST")) { vi->fieldType[i] = vINT_LIST ; VL(vi,i,t,vs) ; }
+    else if (!strcmp (s, "REAL_LIST")) { vi->fieldType[i] = vREAL_LIST ; VL(vi,i,t,vs) ; }
+    else if (!strcmp (s, "STRING_LIST")) { vi->fieldType[i] = vSTRING_LIST; VL(vi,i,t,vs) ; }
+    else if (!strcmp (s, "DNA"))
+      { vi->fieldType[i] = vSTRING ; VL(vi,i,t,vs) ;
+	vi->listCodec = DNAcodec ; vi->isUseListCodec = TRUE ;
+	if (vf->lineType != 'L') die ("linetype in schema for DNA lines must be L") ;
+      }
+    else
+      die ("ONE schema error: bad field %d of %d type %s in line %d type %c",
+	   i, vi->nField, s, vf->line, t) ;
+  if (c == 'C' || c == 'B') vi->listCodec = vcCreate () ;
+  if (c == 'F' || c == 'B') vi->fieldCodec = vcCreate () ;
+  if (c != 'A') // create binary encoding
+    vi->binaryTypePack = (vs->nBinary++ << 2) | 0x80;
+  if (vs->nBinary >= 32)
+    die ("ONE schema error file type %s: too many line specs >= 32", vs->primary) ;
+  if (vi->nField > vs->nFieldMax)
+    vs->nFieldMax = vi->nField ;
+  if (oneReadComment (vf))
+    vi->comment = strdup (oneReadComment (vf)) ;
+
+  return vi ;
+}
+
 static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
 {
   // parse a schema specfication line from vf and add into vs
   // return value is vs unless a new primary type is declared, in which case vs->nxt
-  char t ;
 
   switch (vf->lineType)
     {
@@ -146,45 +192,7 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
       vs->major = oneInt(vf,0) ; vs->minor = oneInt(vf,1) ;
       break ;
     case 'A': case 'L': case 'C': case 'F': case 'E':
-      t = oneChar(vf,0) ;
-      if (vs->info[(int) t])
-	die ("duplicate schema specification for linetype %c in filetype %s", t, vs->primary) ;
-      if (t >= 'a' && t <= 'z') // the group type
-	{ if (vs->groupType) die ("second group type in schema for filetype %s", vs->primary) ;
-	  vs->groupType = t ;
-	}
-      else if (!vs->objectType && t >= 'A' && t <= 'Z')
-	vs->objectType = t ;
-      else if ((t < 'A' || t > 'Z') && *vs->primary) // allow non-alphabetic lines in header
-	die ("non-alphabetic linetype %c (ascii %d) in schema for filetype %s",t,t,vs->primary) ;
-      OneInfo *vi = vs->info[(int) t] = infoCreate (oneInt(vf,1)) ;
-      int i = 0 ; char *s = oneString(vf) ;
-      for (i = 0 ; i < vi->nField ; ++i, s = oneNextString(vf,s))
-	if (!strcmp (s, "INT")) vi->fieldType[i] = vINT ;
-	else if (!strcmp (s, "REAL")) vi->fieldType[i] = vREAL ;
-	else if (!strcmp (s, "CHAR")) vi->fieldType[i] = vCHAR ;
-	else if (!strcmp (s, "STRING")) { vi->fieldType[i] = vSTRING ; VL(vi,i,t,vs) ; }
-	else if (!strcmp (s, "INT_LIST")) { vi->fieldType[i] = vINT_LIST ; VL(vi,i,t,vs) ; }
-	else if (!strcmp (s, "REAL_LIST")) { vi->fieldType[i] = vREAL_LIST ; VL(vi,i,t,vs) ; }
-	else if (!strcmp (s, "STRING_LIST")) { vi->fieldType[i] = vSTRING_LIST; VL(vi,i,t,vs) ; }
-	else if (!strcmp (s, "DNA"))
-	  { vi->fieldType[i] = vSTRING ; VL(vi,i,t,vs) ;
-	    vi->listCodec = DNAcodec ; vi->isUseListCodec = TRUE ;
-	    if (vf->lineType != 'L') die ("linetype in schema for DNA lines must be L") ;
-	  }
-	else
-	  die ("ONE schema error: bad field %d of %d type %s in line %d type %c",
-	       i, vi->nField, s, vf->line, t) ;
-      if (vf->lineType == 'C' || vf->lineType == 'B') vi->listCodec = vcCreate () ;
-      if (vf->lineType == 'F' || vf->lineType == 'B') vi->fieldCodec = vcCreate () ;
-      if (vf->lineType != 'A') // create binary encoding
-	vi->binaryTypePack = (vs->nBinary++ << 2) | 0x80;
-      if (vs->nBinary >= 32)
-	die ("ONE schema error file type %s: too many line specs >= 32", vs->primary) ;
-      if (vi->nField > vs->nFieldMax)
-	vs->nFieldMax = vi->nField ;
-      if (oneReadComment (vf))
-	vi->comment = strdup (oneReadComment (vf)) ;
+      vs->info[oneChar(vf,0)] = infoCreateFromLine (vf, oneChar(vf,0), vf->lineType, vs) ;
       break ;
     default:
       die ("unrecognized schema line %d starting with %c", vf->line, vf->lineType) ;
@@ -219,7 +227,7 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   // first load the universal header and footer (non-alphabetic) line types 
   // do this by writing their schema into a temporary file and parsing it into the base schema
   { errno = 0 ;
-    static char template[32] ;
+    static char template[64] ;
 #define VALGRIND_MACOS
 #ifdef VALGRIND_MACOS // MacOS valgrind is missing functions to make temp files it seems
     sprintf (template, "/tmp/OneSchema.%d", getpid()) ;
@@ -233,7 +241,7 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
     if (errno) die ("failed to assign temporary file to stream: errno %d\n", errno) ;
 #endif
     unlink (template) ;                  // this ensures that the file is removed on closure
-    if (errno) die ("failed to unlink temporary file %s errno %d\n", template, errno) ;
+    if (errno) die ("failed to remove temporary file %s errno %d\n", template, errno) ;
   }
   fprintf (vf->f, "A 1 3 6 STRING 3 INT 3 INT         first line: 3-letter type, major, minor version\n") ;
   fprintf (vf->f, "A 2 1 6 STRING                     subtype: 3-letter subtype\n") ;
@@ -289,6 +297,26 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   oneSchemaDestroy (vsDef) ; // no longer need this, and can destroy because unlinked from vs0
   
   return vs0 ;
+}
+
+OneSchema *oneSchemaCreateFromText (char *text) // write to temp file and call CreateFromFile()
+{
+  static char template[64] ;
+  sprintf (template, "/tmp/OneTextSchema-%d.def", getpid()) ;
+
+  errno = 0 ;
+  FILE *f = fopen (template, "w") ;
+  fprintf (f, "%s\n", text) ;
+  fclose (f) ;
+  if (errno) die ("failed to write temporary file %s errno %d\n", template, errno) ;
+
+  OneSchema *vs = oneSchemaCreateFromFile (template) ;
+
+  errno = 0 ;
+  unlink (template) ;  // delete temporary file - not ideal: will remain if schemaCreate crashes
+  if (errno) die ("failed to remove temporary file %s errno %d\n", template, errno) ;
+
+  return vs ;
 }
 
 void oneSchemaDestroy (OneSchema *vs)
@@ -1099,7 +1127,13 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
             break;
           }
 
-        case '#':
+	case '.': // blank line for spacing, ignore
+	  break ;
+
+	case '~': // schema definition line
+	  break ;
+
+        case '#': // count information
         case '@':
         case '+':
         case '%':
@@ -1165,12 +1199,6 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
           vf->info['>']->accum.count -= 1; // to avoid double counting
           oneAddDeferred (vf, oneString(vf));
           break;
-
-	case '.': // blank line for spacing, ignore
-	  break ;
-
-	case '~': // schema definition line - ignore for now
-	  break ;
 
         // Below here are binary file header types - requires given.count/given.max first
 

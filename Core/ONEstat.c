@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Apr 23 01:42 2020 (rd109)
+ * Last edited: Apr 28 10:58 2020 (rd109)
  *   * Dec 27 09:20 2019 (gene): style edits
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *
@@ -25,6 +25,7 @@ int main (int argc, char **argv)
   char      *fileType = 0 ;
   char      *outFileName = "-" ;
   BOOL       isHeader = FALSE, isUsage = FALSE ;
+  char      *schemaFileName = 0 ;
   
   timeUpdate (0) ;
 
@@ -32,8 +33,9 @@ int main (int argc, char **argv)
 
   --argc ; ++argv ;		/* drop the program name */
   if (argc == 0)
-    { fprintf (stderr, "ONEstat [options] schema file\n") ;
+    { fprintf (stderr, "ONEstat [options] onefile\n") ;
       fprintf (stderr, "  -t --type <abc>         file type, e.g. seq - required if no header\n") ;
+      fprintf (stderr, "  -S --schema <schema>    schema file - currently required\n") ;
       fprintf (stderr, "  -H --header             output header accumulated from data\n") ;
       fprintf (stderr, "  -o --output <filename>  output to filename\n") ;
       fprintf (stderr, "  -u --usage              byte usage per line type; no other output\n") ;
@@ -53,22 +55,27 @@ int main (int argc, char **argv)
       { fileType = argv[1] ;
 	argc -= 2 ; argv += 2 ;
       }
+    else if (argc > 1 && (!strcmp (*argv, "-S") || !strcmp (*argv, "--schema")))
+      { schemaFileName = argv[1] ;
+	argc -= 2 ; argv += 2 ;
+      }
     else if (argc > 1 && (!strcmp (*argv, "-o") || !strcmp (*argv, "--output")))
       { outFileName = argv[1] ;
 	argc -= 2 ; argv += 2 ;
       }
     else die ("unknown option %s - run without arguments to see options", *argv) ;
   
-  if (argc != 2)
-    die ("need to give a schema file and a single data file as arguments") ;
+  if (argc != 1)
+    die ("need to give a single data file as argument") ;
 
   //  Open subject file for reading and read header (if present)
-  OneSchema *vs = oneSchemaCreateFromFile (argv[0]) ;
-  if (!vs) die ("failed to read schema file %s", argv[0]) ;
-  OneFile *vf = oneFileOpenRead (argv[1], vs, fileType, 1) ;
-  if (!vf) die ("failed to open onecode file %s", argv[1]) ;
-  vf->isCheckString = TRUE ;
+  if (!schemaFileName) die ("for now you must give a schema file with the -S argument") ;
+  OneSchema *vs = oneSchemaCreateFromFile (schemaFileName) ;
+  if (!vs) die ("failed to read schema file %s", schemaFileName) ;
+  OneFile *vf = oneFileOpenRead (argv[0], vs, fileType, 1) ;
+  if (!vf) die ("failed to open onecode file %s", argv[0]) ;
   oneSchemaDestroy (vs) ; // no longer needed
+  vf->isCheckString = TRUE ;
 
   if (vf->line == 1)
     fprintf (stderr, "header missing\n") ;
@@ -123,7 +130,7 @@ int main (int argc, char **argv)
       }
       
       fprintf (stderr, "read %lld objects in %lld lines from ONE file %s type %s\n",
-	       vf->object, vf->line, *argv, vf->fileType) ;
+	       vf->object, vf->line, argv[0], vf->fileType) ;
 
       oneFinalizeCounts (vf) ;
     
