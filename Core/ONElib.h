@@ -283,7 +283,7 @@ char *oneReadComment (OneFile *vf);
 
 OneFile *oneFileOpenWriteNew (const char *path, OneSchema *schema, char *type,
 			      BOOL isBinary, int nthreads);
-OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, BOOL useAccum, 
+OneFile *oneFileOpenWriteFrom (const char *path, OneSchema *schema, OneFile *vfIn, BOOL useAccum, 
 			       BOOL isBinary, int nthreads);
 
   // Create a new oneFile that will be written to 'path'.  For the 'New' variant supply
