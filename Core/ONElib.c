@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May  3 09:39 2020 (rd109)
+ * Last edited: May  3 10:12 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -329,6 +329,19 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   return vs0 ;
 }
 
+static char *schemaFixNewlines (const char *text)
+{ // replace literal "\n" by '\n' chars in text
+  char *newText = strdup (text) ;
+  char *s = newText, *t = s ;
+  while (*s)
+    if (*s == '\\' && s[1] == 'n')
+      { *t++ = '\n' ; s += 2 ; }
+    else
+      *t++ = *s++ ;
+  *t = 0 ;
+  return newText ;
+}
+  
 OneSchema *oneSchemaCreateFromText (char *text) // write to temp file and call CreateFromFile()
 {
   static char template[64] ;
@@ -336,7 +349,9 @@ OneSchema *oneSchemaCreateFromText (char *text) // write to temp file and call C
 
   errno = 0 ;
   FILE *f = fopen (template, "w") ;
-  fprintf (f, "%s\n", text) ;
+  char *fixedText = schemaFixNewlines (text) ;
+  fprintf (f, "%s\n", fixedText) ;
+  free (fixedText) ;
   fclose (f) ;
   if (errno) die ("failed to write temporary file %s errno %d\n", template, errno) ;
 
@@ -1583,14 +1598,9 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
 
 BOOL oneFileCheckSchema (OneFile *vf, char *textSchema)
 {
-  // first replace literal "\n" by '\n' chars in text
-  char *s = textSchema ;
-  while (*s)
-    { if (*s == '\\' && s[1] == 'n') {*s = ' ' ; *++s = '\n' ; }
-      ++s ;
-    }
-  
-  OneSchema *vs = oneSchemaCreateFromText (textSchema) ;
+  char * fixedText = schemaFixNewlines (textSchema) ;
+  OneSchema *vs = oneSchemaCreateFromText (fixedText) ;
+  free (fixedText) ;
   OneSchema *vs0 = vs ; // need to keep the root to destroy the full schema
 
   if (vs->nxt) // the textSchema contained at least one 'P' line to define a file type

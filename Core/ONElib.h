@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May  3 08:38 2020 (rd109)
+ * Last edited: May  3 10:03 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -202,7 +202,6 @@ OneSchema *oneSchemaCreateFromText (char *text) ;
   //     the objects in this file type.
   //   <field_list> is a list of field types from:
   //      CHAR, INT, REAL, STRING, INT_LIST, REAL_LIST, STRING_LIST, DNA
-  //   
   //   By convention comments on each line explain the definition.  
   //   Example, with lists and strings preceded by their length in OneCode style
   //      P 3 seq                            this is a sequence file
@@ -211,7 +210,7 @@ OneSchema *oneSchemaCreateFromText (char *text) ;
   //      C N 4 4 REAL 4 REAL 4 REAL 4 REAL  signal to noise ratio in A, C, G, T channels
   //      D g 2 3 INT 6 STRING               group designator: number of objects, name
   // The ...FromText() alternative writes the text to a temp file and reads it with 
-  //   oneSchemaCreateFromfile(). This allows code to set the schema.
+  //   oneSchemaCreateFromFile(). This allows code to set the schema.
   // Internally a schema is a linked list of OneSchema objects, with the first holding
   //   the (hard-coded) schema for the header and footer, and the remainder each 
   //   corresponding to one primary file type.
@@ -240,7 +239,7 @@ BOOL oneFileCheckSchema (OneFile *vf, char *textSchema) ; // EXPERIMENTAL
 
   // Checks if file schema is consistent with text schema.  Mismatches are reported to stderr.
   // Filetype and all linetypes in text must match.  File schema can contain additional linetypes.
-  // e.g. if (! oneFileCheckSchema (vf, "P 3 seq\nC S 1 3 DNA\nC Q 1 6 STRING\nL P 0\n")) die () ;
+  // e.g. if (! oneFileCheckSchema (vf, "P 3 seq\nD S 1 3 DNA\nD Q 1 6 STRING\nD P 0\n")) die () ;
   // This is provided to enable a program to ensure that its assumptions about data layout
   // are satisfied.
 
