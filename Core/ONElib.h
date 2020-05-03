@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May  1 17:16 2020 (rd109)
+ * Last edited: May  3 08:38 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -30,7 +30,7 @@
 // Basic Types
 #ifndef TRUE  // this is an inexact test for whether BOOL, I64 and U8 are typedef'd
 
-#define TRUE 1
+#define TRUE  1
 #define FALSE 0
 typedef char          BOOL;
 typedef int64_t       I64;
@@ -40,8 +40,10 @@ static const I64 I64MAX = 0x7fffffffffffffffll;
 
 #endif // TRUE
 
-typedef enum { vINT = 1, vREAL, vCHAR, vSTRING, vINT_LIST, vREAL_LIST, vSTRING_LIST, vDNA } OneType;
-static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING", "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
+typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING,
+	       oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
+static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING",
+				 "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
 
 typedef union
   { I64    i;
@@ -116,15 +118,13 @@ typedef struct
 
 typedef struct OneSchema
   {
-    char              primary[4] ;
-    int               nSecondary ;
-    char            **secondary ;
-    OneInfo          *info[128] ;
-    int               nFieldMax ;
-    char              objectType ;
-    char              groupType ;
-    int               nBinary ;  // number of line types which allow binary encoding
-    int               nBinaryHeader ; // need to start counting nBinary from here
+    char       primary[4] ;
+    int        nSecondary ;
+    char     **secondary ;
+    OneInfo   *info[128] ;
+    int        nFieldMax ;
+    char       objectType ;
+    char       groupType ;
     struct OneSchema *nxt ;
   } OneSchema ;
 
@@ -195,22 +195,22 @@ OneSchema *oneSchemaCreateFromText (char *text) ;
   //   a set of objects, one per primary file type.  Valid lines in this file are:
   //      P <primary file type>   // a string of length 3
   //      S <secondary file type> // a string of length 3 - any number of these
-  //      L <char> <field_list>   // definition of uncompressed line
-  //      F <char> <field_list>   // definition of line for which fields are compressed
-  //      C <char> <field_list>   // definition of line for which list is compressed
-  //      B <char> <field_list>   // definition of line for which fields and list are compressed
+  //      D <char> <field_list>   // definition of line with uncompressed fields
+  //      C <char> <field_list>   // definition of line with compressed fields
   //   <char> must be a lower or upper case letter.  Maximum one lower case letter 
   //     determines the group type. The first upper case letter definition determines 
   //     the objects in this file type.
   //   <field_list> is a list of field types from:
   //      CHAR, INT, REAL, STRING, INT_LIST, REAL_LIST, STRING_LIST, DNA
+  //   
   //   By convention comments on each line explain the definition.  
   //   Example, with lists and strings preceded by their length in OneCode style
-  //      P 3 seq             this is a sequence file
-  //      S 1 3 DNA           the DNA sequence
-  //      Q 1 6 STRING        the phred encoded quality score + ASCII 33
-  //      g 2 3 INT 6 STRING  group designator, number of objects, name
-  // The FromText alternative writes the text to a temp file and reads it with 
+  //      P 3 seq                            this is a sequence file
+  //      D S 1 3 DNA                        the DNA sequence - each S line starts an object
+  //      D Q 1 6 STRING                     the phred encoded quality score + ASCII 33
+  //      C N 4 4 REAL 4 REAL 4 REAL 4 REAL  signal to noise ratio in A, C, G, T channels
+  //      D g 2 3 INT 6 STRING               group designator: number of objects, name
+  // The ...FromText() alternative writes the text to a temp file and reads it with 
   //   oneSchemaCreateFromfile(). This allows code to set the schema.
   // Internally a schema is a linked list of OneSchema objects, with the first holding
   //   the (hard-coded) schema for the header and footer, and the remainder each 
@@ -280,7 +280,7 @@ char *oneReadComment (OneFile *vf);
 
 OneFile *oneFileOpenWriteNew (const char *path, OneSchema *schema, char *type,
 			      BOOL isBinary, int nthreads);
-OneFile *oneFileOpenWriteFrom (const char *path, OneSchema *schema, OneFile *vfIn, BOOL useAccum, 
+OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, BOOL useAccum, 
 			       BOOL isBinary, int nthreads);
 
   // Create a new oneFile that will be written to 'path'.  For the 'New' variant supply
