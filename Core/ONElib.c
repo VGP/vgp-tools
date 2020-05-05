@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May  3 10:12 2020 (rd109)
+ * Last edited: May  5 12:38 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -368,7 +368,7 @@ static OneSchema *oneSchemaCreateDynamic (char *fileType, char *subType)
 { // this is clean, but it seems a bit wasteful to create a temp file
   char text[32] ;
   assert (fileType && strlen(fileType) == 3) ;
-  assert (!subType || strlen(subType) == 3) ;
+  assert (!subType || !*subType || strlen(subType) == 3) ;
   if (subType && *subType)
     sprintf (text, "P 3 %s\nS 3 %s\n", fileType, subType) ;
   else
