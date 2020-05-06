@@ -705,7 +705,7 @@ int main(int argc, char *argv[])
   { int   n, i;
     char *c;
 
-    n = -1;
+    n = 0;
     for (i = 1; i < argc; i++)
       n += strlen(argv[i])+1;
 

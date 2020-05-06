@@ -1768,7 +1768,7 @@ static void writeInfoSpec (OneFile *vf, char ci)
 {
   char c ;
   int i ;
-  OneInfo *vi = vf->info[ci] ;
+  OneInfo *vi = vf->info[(int) ci] ;
   
   if (vi->fieldCodec) c = 'C' ;
   else c = 'D' ;
