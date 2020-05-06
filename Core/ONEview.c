@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: Apr 23 03:13 2020 (rd109)
+ * Last edited: May  3 09:31 2020 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -61,7 +61,8 @@ int main (int argc, char **argv)
   I64 i ;
   char *fileType = 0 ;
   char *outFileName = "-" ;
-  BOOL isNoHeader = FALSE, isHeaderOnly = FALSE, isBinary = FALSE ;
+  char *schemaFileName = 0 ;
+  BOOL isNoHeader = FALSE, isHeaderOnly = FALSE, isBinary = FALSE, isVerbose = FALSE ;
   IndexList *objList = 0, *groupList = 0 ;
   
   timeUpdate (0) ;
@@ -70,14 +71,16 @@ int main (int argc, char **argv)
   --argc ; ++argv ;		/* drop the program name */
 
   if (!argc)
-    { fprintf (stderr, "ONEview [options] schemafile datafile\n") ;
+    { fprintf (stderr, "ONEview [options] onefile\n") ;
       fprintf (stderr, "  -t --type <abc>           file type, e.g. seq, aln - required if no header\n") ;
+      fprintf (stderr, "  -S --schema <schemafile>  schema file name\n") ;
       fprintf (stderr, "  -h --noHeader             skip the header in ascii output\n") ;
       fprintf (stderr, "  -H --headerOnly           only write the header (in ascii)\n") ;
       fprintf (stderr, "  -b --binary               write in binary (default is ascii)\n") ;
       fprintf (stderr, "  -o --output <filename>    output file name (default stdout)\n") ;
       fprintf (stderr, "  -i --index x[-y](,x[-y])* write specified objects\n") ;
       fprintf (stderr, "  -g --group x[-y](,x[-y])* write specified groups\n") ;
+      fprintf (stderr, "  -v --verbose              write commentary including timing\n") ;
       fprintf (stderr, "index and group only work for binary files; '-i 0-10' outputs first 10 objects\n") ;
       exit (0) ;
     }
@@ -87,12 +90,18 @@ int main (int argc, char **argv)
       { fileType = argv[1] ;
 	argc -= 2 ; argv += 2 ;
       }
+    else if (!strcmp (*argv, "-S") || !strcmp (*argv, "--schema"))
+      { schemaFileName = argv[1] ;
+	argc -= 2 ; argv += 2 ;
+      }
     else if (!strcmp (*argv, "-h") || !strcmp (*argv, "--header"))
       { isNoHeader = TRUE ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-H") || !strcmp (*argv, "--headerOnly"))
       { isHeaderOnly = TRUE ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-b") || !strcmp (*argv, "--binary"))
       { isBinary = TRUE ; --argc ; ++argv ; }
+    else if (!strcmp (*argv, "-v") || !strcmp (*argv, "--verbose"))
+      { isVerbose = TRUE ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-o") || !strcmp (*argv, "--output"))
       { outFileName = argv[1] ; argc -= 2 ; argv += 2 ; }
     else if (!strcmp (*argv, "-i") || !strcmp (*argv, "--index"))
@@ -104,20 +113,21 @@ int main (int argc, char **argv)
   if (isBinary) isNoHeader = FALSE ;
   if (isHeaderOnly) isBinary = FALSE ;
     
-  if (argc != 2)
-    die ("need to give a schema file and a single data file as arguments") ;
+  if (argc != 1)
+    die ("need a single data one-code file as argument") ;
 
-  OneSchema *vs = oneSchemaCreateFromFile (argv[0]) ;
-  if (!vs) die ("failed to read schema file %s", argv[0]) ;
-  OneFile *vfIn = oneFileOpenRead (argv[1], vs, fileType, 1) ; /* reads the header */
-  if (!vfIn) die ("failed to open one file %s", argv[1]) ;
+  OneSchema *vs = 0 ;
+  if (schemaFileName && !(vs = oneSchemaCreateFromFile (schemaFileName)))
+      die ("failed to read schema file %s", schemaFileName) ;
+  OneFile *vfIn = oneFileOpenRead (argv[0], vs, fileType, 1) ; /* reads the header */
+  if (!vfIn) die ("failed to open one file %s", argv[0]) ;
 
   if ((objList || groupList) && !vfIn->isBinary)
-    die ("%s is ascii - you can only access objects and groups by index in binary files", argv[1]) ;
+    die ("%s is ascii - you can only access objects and groups by index in binary files", argv[0]) ;
   
-  OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vs, vfIn, FALSE, isBinary, 1) ;
+  OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vfIn, FALSE, isBinary, 1) ;
   if (!vfOut) die ("failed to open output file %s", outFileName) ;
-  
+
   if (isHeaderOnly)
     oneWriteHeader (vfOut) ;
   else
@@ -166,7 +176,8 @@ int main (int argc, char **argv)
   oneSchemaDestroy (vs) ;
   
   free (command) ;
-  timeTotal (stderr) ;
+  if (isVerbose)
+    timeTotal (stderr) ;
 }
 
 /********************* end of file ***********************/

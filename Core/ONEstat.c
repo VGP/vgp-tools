@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Apr 23 01:42 2020 (rd109)
+ * Last edited: May  3 09:16 2020 (rd109)
  *   * Dec 27 09:20 2019 (gene): style edits
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *
@@ -24,7 +24,9 @@ int main (int argc, char **argv)
 { int        i ;
   char      *fileType = 0 ;
   char      *outFileName = "-" ;
-  BOOL       isHeader = FALSE, isUsage = FALSE ;
+  BOOL       isHeader = FALSE, isUsage = FALSE, isVerbose = FALSE ;
+  char      *schemaFileName = 0 ;
+  char      *checkText = 0 ;
   
   timeUpdate (0) ;
 
@@ -32,11 +34,14 @@ int main (int argc, char **argv)
 
   --argc ; ++argv ;		/* drop the program name */
   if (argc == 0)
-    { fprintf (stderr, "ONEstat [options] schema file\n") ;
-      fprintf (stderr, "  -t --type <abc>         file type, e.g. seq - required if no header\n") ;
-      fprintf (stderr, "  -H --header             output header accumulated from data\n") ;
-      fprintf (stderr, "  -o --output <filename>  output to filename\n") ;
-      fprintf (stderr, "  -u --usage              byte usage per line type; no other output\n") ;
+    { fprintf (stderr, "ONEstat [options] onefile\n") ;
+      fprintf (stderr, "  -t --type <abc>          file type, e.g. seq - required if no header\n") ;
+      fprintf (stderr, "  -S --schema <schema>     schema file - required if not in file\n") ;
+      fprintf (stderr, "  -C --check 'schematext'  check for a limited set of features\n") ;
+      fprintf (stderr, "  -H --header              output header accumulated from data\n") ;
+      fprintf (stderr, "  -o --output <filename>   output to filename\n") ;
+      fprintf (stderr, "  -u --usage               byte usage per line type; no other output\n") ;
+      fprintf (stderr, "  -v --verbose             else only errors and requested output\n") ;
       fprintf (stderr, "ONEstat aborts on a syntactic parse error with a message.\n") ;
       fprintf (stderr, "Otherwise information is written to stderr about any inconsistencies\n") ;
       fprintf (stderr, "between the header and the data in the body of the file.\n") ;
@@ -49,8 +54,18 @@ int main (int argc, char **argv)
       { isHeader = TRUE ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-u") || !strcmp (*argv, "--usage"))
       { isUsage = TRUE ; --argc ; ++argv ; }
+    else if (!strcmp (*argv, "-v") || !strcmp (*argv, "--verbose"))
+      { isVerbose = TRUE ; --argc ; ++argv ; }
     else if (argc > 1 && (!strcmp (*argv, "-t") || !strcmp (*argv, "--type")))
       { fileType = argv[1] ;
+	argc -= 2 ; argv += 2 ;
+      }
+    else if (argc > 1 && (!strcmp (*argv, "-S") || !strcmp (*argv, "--schema")))
+      { schemaFileName = argv[1] ;
+	argc -= 2 ; argv += 2 ;
+      }
+    else if (argc > 1 && (!strcmp (*argv, "-C") || !strcmp (*argv, "--check")))
+      { checkText = argv[1] ;
 	argc -= 2 ; argv += 2 ;
       }
     else if (argc > 1 && (!strcmp (*argv, "-o") || !strcmp (*argv, "--output")))
@@ -59,21 +74,30 @@ int main (int argc, char **argv)
       }
     else die ("unknown option %s - run without arguments to see options", *argv) ;
   
-  if (argc != 2)
-    die ("need to give a schema file and a single data file as arguments") ;
+  if (argc != 1)
+    die ("need to give a single data file as argument") ;
 
   //  Open subject file for reading and read header (if present)
-  OneSchema *vs = oneSchemaCreateFromFile (argv[0]) ;
-  if (!vs) die ("failed to read schema file %s", argv[0]) ;
-  OneFile *vf = oneFileOpenRead (argv[1], vs, fileType, 1) ;
-  if (!vf) die ("failed to open onecode file %s", argv[1]) ;
-  vf->isCheckString = TRUE ;
+  OneSchema *vs = 0 ;
+  if (schemaFileName)
+    { vs = oneSchemaCreateFromFile (schemaFileName) ;
+      if (!vs) die ("failed to read schema file %s", schemaFileName) ;
+    }
+  OneFile *vf = oneFileOpenRead (argv[0], vs, fileType, 1) ;
+  if (!vf) die ("failed to open OneFile %s", argv[0]) ;
   oneSchemaDestroy (vs) ; // no longer needed
 
-  if (vf->line == 1)
-    fprintf (stderr, "header missing\n") ;
-  else
-    fprintf (stderr, "read %lld header lines\n", vf->line) ;
+  if (isVerbose)
+    { if (vf->line == 1)
+	fprintf (stderr, "header missing\n") ;
+      else
+	fprintf (stderr, "read %lld header lines\n", vf->line) ;
+    }
+
+  if (checkText)
+    oneFileCheckSchema (vf, checkText) ;
+
+  vf->isCheckString = TRUE ;
 
   // if requesting usage, then 
 
@@ -121,9 +145,10 @@ int main (int argc, char **argv)
 	    fprintf (stderr, " but found %lld\n", vf->object-lastObj) ;
 	  }
       }
-      
-      fprintf (stderr, "read %lld objects in %lld lines from ONE file %s type %s\n",
-	       vf->object, vf->line, *argv, vf->fileType) ;
+
+      if (isVerbose)
+	fprintf (stderr, "read %lld objects in %lld lines from OneFile %s type %s\n",
+		 vf->object, vf->line, argv[0], vf->fileType) ;
 
       oneFinalizeCounts (vf) ;
     
@@ -152,14 +177,15 @@ int main (int argc, char **argv)
 	      CHECK(given.groupCount, accum.groupCount, "group count") ;
 	      CHECK(given.groupTotal, accum.groupTotal, "group total") ;
 	  }
-	fprintf (stderr, "expected %lld header content lines, of which %lld bad and %lld missing\n",
-		 nTotal, nBad, nMissing) ;
+	if (isVerbose || nBad || nMissing)
+	  fprintf (stderr, "expected %lld header content lines, of which %lld bad and %lld missing\n",
+		   nTotal, nBad, nMissing) ;
       }
 
   //  Write header if requested
 
       if (isHeader)
-	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vs, vf, TRUE, FALSE, 1) ;
+	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vf, TRUE, FALSE, 1) ;
 	  if (vfOut == NULL)
 	    die ("failed to open output file %s", outFileName) ;
   
@@ -171,7 +197,7 @@ int main (int argc, char **argv)
 
   oneFileClose (vf) ;
 
-  timeTotal (stderr) ;
+  if (isVerbose) timeTotal (stderr) ;
 
   exit (0) ;
 }
