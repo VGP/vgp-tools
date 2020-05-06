@@ -100,8 +100,6 @@ input file is assumed to contain the data produced by a single cell.
 
 ### <code>5. VGPcloud [-vH] [-t\<int(100)>] [-T\<int(4)>] \<pairs:.irp></code>
 
-*Still under development but operational*
-
 VGPcloud takes an .irp sequence file containing paired Illumina data produced with the
 10x Genomics read cloud technology.  As such the first 23bp of the forward reads consist
 of a 16bp barcode followed by a 7bp linker.  VGPcloud examines the bar codes and
