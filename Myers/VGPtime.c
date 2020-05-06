@@ -1152,6 +1152,80 @@ typedef struct
     uint8       *array;
   } Out_Arg;
 
+static void appropriate_codecs (VgpFile *vg, VgpFile *vf)
+{ int i, n;
+
+  n = vg->share;
+  if (n <= 0)
+    n = 1;
+  for (i = 0; i < n; i++)
+    { printf(" cB = %p(%lld)\n",vg->codecBuf,vg->codecBufSize);
+      vg->codecBuf     = vf->codecBuf;
+      vg->codecBufSize = vf->codecBufSize;
+      vg->lineInfo['S']->fieldCodec = vf->lineInfo['S']->fieldCodec;
+      vg->lineInfo['S']->isUseFieldCodec = TRUE;
+      vg->lineInfo['Q']->fieldCodec = vf->lineInfo['Q']->fieldCodec;
+      vg->lineInfo['Q']->isUseFieldCodec = TRUE;
+      vg->lineInfo['Q']->listCodec = vf->lineInfo['Q']->listCodec;
+      vg->lineInfo['Q']->isUseListCodec = TRUE;
+      vg += 1;
+    }
+
+  n = vf->share;
+  if (n <= 0)
+    n = 1;
+  for (i = 0; i < n; i++)
+    { vf->codecBuf     = NULL;
+      vf->lineInfo['S']->fieldCodec = NULL;
+      vf->lineInfo['Q']->fieldCodec = NULL;
+      vf->lineInfo['Q']->listCodec = NULL;
+      vf += 1;
+    }
+}
+
+static void write_raw_seq (VgpFile *vf, I64 listLen, void *listBuf, LineInfo *li, LineInfo *lx)
+{ U8  x, cBits;
+  I64 fieldSize, nBits;
+
+  li->accum.count += 1;
+  li->accum.total += listLen;
+  if (listLen > li->accum.max)
+    li->accum.max = listLen;
+
+  ((I64 *) lx->buffer)[vf->object] = vf->byte;
+  vf->object += 1;
+
+  x = li->binaryTypePack | 0x02;   //  Binary line code + compression flags
+  vf->field[0].len = listLen;
+  fieldSize = sizeof(Field);
+
+  nBits = vcEncode (li->fieldCodec, fieldSize, (char *) vf->field, vf->codecBuf);
+  if (nBits < 256)
+    { x |= 0x01;
+      cBits = nBits;
+
+      fputc (x, vf->f);
+      fputc (cBits,vf->f) ;
+      if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
+        die("VGP write error: fail to write compressed fields");
+      vf->byte += 2 + ((nBits+7) >> 3);
+    }
+  else
+    { fputc (x, vf->f);
+      if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
+        die ("VGP write error: write fields: t S, nField 1, fieldSize %lld",fieldSize);
+      vf->byte += 1 + fieldSize;
+    }
+
+  nBits = 2*listLen;
+  if (fwrite (&nBits, sizeof(I64), 1, vf->f) != 1)
+    die ("VGP write error: failed to write list nBits");
+  nBits = (nBits+7) >> 3;
+  if (fwrite (listBuf, nBits, 1, vf->f) != 1)
+    die ("VGP write error: failed to write compressed list");
+  vf->byte += sizeof(I64) + nBits;
+}
+
 static void *output_thread(void *arg)
 { Out_Arg  *parm   = (Out_Arg *) arg;
   VgpFile  *vg     = parm->vg;
@@ -1200,30 +1274,41 @@ static void *output_thread(void *arg)
   else
     last = *((uint32 *) (aptr-reclen));
 
+printf("Start\n");
+
   for (i = beg; i < end; i++)
     { code = *((uint32 *) aptr);
 
-      aptr = Uncompress_SEQ(aptr,forw,flen);
+if (i%1000 == 0)
+  printf(" %d\n",i);
+
+      forw  = (char *) aptr;
+      aptr += ((flen+7)>>3);
+      // aptr = Uncompress_SEQ(aptr,forw,flen);
       aptr = Uncompress_QV(aptr,flen,fqvs,qbits,qmask,inv);
-      aptr = Uncompress_SEQ(aptr,revr,rlen);
+      revr  = (char *) aptr;
+      aptr += ((rlen+7)>>3);
+      // aptr = Uncompress_SEQ(aptr,revr,rlen);
       aptr = Uncompress_QV(aptr,rlen,rqvs,qbits,qmask,inv);
 
       if (code != last)
-        { vgpInt(vg,0) = 0;
-          vgpInt(vg,1) = 16;
-          vgpWriteLine(vg,'g',16,forw);
+        { // vgpInt(vg,0) = 0;
+          // vgpInt(vg,1) = 16;
+          // vgpWriteLine(vg,'g',16,forw);
           last = code;
         }
 
-      vgpWriteLine(vg,'P',0,NULL);
+      // vgpWriteLine(vg,'P',0,NULL);
 
-      vgpInt(vg,0) = flen-23;
-      vgpWriteLine(vg,'S',flen-23,forw+23);
-      vgpWriteLine(vg,'Q',flen-23,fqvs+23);
+      write_raw_seq (vg, flen, forw, ls, lx);
+      // vgpInt(vg,0) = flen-23;
+      // vgpWriteLine(vg,'S',flen-23,forw+23);
+      // vgpWriteLine(vg,'Q',flen-23,fqvs+23);
 
-      vgpInt(vg,0) = rlen;
-      vgpWriteLine(vg,'S',rlen,revr);
-      vgpWriteLine(vg,'Q',rlen,rqvs);
+      write_raw_seq (vg, rlen, revr, ls, lx);
+      // vgpInt(vg,0) = rlen;
+      // vgpWriteLine(vg,'S',rlen,revr);
+      // vgpWriteLine(vg,'Q',rlen,rqvs);
     }
 
   free(data);
@@ -1827,6 +1912,8 @@ int main(int argc, char *argv[])
       vgpAddProvenance(vg,"VGPcloud","1.0",command,NULL);
 
       vgpWriteHeader(vg);
+
+      appropriate_codecs(vg,vf);
 
       vgpFileClose(vf);
 

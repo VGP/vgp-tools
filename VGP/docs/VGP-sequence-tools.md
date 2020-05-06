@@ -98,23 +98,22 @@ The -a option asks VGPpacbio to  output the arrow information in N- and A-lines 
 the default is to not output this information.  The -q option asks VGPpacbio to out Phred quality string in Q-lines, the default is to not output this information.  Please note that -q only really makes sense for HiFi data.  The reads are grouped into SMRT cells where each
 input file is assumed to contain the data produced by a single cell.
 
-### <code>5. VGPcloud [-v] [-P\<dir(/tmp)>] [-T\<int(4)>] \<pairs:.irp></code>
+### <code>5. VGPcloud [-vH] [-t\<int(100)>] [-T\<int(4)>] \<pairs:.irp></code>
 
 *Still under development but operational*
 
-VGPcloud takes pair of .seq files containing paired Illumina data produced with the
-10x Genomics read cloud technology.  As such the first 23bp of the forward reads are assumed
-to consist of a 16bp barcode followed by a 7bp linker.  VGPcloud examines the bar codes and
-considers valid any that occur in sufficient number and do not contain a low quality base or
-'N'.  It then corrects any bar code that has one difference from a unique valid code.  Those
-read pairs with valid or corrected bar codes are then sortedd
-according to their barcodes in the subdirectory given by the -P option (/tmp
-by default).  It then groups the pairs by barcode and outputs them as an .10x file to the
-standard output after trimming off the first 23bp of the forward read.
-
-The -v option asks VGPcloud to output information on its progress to the standard error output.
-The sorts of VGPcloud are threaded and the -T option specifies how many threads to use (4 by
-default).
+VGPcloud takes an .irp sequence file containing paired Illumina data produced with the
+10x Genomics read cloud technology.  As such the first 23bp of the forward reads consist
+of a 16bp barcode followed by a 7bp linker.  VGPcloud examines the bar codes and
+considers **valid** any that occur 100 or more times.  This threshold can be reset by -t and to
+help you choose a threshold, the -H option outputs a histogram of barcode frequencies.
+Any bar code that has one difference from a unique valid code is corrected to that valid code.  Those
+read pairs with valid bar codes are then sorted
+and output into a compressed, binary .10x sequence file, grouped according to
+their barcordes which have been removed from the forward sequences along with the linker.
+If the input .irp has name \<X>.irp, then VGPcloud creates and places its output in a
+file called \<X>.10x.  The -v option asks VGPcloud to output information on its progress to the standard error output.  All the steps of VGPcloud are threaded and the -T option specifies how many threads
+to use (4 by default).
 
 ### <code>6. Dazz2pbr [-vagu] [-T\<int(4)\>] \<dazzler:.db\></code>
 

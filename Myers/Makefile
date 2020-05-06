@@ -2,7 +2,7 @@ DEST_DIR = ~/bin
 
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe VGPc2 VGPcold
+ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe VGPtime
 
 all: deflate.lib libhts.a $(ALL)
 
@@ -42,14 +42,11 @@ Dazz2pbr: Dazz2pbr.c $(VGP_DPND) $(GENE_DPND)
 Dazz2sxs: Dazz2sxs.c $(VGP_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o Dazz2sxs Dazz2sxs.c $(VGP_LIB) $(GENE_CORE) -lpthread
 
-VGPcloud: VGPcloud.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(VGP_DPND) $(GENE_DPND)
-	gcc $(CFLAGS) -o VGPcloud VGPcloud.c lsd.sort.c exsort.c $(VGP_LIB) $(GENE_CORE) -lpthread
+VGPcloud: VGPcloud.c msd.sort.c msd.sort.h $(VGP_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPcloud VGPcloud.c msd.sort.c $(VGP_LIB) $(GENE_CORE) -lpthread
 
-VGPc2: VGPc2.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(VGP_DPND) $(GENE_DPND)
-	gcc $(CFLAGS) -o VGPc2 VGPc2.c lsd.sort.c exsort.c $(VGP_LIB) $(GENE_CORE) -lpthread
-
-VGPcold: VGPcold.c lsd.sort.c lsd.sort.h exsort.c exsort.h $(GENE_DPND)
-	gcc $(CFLAGS) -o VGPcold VGPcold.c lsd.sort.c exsort.c $(GENE_CORE) -lpthread
+VGPtime: VGPtime.c msd.sort.c msd.sort.h $(VGP_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPtime VGPtime.c msd.sort.c $(VGP_LIB) $(GENE_CORE) -lpthread
 
 tidyup:
 	rm -f $(ALL)

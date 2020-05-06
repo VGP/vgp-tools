@@ -11,16 +11,16 @@
 #include <pthread.h>
 
 #include "gene_core.h"
-#include "lsd.sort.h"
-#include "exsort.h"
+#include "msd.sort.h"
 #include "../Core/VGPlib.h"
+#include "compression.h"
 
 #undef DEBUG
 
 int    VERBOSE;        //  Verbose mode?
 int    NTHREADS;       //  # of threads to use for parallized sorts
-int    HISTOGRAM;      //  Histogram barcode counts
-int    VALID;          //  Threshold above which barcode is considered valid
+int    HISTOGRAM;      //  Histogram bar-code counts
+int    VALID;          //  Threshold above which bar-code is considered valid
 
 static char *Usage = "[-vH] [-t<int(100)>] [-T<int(4)>] <clouds:irp>";
 
@@ -33,60 +33,72 @@ static uint8 bit[8] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
  *
  *****************************************************************************************/
 
-static void Compress_QV(int len, uint8 *qvec, int qbits, uint8 *map)
-{ uint8 *buf, x;
+static uint8 *Compress_QV(uint8 *trg, int len, uint8 *qvec, int qbits, uint8 *map)
+{ uint8  x;
   int    i, rem;
 
   if (qbits == 8)
-    return;
+    { memcpy(trg,qvec,len);
+      return (trg+len);
+    }
 
-  buf = qvec;
-  *buf = map[qvec[0]];
+  *trg = map[qvec[0]];
   rem = qbits;
   for (i = 1; i < len; i++)
     { x = map[qvec[i]];
-      *buf |= (x << rem);
+      *trg |= (x << rem);
       rem += qbits;
       if (rem >= 8)
         { rem -= 8;
           if (rem > 0)
-            *++buf = (x >> (qbits-rem));
+            *++trg = (x >> (qbits-rem));
           else
-            *++buf = 0;
+            *++trg = 0;
         }
     }
+  if (rem == 0)
+    return (trg);
+  else
+    return (trg+1);
 }
 
-static void Uncompress_QV(int len, uint8 *qvec, int qbits, uint8 qmask, uint8 *inv)
-{ uint8 *buf, x, v, bmask;
+static uint8 *Uncompress_QV(uint8 *src, int len, char *qvec, int qbits, uint8 qmask, uint8 *inv)
+{ uint8  x, v;
   int    i, rem;
 
-  bmask = (1 << qbits) - 1;
-  buf = qvec + (len*qbits-1)/8;
-  rem = (len*qbits-1) % 8 + 1;
-  x   = *buf--;
-  for (i = len-1; i >= 0; i--)
-    { rem -= qbits;
-      if (rem < 0)
-        { v = (x << (-rem)) & qmask;
-          rem += 8;
-          x = *buf--;
-          v |= (x >> rem);
-          qvec[i] = inv[v];
-        }
-      else
-        { v = (x >> rem) & qmask;
-          qvec[i] = inv[v];
-        }
+  if (qbits == 8)
+    { memcpy(qvec,src,len);
+      return (src+len);
     }
+
+  x = *src;
+  rem = 0;
+  for (i = 0; i < len; i++)
+    { v = x & qmask;
+      x >>= qbits;
+      rem += qbits;
+      if (rem >= 8)
+        { rem -= 8;
+          x = *++src;
+          if (rem > 0)
+            { v |= (x << (qbits-rem)) & qmask;
+              x >>= rem;
+            }
+        }
+      qvec[i] = inv[v];
+    }
+  if (rem == 0)
+    return (src);
+  else
+    return (src+1);
 }
 
   //  Uncompress read from 2-bits per base into [0-3] per byte representation
 
 static char Base[4] = { 'a', 'c', 'g', 't' };
 
-static void Uncompress_SEQ(char *s, int len)
-{ int   i, byte;
+static uint8 *Uncompress_SEQ(uint8 *src, char *s, int len)
+{ int   i, tlen, byte;
   char *t0, *t1, *t2, *t3;
 
   t0 = s;
@@ -94,37 +106,36 @@ static void Uncompress_SEQ(char *s, int len)
   t2 = t1+1;
   t3 = t2+1;
 
-  i  = len/4;
-  s += i;
-  i = 4*i;
-  switch (len-i)
-  { case 3:
-      byte = *s--;
-      t0[i] = Base[(byte >> 6) & 0x3];
-      t1[i] = Base[(byte >> 4) & 0x3];
-      t2[i] = Base[(byte >> 2) & 0x3];
-      break;
-    case 2:
-      byte = *s--;
-      t0[i] = Base[(byte >> 6) & 0x3];
-      t1[i] = Base[(byte >> 4) & 0x3];
-      break;
-    case 1:
-      byte = *s--;
-      t0[i] = Base[(byte >> 6) & 0x3];
-      break;
-    default:
-      s -= 1;
-      break;
-  }
-
-  for ( ; i > 0; i -= 4)
-    { byte = *s--;
+  tlen = len-3;
+  for (i = 0; i < tlen; i += 4)
+    { byte = *src++;
       t0[i] = Base[(byte >> 6) & 0x3];
       t1[i] = Base[(byte >> 4) & 0x3];
       t2[i] = Base[(byte >> 2) & 0x3];
       t3[i] = Base[byte & 0x3];
     }
+
+  switch (i-tlen)
+  { case 0:
+      byte = *src++;
+      t0[i] = Base[(byte >> 6) & 0x3];
+      t1[i] = Base[(byte >> 4) & 0x3];
+      t2[i] = Base[(byte >> 2) & 0x3];
+      break;
+    case 1:
+      byte = *src++;
+      t0[i] = Base[(byte >> 6) & 0x3];
+      t1[i] = Base[(byte >> 4) & 0x3];
+      break;
+    case 2:
+      byte = *src++;
+      t0[i] = Base[(byte >> 6) & 0x3];
+      break;
+    default:
+      break;
+  }
+
+  return (src);
 }
 
 
@@ -349,7 +360,7 @@ static void *barcodes_thread(void *arg)
  *
  *  Threaded LSD radix sort and unique+count compression:
  *    Each thread sorts codes[beg..end) and then compacts to unique codes adjusting end.
- *    If count > 255 then multiple entries summing to count so that # of barcodes with
+ *    If count > 255 then multiple entries summing to count so that # of bar-codes with
  *    a given code is preserved.
  *
  *****************************************************************************************/
@@ -931,7 +942,7 @@ static void *fix_thread(void *arg)
 
 /****************************************************************************************
  *
- *  Threads to count first byte of all correctable codes
+ *  Threads to count first byte frequencies of all valid & correctable codes
  *
  *****************************************************************************************/
 
@@ -939,36 +950,42 @@ static uint32 off[64] = { 0xfffffffc, 0xfffffffc, 0xfffffffc, 0xfffffffc,
                           0xfffffff3, 0xfffffff3, 0xfffffff3, 0xfffffff3,
                           0xffffffcf, 0xffffffcf, 0xffffffcf, 0xffffffcf, 
                           0xffffff3f, 0xffffff3f, 0xffffff3f, 0xffffff3f, 
+
                           0xfffffcff, 0xfffffcff, 0xfffffcff, 0xfffffcff, 
                           0xfffff3ff, 0xfffff3ff, 0xfffff3ff, 0xfffff3ff, 
                           0xffffcfff, 0xffffcfff, 0xffffcfff, 0xffffcfff, 
                           0xffff3fff, 0xffff3fff, 0xffff3fff, 0xffff3fff, 
+
                           0xfffcffff, 0xfffcffff, 0xfffcffff, 0xfffcffff,
                           0xfff3ffff, 0xfff3ffff, 0xfff3ffff, 0xfff3ffff,
                           0xffcfffff, 0xffcfffff, 0xffcfffff, 0xffcfffff, 
                           0xff3fffff, 0xff3fffff, 0xff3fffff, 0xff3fffff, 
+
                           0xfcffffff, 0xfcffffff, 0xfcffffff, 0xfcffffff, 
                           0xf3ffffff, 0xf3ffffff, 0xf3ffffff, 0xf3ffffff, 
                           0xcfffffff, 0xcfffffff, 0xcfffffff, 0xcfffffff, 
 			  0x3fffffff, 0x3fffffff, 0x3fffffff, 0x3fffffff
                         };
 
-static uint32 sym[64] = { 0x00000000, 0x000000001, 0x000000002, 0x000000003,
-                          0x00000000, 0x000000004, 0x000000008, 0x00000000c,
-                          0x00000000, 0x000000010, 0x000000020, 0x000000030,
-                          0x00000000, 0x000000040, 0x000000080, 0x0000000c0,
-                          0x00000000, 0x000000100, 0x000000200, 0x000000300,
-                          0x00000000, 0x000000400, 0x000000800, 0x000000c00,
-                          0x00000000, 0x000001000, 0x000002000, 0x000003000,
-                          0x00000000, 0x000004000, 0x000008000, 0x00000c000,
-                          0x00000000, 0x000010000, 0x000020000, 0x000030000,
-                          0x00000000, 0x000040000, 0x000080000, 0x0000c0000,
-                          0x00000000, 0x000100000, 0x000200000, 0x000300000,
-                          0x00000000, 0x000400000, 0x000800000, 0x000c00000,
-                          0x00000000, 0x001000000, 0x002000000, 0x003000000,
-                          0x00000000, 0x004000000, 0x008000000, 0x00c000000,
-                          0x00000000, 0x010000000, 0x020000000, 0x030000000,
-                          0x00000000, 0x040000000, 0x080000000, 0x0c0000000
+static uint32 sym[64] = { 0x00000000, 0x00000001, 0x00000002, 0x00000003,
+                          0x00000000, 0x00000004, 0x00000008, 0x0000000c,
+                          0x00000000, 0x00000010, 0x00000020, 0x00000030,
+                          0x00000000, 0x00000040, 0x00000080, 0x000000c0,
+
+                          0x00000000, 0x00000100, 0x00000200, 0x00000300,
+                          0x00000000, 0x00000400, 0x00000800, 0x00000c00,
+                          0x00000000, 0x00001000, 0x00002000, 0x00003000,
+                          0x00000000, 0x00004000, 0x00008000, 0x0000c000,
+
+                          0x00000000, 0x00010000, 0x00020000, 0x00030000,
+                          0x00000000, 0x00040000, 0x00080000, 0x000c0000,
+                          0x00000000, 0x00100000, 0x00200000, 0x00300000,
+                          0x00000000, 0x00400000, 0x00800000, 0x00c00000,
+
+                          0x00000000, 0x01000000, 0x02000000, 0x03000000,
+                          0x00000000, 0x04000000, 0x08000000, 0x0c000000,
+                          0x00000000, 0x10000000, 0x20000000, 0x30000000,
+			  0x00000000, 0x40000000, 0x80000000, 0xc0000000
                         };
 
 static void *bucket_thread(void *arg)
@@ -992,25 +1009,25 @@ static void *bucket_thread(void *arg)
     { v = codes[i];
       x = ctype[v];
       t = (x & 0xc0);
-// printf("v = %08x(%d)  x = %02x",v,count[i],x); 
       if (t == 0x80)
         { p = (x & 0x3f);
-// printf(" p = %x",p);
+#if __ORDER_LITTLE_ENDIAN__ == __BYTE_ORDER__
+          if (p < 16)
+            v = (v & off[p]) | sym[p];
+          bucks[v&0xff] += count[i];
+#else
           if (p >= 48)
-            { v &= off[p];
-              if ((x & 0x3) != 0x00)
-                v |= sym[p];
-// printf(" v' = %08x",v);
-            }
-// printf(" b[%d] += %d",v>>24,count[i]);
+            v = (v & off[p]) | sym[p];
           bucks[v>>24] += count[i];
+#endif
           nrepair += count[i];
         }
       else if (t == 0x40)
-        { bucks[v>>24] += count[i];
-// printf(" b[%d] += %d",v>>24,count[i]);
-        }
-// printf("\n");
+#if __ORDER_LITTLE_ENDIAN__ == __BYTE_ORDER__
+        bucks[v&0xff] += count[i];
+#else
+        bucks[v>>24] += count[i];
+#endif
     }
 
   parm->nrepair = nrepair;
@@ -1049,9 +1066,7 @@ static void *load_thread(void *arg)
   int       flen  = parm->flen;
   int       rlen  = parm->rlen;
   int       fclen = parm->fclen;
-  int       fqlen = parm->fqlen;
   int       rclen = parm->rclen;
-  int       rqlen = parm->rqlen;
   uint8    *array = parm->array;
   int64    *bptr  = parm->bptr;
 
@@ -1068,7 +1083,8 @@ static void *load_thread(void *arg)
 
   vgpGotoObject(vf,beg);
 
-  for (o = beg; o < end; o += 2)
+  o = beg;
+  while (1)
     { read_raw_seq(vf);
 
       bar = *dcode;
@@ -1081,12 +1097,12 @@ static void *load_thread(void *arg)
           c = 0x40;
         }
       if (c != 0x40)
-        { vgpGotoObject(vf,o+2);
+        { o += 2;
+          if (o >= end)
+            break;
+          vgpGotoObject(vf,o);
           continue;
         }
-
-if (beg == 0 && o%2000000 == 0)
-  printf("o = %lldM\n",(o/2000000)*NTHREADS);
 
       byte = *bcode;
       aptr = array + bptr[byte];
@@ -1095,25 +1111,122 @@ if (beg == 0 && o%2000000 == 0)
       aptr += fclen;
 
       vgpReadLine(vf);
-      Compress_QV(flen,fqvs,qbits,map);
-      memcpy(aptr,fqvs,fqlen);
-      aptr += fqlen;
+      aptr = Compress_QV(aptr,flen,fqvs,qbits,map);
 
       read_raw_seq(vf);
       memcpy(aptr,bcode,rclen);
       aptr += rclen;
 
       vgpReadLine(vf);
-      Compress_QV(rlen,fqvs,qbits,map);
-      memcpy(aptr,fqvs,rqlen);
-      aptr += rqlen;
+      aptr = Compress_QV(aptr,rlen,fqvs,qbits,map);
+
+      bptr[byte] = aptr - array;
+
+      o += 2;
+      if (o >= end)
+        break;
 
       t = vgpReadLine(vf);
       if (t == 'g')
-        t = vgpReadLine(vf);
-
-      bptr[byte] = aptr - array;
+        vgpReadLine(vf);
     }
+
+  return (NULL);
+}
+
+
+/****************************************************************************************
+ *
+ *  Thread to output sorted array of compressed pairs into a .10x file
+ *
+ *****************************************************************************************/
+
+typedef struct
+  { VgpFile     *vg;       //  VgpFile for output
+    int64        beg;      //  Range of read pairs to process
+    int64        end;
+    int          qbits;
+    uint8       *inv;
+    int          flen, rlen;
+    int          reclen;
+    uint8       *array;
+  } Out_Arg;
+
+static void *output_thread(void *arg)
+{ Out_Arg  *parm   = (Out_Arg *) arg;
+  VgpFile  *vg     = parm->vg;
+  int64     beg    = parm->beg;
+  int64     end    = parm->end;
+  int       qbits  = parm->qbits;
+  uint8    *inv    = parm->inv;
+  int       flen   = parm->flen;
+  int       rlen   = parm->rlen;
+  int       reclen = parm->reclen;
+  uint8    *array  = parm->array;
+
+  uint8  qmask = (1<<qbits)-1;
+  char  *data;
+  char  *forw, *revr;
+  char  *fqvs, *rqvs;
+  uint32 code, last;
+  uint8 *aptr;
+  LineInfo *ls, *lx;
+  int    i;
+
+  data = Malloc(2*(flen+rlen),"Allocating decompression buffers");
+  forw = data;
+  fqvs = forw + flen;
+  revr = fqvs + flen;
+  rqvs = revr + rlen;
+
+  lx = vg->lineInfo['&'];
+  ls = vg->lineInfo['S'];
+
+  if (lx->buffer != NULL)
+    { fprintf(stderr,"Surprised\n"); fflush(stdout);
+      free(lx->buffer);
+    }
+  lx->buffer  = Malloc((end-beg)*sizeof(I64),"Sequence index setup");
+  lx->bufSize = end-beg; 
+
+  if ( ! vg->isLastLineBinary)      // terminate previous ascii line
+    fputc ('\n', vg->f);
+  vg->byte = ftello (vg->f);
+  vg->isLastLineBinary = TRUE;
+
+  aptr = array + beg*reclen;
+  if (beg == 0)
+    last = *((uint32 *) array) - 1;
+  else
+    last = *((uint32 *) (aptr-reclen));
+
+  for (i = beg; i < end; i++)
+    { code = *((uint32 *) aptr);
+
+      aptr = Uncompress_SEQ(aptr,forw,flen);
+      aptr = Uncompress_QV(aptr,flen,fqvs,qbits,qmask,inv);
+      aptr = Uncompress_SEQ(aptr,revr,rlen);
+      aptr = Uncompress_QV(aptr,rlen,rqvs,qbits,qmask,inv);
+
+      if (code != last)
+        { vgpInt(vg,0) = 0;
+          vgpInt(vg,1) = 16;
+          vgpWriteLine(vg,'g',16,forw);
+          last = code;
+        }
+
+      vgpWriteLine(vg,'P',0,NULL);
+
+      vgpInt(vg,0) = flen-23;
+      vgpWriteLine(vg,'S',flen-23,forw+23);
+      vgpWriteLine(vg,'Q',flen-23,fqvs+23);
+
+      vgpInt(vg,0) = rlen;
+      vgpWriteLine(vg,'S',rlen,revr);
+      vgpWriteLine(vg,'Q',rlen,rqvs);
+    }
+
+  free(data);
 
   return (NULL);
 }
@@ -1205,7 +1318,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: Verbose mode, show progress as proceed.\n");
         fprintf(stderr,"      -H: Display histogram of all bar code counts.\n");
-        fprintf(stderr,"      -t: Threshold for valid barcodes.\n");
+        fprintf(stderr,"      -t: Threshold for valid bar-codes.\n");
         fprintf(stderr,"      -T: Use -T threads.\n");
  
         exit (1);
@@ -1263,19 +1376,19 @@ int main(int argc, char *argv[])
 
   bucks = (int64 *) Malloc(sizeof(int64)*256*NTHREADS,"Allocating bucket counters");
   ctype = (uint8 *) Malloc(0x100000000ll,"Allocating correction vector");
-  codes = (uint32 *) Malloc(sizeof(uint32)*2*(npairs+NTHREADS),"Allocating barcode array");
+  codes = (uint32 *) Malloc(sizeof(uint32)*2*(npairs+NTHREADS),"Allocating bar-code array");
   if (bucks == NULL || ctype == NULL || codes == NULL)
     exit (1);
 
   if (VERBOSE)
-    { fprintf(stderr,"  %.1fGB memory for code sorting & correction\n",
+    { fprintf(stderr,"  %.1fGB memory needed for bar-code sorting & correction\n",
                      (npairs+NTHREADS) * (2*sizeof(uint32) + sizeof(uint8)) / 1073741824.
                      + 4. + .5*NTHREADS);
-      fprintf(stderr,"  Scanning barcodes in file %s\n",argv[1]);
+      fprintf(stderr,"  Extracting bar-codes in scan of file %s ...\n",argv[1]);
       fflush(stderr);
     }
 
-  //  Pass 1: Build list of barcodes & build fixed-bit QV code on first 10 million symbols
+  //  Pass 1: Build list of bar-codes & build fixed-bit QV code on first 10 million symbols
 
   { BarCode_Arg parm[NTHREADS];
     pthread_t   threads[NTHREADS];
@@ -1358,9 +1471,9 @@ int main(int argc, char *argv[])
   //  5 passes to produce correction vector and 1st byte sort bucket counts
 
   if (VERBOSE)
-    { fprintf(stderr,"  About to sort ");
+    { fprintf(stderr,"  About to sort & analyzea ");
       Print_Number((int64) npairs,0,stderr);
-      fprintf(stderr," barcodes\n");
+      fprintf(stderr," bar-codes ...\n");
       fflush(stderr);
     }
 
@@ -1395,7 +1508,6 @@ int main(int argc, char *argv[])
 
     for (i = 0; i < NTHREADS; i++)
       pthread_join(threads[i],NULL);
-
 
     //  2. Merge NTHREAD unique+count lists and make list of valid codes in vlist
 
@@ -1457,16 +1569,70 @@ int main(int argc, char *argv[])
         }
     }
 
+#ifdef DEBUG_COUNTS
+
+  { int64  nvalid, ncorrect, nwaste;
+    int    th, i, j, n, m;
+    int    ex;
+    uint32 v, t, u;
+    uint32 chg, msk, var;
+
+    nvalid   = 0;
+    ncorrect = 0;
+    nwaste   = 0;
+    for (th = 0; th < NTHREADS; th++)
+      for (i = sparm[th].beg; i < sparm[th].end; i++)
+        { v = codes[i];
+          n = count[i];
+          if (ctype[v] > 0)
+            nvalid += n;
+          else
+            { ex  = 0;
+              chg = 0x1;
+              msk = 0x3;
+#ifdef DEBUG_MARK
+              printf("  %08x\n",v);
+#endif
+              for (j = 0; j < 16; j++)
+                { t = (v & msk);
+                  v -= t;
+                  u = 0;
+                  for (m = 0; m < 4; m++)
+                    { if (t != u)
+                        { var = v | u;
+#ifdef DEBUG_MARK
+                          printf("   %08x (%d/%d)",var,j,m);
+#endif
+                          if (ctype[var] > 0)
+                            { ex += 1;
+#ifdef DEBUG_MARK
+                              printf(" V");
+#endif
+                            }
+#ifdef DEBUG_MARK
+                          printf("\n");
+#endif
+                        }
+                      u += chg;
+                    }
+                  chg <<= 2;
+                  msk <<= 2;
+                  v |= t;
+                }
+
+              if (ex == 1)
+                ncorrect += n;
+              else
+                nwaste += n;
+            }
+        }
+      printf(" %lld  %lld  %lld\n",nvalid,ncorrect,nwaste);
+    }
+#endif
+
     ndist = 0;
     for (i = 0; i < NTHREADS; i++)
       ndist += sparm[i].vend - sparm[i].vbeg;
-
-    if (VERBOSE)
-      { fprintf(stderr,"  There are ");
-        Print_Number(ndist,0,stderr);
-        fprintf(stderr," distinct valid bar-codes\n");
-        fflush(stderr);
-      }
 
     // 3. Generate 1-neighborhood and mark
 
@@ -1502,77 +1668,6 @@ int main(int argc, char *argv[])
     for (i = 0; i < NTHREADS; i++)
       nrepair += sparm[i].nrepair;
 
-#ifdef STUFF
-
-ngood = 0;
-for (i = 0; i < NTHREADS; i++)
-  { int j;
-    for (j = sparm[i].beg; j < sparm[i].end; j++)
-      if ((ctype[codes[j]] & 0xc0) == 0x40)
-        ngood += count[j];
-  }
-printf("%10lld Added valid 2\n",ngood);
-
-ngood = 0;
-for (i = 0; i < NTHREADS; i++)
-  { int j;
-    for (j = sparm[i].beg; j < sparm[i].end; j++)
-      if ((ctype[codes[j]] & 0xc0) == 0x80)
-        ngood += count[j];
-  }
-printf("%10lld Added repaired 2\n",ngood);
-
-ngood = 0;
-for (i = 0; i < NTHREADS; i++)
-  { int j;
-    for (j = sparm[i].beg; j < sparm[i].end; j++)
-      if ((ctype[codes[j]] & 0xc0) == 0xc0)
-        ngood += count[j];
-  }
-printf("%10lld Added conflict 2\n",ngood);
-
-ngood = 0;
-for (i = 0; i < NTHREADS; i++)
-  { int j;
-    for (j = sparm[i].beg; j < sparm[i].end; j++)
-      if ((ctype[codes[j]] & 0xc0) == 0x00)
-        ngood += count[j];
-  }
-printf("%10lld Added untouched 2\n",ngood);
-
-{ int64 j;
-  int64 nv, nr, nc, nt;
-
-  nv = 0;
-  for (j = 0; j < 0x100000000; j++)
-    if ((ctype[j] & 0xc0) == 0x40)
-      nv += 1;
-  printf("%10lld valid 3\n",nv);
-
-  nr = 0;
-  for (j = 0; j < 0x100000000; j++)
-    if ((ctype[j] & 0xc0) == 0x80)
-      nr += 1;
-  printf("%10lld repairable 3\n",nr);
-
-  nc = 0;
-  for (j = 0; j < 0x100000000; j++)
-    if ((ctype[j] & 0xc0) == 0xc0)
-      nc += 1;
-  printf("%10lld conflicted 3 %10lld\n",nc,nc+nr);
-
-  nt = 0;
-  for (j = 0; j < 0x100000000; j++)
-    if ((ctype[j] & 0xc0) == 0x00)
-      nt += 1;
-  printf("%10lld untouched 3 %10lld\n",nt,nv+nr+nc+nt);
-}
-
-#endif
-
-    free(count);
-    free(codes);
-
     { int64 x, y;
       int   j;
 
@@ -1587,43 +1682,47 @@ printf("%10lld Added untouched 2\n",ngood);
     }
 
     if (VERBOSE)
-      { fprintf(stderr,"    ");
+      { fprintf(stderr,"    There are ");
+        Print_Number(ndist,0,stderr);
+        fprintf(stderr," distinct valid bar-codes\n");
+        fprintf(stderr,"      ");
         Print_Number((int64) (ngood-nrepair),12,stderr);
-        fprintf(stderr," (%.1f%%) pairs have good codes\n",(100.*(ngood-nrepair))/npairs);
-        fprintf(stderr,"    ");
+        fprintf(stderr," (%.1f%%) bar-codes are valid\n",(100.*(ngood-nrepair))/npairs);
+        fprintf(stderr,"      ");
         Print_Number((int64) nrepair,12,stderr);
-        fprintf(stderr," (%.1f%%) have repairable codes\n",(100.*nrepair)/npairs);
-        fprintf(stderr,"    ");
+        fprintf(stderr," (%.1f%%) will be repaired\n",(100.*nrepair)/npairs);
+        fprintf(stderr,"      ");
         Print_Number((int64) (npairs-ngood),12,stderr);
         fprintf(stderr," (%.1f%%) will be dropped.\n",(100.*(npairs-ngood))/npairs);
         fflush(stderr);
       }
+
+    free(count);
+    free(codes);
   }
 
-exit (1);
 
+  //  Pass 2: Correct bar-codes when possible, build compressed pairs in a mem-mapped array in
+  //             sorted order of the 1st byte
 
-  //  Pass 2: Correct barcodes when possible, output compressed pairs for sorting
-
-  { int64  asize, reclen;
+  { int64  asize;
     uint8 *array;
     int    fclen, rclen;
     int    fqlen, rqlen;
+    int    reclen;
 
-    if (VERBOSE)
-      { fprintf(stderr,"  Scan repairing bar codes + compressing data + 1st byte sort\n");
-        fflush(stderr);
-      }
-
-    fclen  = (flen*2-1)/8 + 1; 
-    rclen  = (rlen*2-1)/8 + 1; 
-    fqlen  = (flen*qbits-1)/8 + 1; 
-    rqlen  = (rlen*qbits-1)/8 + 1; 
+    fclen  = (flen*2+7)/8; 
+    rclen  = (rlen*2+7)/8; 
+    fqlen  = (flen*qbits+7)/8; 
+    rqlen  = (rlen*qbits+7)/8; 
     reclen = fclen + fqlen + rclen + rqlen;
     asize  = reclen*ngood;
 
     if (VERBOSE)
-      { fprintf(stderr,"    External sort array uses %.1fGB\n",asize/1073741824.);
+      { fprintf(stderr,"  Building compressed array of read pairs with valid bar-codes\n");
+        fprintf(stderr,"    sorted on their 1st byte in a second scan of file\n");
+        fprintf(stderr,"    Memory-mapped array size is %.1fGB (%d bytes/pair) ...\n",
+                       asize/1073741824.,reclen);
         fflush(stderr);
       }
 
@@ -1670,118 +1769,112 @@ exit (1);
       for (i = 0; i < NTHREADS; i++)
           pthread_join(threads[i],NULL);
 #endif
+
+      free(ctype);
+
+      if (VERBOSE)
+        { fprintf(stderr,"    Fill & 1st byte sort complete.\n");
+          fprintf(stderr,"  Commencing MSD sort of remaining 3 bytes ...\n");
+          fflush(stderr);
+        }
+    }
+    //  External sort on remaining 3 bytes of bar-code (1st 4 bytes of each record)
+
+    { int64 *nucks = bucks + (NTHREADS-1)*256;
+      int64  x, y;
+      int    i;
+
+      x = 0;
+      for (i = 0; i < 256; i++)
+        { y = nucks[i];
+          bucks[i] = y-x;
+          x = y;
+        }
+
+      MSD_Sort(array,ngood,reclen,reclen,4,bucks,NTHREADS);
+
+      free(bucks);
     }
 
-exit (1);
-  }
+    //  Output clouds to <input>.10x trimming 1st 23bp of forward reads.
 
-  (void) Uncompress_QV;
-  (void) Uncompress_SEQ;
+    { Out_Arg   parm[NTHREADS];
+      pthread_t threads[NTHREADS];
+      VgpFile  *vg;
+      char     *pwd, *root, *gname;
+      int       i;
 
-#ifdef XXX
-  //  External sort on barcode (1st 4 bytes of each record)
+      pwd   = PathTo(argv[1]);
+      root  = Root(argv[1],".irp");
+      gname = Strdup(Catenate(pwd,"/",root,".10x"),"Allocating full path name");
 
-  if (VERBOSE)
-    { fprintf(stderr,"  Performing external sort.\n");
-      fflush(stderr);
-    }
+      if (VERBOSE)
+        { fprintf(stderr,"  Final scan to produce cloud grouped pairs in %s.10x ...\n",root);
+          fflush(stderr);
+        }
 
-  Ex_sort(Catenate(SORT_PATH,"/",fname,".sort"),reclen,4,NTHREADS);
+      vg = vgpFileOpenWriteNew(gname,SEQ,X10,TRUE,NTHREADS);
+      if (vg == NULL)
+        { fprintf(stderr,"%s: Cannot open %s.10x for writing\n",Prog_Name,root);
+          exit (1);
+        }
 
-  //  Read in sorted array and output to standard out
+      free(gname);
+      free(root);
+      free(pwd);
 
-  if (VERBOSE)
-    { fprintf(stderr,"  Final scan to produce cloud grouped pairs on stdout.\n");
-      fflush(stderr);
-    }
+      vgpInheritProvenance(vg,vf);
+      vgpAddProvenance(vg,"VGPcloud","1.0",command,NULL);
 
-  //  Output clouds
+      vgpWriteHeader(vg);
 
-  { FILE    *sfile;
-    VgpFile *vg;
-    int      gc;
-    uint8   *bp, *fqvs;
-    uint32   val;
-    char    *forw, *fcode;
-    char    *pwd, *root, *gname;
+      vgpFileClose(vf);
 
-    sfile = fopen(Catenate(SORT_PATH,"/",fname,".sort"),"w");
-    if (sfile == NULL)
-      { fprintf(stderr,"%s: Cannot create %s.sort in directory %s\n",Prog_Name,fname,SORT_PATH);
-        exit (1);
-      }
+      if (VERBOSE)
+        { if (NTHREADS > 1)
+            fprintf(stderr,"  Producing .10x segments in parallel\n");
+          else
+            fprintf(stderr,"  Producing .10x segments\n");
+          fflush(stderr);
+        }
 
-    pwd   = PathTo(argv[1]);
-    root  = Root(argv[1],".irp");
-    gname = Strdup(Catenate(pwd,"/",root,".10x"),"Allocating full path name");
-    vg    = vgpFileOpenWriteNew(gname,SEQ,X10,TRUE,NTHREADS);
-    if (vg == NULL)
-      { fprintf(stderr,"%s: Cannot open %s.10x for writing\n",Prog_Name,root);
-        exit (1);
-      }
-    free(gname);
-    free(root);
-    free(pwd);
+        //  Generate the data lines in parallel threads
 
-    vgpInheritProvenance(vg,vf);
-    vgpAddProvenance(vg,"VGPcloud","1.0",command,NULL);
+      for (i = 0; i < NTHREADS; i++)
+        { parm[i].vg     = vg+i;
+          parm[i].beg    = (ngood * i) / NTHREADS;
+          parm[i].end    = (ngood * (i+1)) / NTHREADS;
+          parm[i].qbits  = qbits;
+          parm[i].inv    = inv;
+          parm[i].flen   = flen;
+          parm[i].rlen   = rlen;
+          parm[i].reclen = reclen;
+          parm[i].array  = array;
+        }
 
-    vgpGotoObject(vf,0);
+#ifdef DEBUG_OUT
+      for (i = 0; i < NTHREADS; i++)
+        { fprintf(stderr,"Thread %d\n",i); fflush(stderr);
+          output_thread(parm+i);
+        }
+#else
+      for (i = 0; i < NTHREADS; i++)
+        pthread_create(threads+i,NULL,output_thread,parm+i);
 
-    forw  = vf->lineInfo['S']->buffer;
-    fqvs  = vf->lineInfo['Q']->buffer;
-    fcode = (char *) Malloc(fclen,"Allocating compressed DNA buffer");
-
-    gc  = 0;
-    bp  = (uint8 *) codes;
-    val = (bp[0] << 24 | bp[1] << 16 | bp[2] << 8 | bp[3]);
-    while (fread(forw,sizeof(uint8),fclen,sfile) >= (uint32) fclen)
-      { if ( *((uint32 *) forw) != val)
-          { printf("g %d",codes[gc+1]);
-            gc += 2;
-            bp += 8;
-            val = (bp[0] << 24 | bp[1] << 16 | bp[2] << 8 | bp[3]);
-
-            Uncompress_SEQ(forw,flen);
-
-            vgpInt(vf,0) = 0;
-            vgpInt(vf,1) = 16;
-            vgpWriteLine(vf,'g',16,forw);
-          }
-        else
-          Uncompress_SEQ(forw,flen);
-
-        vgpWriteLine(vf,'P',0,NULL);
-
-        vgpInt(vf,0) = flen-23;
-        vgpWriteLine(vf,'S',flen-23,forw+23);
-
-        fread(fqvs,sizeof(uint8),fqlen,sfile);
-        Uncompress_QV(flen,fqvs,qbits,qmask,inv);
-
-        vgpWriteLine(vf,'Q',flen-23,fqvs+23);
-
-        fread(forw,sizeof(uint8),rclen,sfile);
-        Uncompress_SEQ(forw,flen);
-
-        vgpInt(vf,0) = rlen;
-        vgpWriteLine(vf,'S',rlen,forw);
-
-        fread(fqvs,sizeof(uint8),rqlen,sfile);
-        Uncompress_QV(rlen,fqvs,qbits,qmask,inv);
-
-        vgpWriteLine(vf,'Q',rlen,fqvs);
-      }
-
-    vgpFileClose(vg);
-    fclose(sfile);
-    free(fcode);
-  }
-
-  //  Tidy up just for good form
-
-  vgpFileClose(vf);
-  free(fname);
+      for (i = 0; i < NTHREADS; i++)
+        pthread_join(threads[i],NULL);
 #endif
+
+      if (VERBOSE)
+        { fprintf(stderr,"  Cat'ing .10x segments\n");
+          fflush(stderr);
+        }
+  
+      vgpFileClose(vg);
+    }
+  }
+
+  free(command);
+
   exit (0);
 }

@@ -15,7 +15,7 @@ which is a general framework for representing and manipulating data whose
 primary advantages are a very simple ASCII format for each data object type
 that is easy for both humans and programs to read and interpret,
 with a corresponding compressed and indexed binary version so that production
-sofwtare can be used for large scale data intensive applications.  Furthermore,
+software can be used for large scale data intensive applications.  Furthermore,
 adding and modifying data types is simply a matter of editing the simple
 specification of the schema [VGP_1_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP_1_0.def).
 For descriptions of the basic principles and properties of the One-Code
