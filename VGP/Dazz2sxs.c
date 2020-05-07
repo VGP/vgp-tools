@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
@@ -898,7 +899,7 @@ int main(int argc, char *argv[])
     { VgpFile *vf;
       int      i;
 
-      vf = vgpFileOpenWriteNew("-",ALN,SXS,TRUE,NTHREADS);
+      vf = vgpFileOpenWriteNew("-",ALN,SXS,true,NTHREADS);
 
       vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
       vgpAddReference(vf,fname1,NREAD1);

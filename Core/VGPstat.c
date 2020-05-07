@@ -14,6 +14,7 @@
  ****************************************************************************************/
 
 #include <assert.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -23,7 +24,7 @@ int main (int argc, char **argv)
 { int      i ;
   FileType fileType = 0 ;
   char    *outFileName = "-" ;
-  BOOL     isHeader = FALSE, isUsage = FALSE ;
+  bool     isHeader = false, isUsage = false ;
   VgpFile *vfIn ;
   
   timeUpdate (0) ;
@@ -47,9 +48,9 @@ int main (int argc, char **argv)
   fileType = 0;
   while (argc && **argv == '-')
     if (!strcmp (*argv, "-H") || !strcmp (*argv, "--header"))
-      { isHeader = TRUE ; --argc ; ++argv ; }
+      { isHeader = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-u") || !strcmp (*argv, "--usage"))
-      { isUsage = TRUE ; --argc ; ++argv ; }
+      { isUsage = true ; --argc ; ++argv ; }
     else if (argc > 1 && (!strcmp (*argv, "-t") || !strcmp (*argv, "--type")))
       { for (i = SEQ; i < MAX_FILE; i++)
 	  if (!strcmp (argv[1], fileTypeName[i]))
@@ -73,7 +74,7 @@ int main (int argc, char **argv)
   vfIn = vgpFileOpenRead (*argv, fileType, 1) ;
   if (vfIn == NULL)
     die ("failed to open vgp file %s", *argv) ;
-  vfIn->isCheckString = TRUE ;
+  vfIn->isCheckString = true ;
 
   if (vfIn->line == 1)
     fprintf (stderr, "header missing\n") ;
@@ -164,7 +165,7 @@ int main (int argc, char **argv)
   //  Write header if requested
 
       if (isHeader)
-	{ VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, TRUE, FALSE, 1) ;
+	{ VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, true, false, 1) ;
 	  if (vfOut == NULL)
 	    die ("failed to open output file %s", outFileName) ;
   

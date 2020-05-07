@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -1565,7 +1566,7 @@ int main(int argc, char* argv[])
     { VgpFile *vf;
       int      i, error;
 
-      vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
+      vf = vgpFileOpenWriteNew("-",SEQ,PBR,true,NTHREADS);
       vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
       vgpWriteHeader(vf);
 #ifdef DEBUG_OUT

@@ -13,15 +13,14 @@
 #include <stdio.h>		/* FILE etc. */
 #include <stdlib.h>		/* malloc(), free(), ... notation */
 #include <stdint.h>		/* for standard size int types */
+#include <stdbool.h>
 #include <string.h>		/* memset() */
 #include <limits.h>		/* INT_MAX etc. */
 #include <assert.h>
 
 #ifndef UTILS_DEFINED
 #define UTILS_DEFINED
-typedef char BOOL ;
-#define TRUE 1
-#define FALSE 0
+
 
 typedef int8_t I8 ;
 const static I8 I8MAX = 0x7f ;

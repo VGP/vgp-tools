@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
@@ -895,7 +896,7 @@ int main(int argc, char *argv[])
         fflush(stderr);
       }
 
-    vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
+    vf = vgpFileOpenWriteNew("-",SEQ,PBR,true,NTHREADS);
     vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
     vgpWriteHeader(vf);
 

@@ -12,6 +12,7 @@
  */
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <ctype.h>
 #include "utils.h"
@@ -148,7 +149,7 @@ static struct rusage rOld, rFirst ;
 
 void timeUpdate (FILE *f)
 {
-  static BOOL isFirst = 1 ;
+  static bool isFirst = 1 ;
   struct rusage rNew ;
   int secs, usecs ;
 
@@ -168,7 +169,7 @@ void timeUpdate (FILE *f)
     }
   else
     { rFirst = rNew ;
-      isFirst = FALSE ;
+      isFirst = false ;
     }
 
   rOld = rNew ;

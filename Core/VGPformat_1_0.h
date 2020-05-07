@@ -17,6 +17,7 @@
  *
  ****************************************************************************************/
 
+
 static LineInfo *vgpDefineLine (FieldType f0, FieldType f1, FieldType f2,
 			        FieldType f3, FieldType f4, FieldType f5)
 { LineInfo *li = new0 (1, LineInfo);
@@ -56,7 +57,7 @@ static void defineFormat(VgpFile *vf, FileType fileType)
       info['C'] = vgpDefineLine (INT, 0, 0, 0, 0, 0);           // count (for kmers)
       info['I'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0);        // for the identifier
         info['S']->listCodec = DNAcodec;
-          info['S']->isUseListCodec = TRUE;
+          info['S']->isUseListCodec = true;
         info['Q']->listCodec = vcCreate();
         info['A']->listCodec = vcCreate();
         info['W']->fieldCodec = vcCreate();
@@ -76,9 +77,9 @@ static void defineFormat(VgpFile *vf, FileType fileType)
       info['N'] = vgpDefineLine (REAL_LIST, 0, 0, 0, 0, 0);     // SNR values at each site
       info['O'] = vgpDefineLine (INT, 0, 0, 0, 0, 0);           // object # in ref'd sequence file
         info['R']->listCodec = vcCreate();
-          info['R']->isIntListDiff = TRUE;
+          info['R']->isIntListDiff = true;
         info['E']->listCodec = vcCreate();
-          info['E']->isIntListDiff = TRUE;
+          info['E']->isIntListDiff = true;
         info['I']->listCodec = vcCreate();
         info['N']->listCodec = vcCreate();
       break;
@@ -101,13 +102,13 @@ static void defineFormat(VgpFile *vf, FileType fileType)
         info['I']->fieldCodec = vcCreate();
         info['C']->listCodec = vcCreate();
         info['U']->listCodec = vcCreate();
-          info['U']->isIntListDiff = TRUE;
+          info['U']->isIntListDiff = true;
         info['V']->listCodec = vcCreate();
-          info['V']->isIntListDiff = TRUE;
+          info['V']->isIntListDiff = true;
         info['W']->listCodec = vcCreate();
-          info['W']->isIntListDiff = TRUE;
+          info['W']->isIntListDiff = true;
         info['X']->listCodec = vcCreate();
-          info['X']->isIntListDiff = TRUE;
+          info['X']->isIntListDiff = true;
       break;
 
     case HIT:
@@ -116,11 +117,11 @@ static void defineFormat(VgpFile *vf, FileType fileType)
       info['O'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0);      // Offsets of queries in a target
       info['P'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0);      // Positions of a query in targets
         info['H']->listCodec = vcCreate();
-          info['H']->isIntListDiff = TRUE;
+          info['H']->isIntListDiff = true;
         info['O']->listCodec = vcCreate();
-          info['O']->isIntListDiff = TRUE;
+          info['O']->isIntListDiff = true;
         info['P']->listCodec = vcCreate();
-          info['P']->isIntListDiff = TRUE;
+          info['P']->isIntListDiff = true;
       break;
 
     case JNS:
@@ -144,7 +145,7 @@ static void defineFormat(VgpFile *vf, FileType fileType)
       info['N'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0);   // optional name for list
       info['S'] = vgpDefineLine (INT, 0, 0, 0, 0, 0);      // seed sequence for scaffold
         info['L']->listCodec = vcCreate();
-          info['L']->isIntListDiff = TRUE;
+          info['L']->isIntListDiff = true;
       break;
 
     default:

@@ -13,7 +13,7 @@
 #include "VGPlib.h"
 
 #include <assert.h>
-
+#include <stdbool.h>  /* bool, true, false */
 #include <string.h>		/* strcmp etc. */
 #include <stdlib.h>		/* for exit() */
 
@@ -61,7 +61,7 @@ int main (int argc, char **argv)
   I64 i ;
   FileType fileType = 0 ;
   char *outFileName = "-" ;
-  BOOL isNoHeader = FALSE, isHeaderOnly = FALSE, isBinary = FALSE ;
+  bool isNoHeader = false, isHeaderOnly = false, isBinary = false ;
   IndexList *objList = 0, *groupList = 0 ;
   
   timeUpdate (0) ;
@@ -90,11 +90,11 @@ int main (int argc, char **argv)
 	argc -= 2 ; argv += 2 ;
       }
     else if (!strcmp (*argv, "-h") || !strcmp (*argv, "--header"))
-      { isNoHeader = TRUE ; --argc ; ++argv ; }
+      { isNoHeader = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-H") || !strcmp (*argv, "--headerOnly"))
-      { isHeaderOnly = TRUE ; --argc ; ++argv ; }
+      { isHeaderOnly = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-b") || !strcmp (*argv, "--binary"))
-      { isBinary = TRUE ; --argc ; ++argv ; }
+      { isBinary = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-o") || !strcmp (*argv, "--output"))
       { outFileName = argv[1] ; argc -= 2 ; argv += 2 ; }
     else if (!strcmp (*argv, "-i") || !strcmp (*argv, "--index"))
@@ -103,8 +103,8 @@ int main (int argc, char **argv)
       { groupList = parseIndexList (argv[1]) ; argc -= 2 ; argv += 2 ; }
     else die ("unknown option %s - run without arguments to see options", *argv) ;
 
-  if (isBinary) isNoHeader = FALSE ;
-  if (isHeaderOnly) isBinary = FALSE ;
+  if (isBinary) isNoHeader = false ;
+  if (isHeaderOnly) isBinary = false ;
   
   if (argc != 1) die ("can currently only take one input file") ;
 
@@ -114,7 +114,7 @@ int main (int argc, char **argv)
   if ((objList || groupList) && !vfIn->isBinary)
     die ("%s is ascii - you can only access objects and groups by index in binary files", *argv) ;
   
-  VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, FALSE, isBinary, 1) ;
+  VgpFile *vfOut = vgpFileOpenWriteFrom (outFileName, vfIn, false, isBinary, 1) ;
   if (!vfOut) die ("failed to open output file %s", outFileName) ;
   
   if (isHeaderOnly)

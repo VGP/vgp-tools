@@ -20,6 +20,7 @@
 #include <sys/errno.h>
 #include <sys/types.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <sys/resource.h>
 #include <stdarg.h>
@@ -65,9 +66,9 @@ static VgpFile *vgpFileCreate(FileType fileType)
   info[1]   = vgpDefineLine (CHAR, STRING, 0, 0, 0, 0); // field codec (binary only)
   info[2]   = vgpDefineLine (CHAR, STRING, 0, 0, 0, 0); // list codec (binary only)
   info['&'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0);  // object index
-    info['&']->isIntListDiff = TRUE;
+    info['&']->isIntListDiff = true;
   info['*'] = vgpDefineLine (INT_LIST, 0, 0, 0, 0, 0);  // group index
-    info['*']->isIntListDiff = TRUE;
+    info['*']->isIntListDiff = true;
   info['/'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0); // comment
 
   defineFormat (vf, fileType);      // from vgpformat_1_0.h
@@ -389,7 +390,7 @@ static inline void updateCountsAndBuffer (VgpFile *vf, char t, I64 size, I64 nSt
 
   //  Called when a new group starts or eof, accumulate group counts since last group start
 
-static inline void updateGroupCount(VgpFile *vf, BOOL isGroupLine)
+static inline void updateGroupCount(VgpFile *vf, bool isGroupLine)
 { int       i;
   LineInfo *li;
   Counts   *ci;
@@ -414,7 +415,7 @@ static inline void updateGroupCount(VgpFile *vf, BOOL isGroupLine)
     }
   if (isGroupLine)
     { vf->group  += 1;
-      vf->inGroup = TRUE;
+      vf->inGroup = true;
     }
 }
 
@@ -535,7 +536,7 @@ static void decompactIntList (VgpFile *vf, LineInfo *li, I64 len, char *buf)
 /***********************************************************************************
  *
  *  VGP_READ_LINE:
- *      Reads the next line and returns FALSE at end of file or on error. The line is
+ *      Reads the next line and returns false at end of file or on error. The line is
  *      parsed according to its linetype and contents accessed by macros that follow.
  *      The top bit of the first character determines whether the line is binary or ascii
  *
@@ -569,8 +570,8 @@ static void readStringList(VgpFile *vf, char t, I64 len)
   free (string);
 }
 
-BOOL vgpReadLine (VgpFile *vf)
-{ BOOL      isAscii;
+char vgpReadLine (VgpFile *vf)
+{ bool      isAscii;
   U8        x;
   char      t;
   LineInfo *li;
@@ -584,16 +585,16 @@ BOOL vgpReadLine (VgpFile *vf)
   x = vfGetc (vf);                 // read first char
   if (feof (vf->f) || x == '\n')   // blank line (x=='\n') is end of records marker before footer
     { vf->lineType = 0 ;           // additional marker of end of file
-      return (FALSE);
+      return (false);
     }
 
   vf->line += 1;      // otherwise assume this is a good line, and die if not
   if (x & 0x80)
-    { isAscii = FALSE;
+    { isAscii = false;
       t = vf->binaryTypeUnpack[x];
     }
   else
-    { isAscii = TRUE;
+    { isAscii = true;
       t = x;
     }
   vf->lineType = t;
@@ -605,7 +606,7 @@ BOOL vgpReadLine (VgpFile *vf)
   if (t == vf->objectType)
     vf->object += 1;
   if (t == vf->groupType)
-    updateGroupCount (vf, TRUE);
+    updateGroupCount (vf, true);
 
   // fprintf (stderr, "reading line %lld type %c\n", vf->line, t) ;
 
@@ -854,8 +855,8 @@ VgpFile *vgpFileOpenRead (const char *path, FileType fileType, int nthreads)
   // recognise end of header by peeking at the first char to check if alphabetic 
  
   f = vf->f;
-  vf->isCheckString = TRUE;   // always check strings while reading header
-  while (TRUE)
+  vf->isCheckString = true;   // always check strings while reading header
+  while (true)
 
     { U8 peek;
 
@@ -978,7 +979,7 @@ VgpFile *vgpFileOpenRead (const char *path, FileType fileType, int nthreads)
         case '$':  // read footer - goto end, find offset to start of footer and go there
           if (vgpInt(vf,0) != vf->isBig)
             die ("VGP file error: endian mismatch - convert file to ascii");
-          vf->isBinary = TRUE;
+          vf->isBinary = true;
 
           startOff = ftello (f);
           if (fseek (f, -sizeof(off_t), SEEK_END) != 0)
@@ -997,7 +998,7 @@ VgpFile *vgpFileOpenRead (const char *path, FileType fileType, int nthreads)
           break;
 
         case '&':
-          vf->isIndexIn = TRUE;
+          vf->isIndexIn = true;
           break;
 
         case '*':
@@ -1016,7 +1017,7 @@ VgpFile *vgpFileOpenRead (const char *path, FileType fileType, int nthreads)
           break;
       }
     }
-  vf->isCheckString = FALSE;   // user can set this back to TRUE if they wish
+  vf->isCheckString = false;   // user can set this back to true if they wish
 
   // allocate codec buffer - always allocate enough to handle fields of all line types
 
@@ -1097,25 +1098,25 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void *buffer)
           li->bufSize = 0;
         }
       li->buffer    = buffer;
-      li->isUserBuf = TRUE;
+      li->isUserBuf = true;
     }
   else
     { if (li->isUserBuf)
         { li->bufSize = li->given.max + 1;
           li->buffer  = new (li->given.max*li->listByteSize, void);
         }
-      li->isUserBuf = FALSE;
+      li->isUserBuf = false;
     }
 }
 
-BOOL vgpGotoObject (VgpFile *vf, I64 i)
+bool vgpGotoObject (VgpFile *vf, I64 i)
 { if (vf != NULL && vf->isIndexIn && vf->objectType)
     if (0 <= i && i < vf->lineInfo[(int) vf->objectType]->given.count)
       if (fseek (vf->f, ((I64 *) vf->lineInfo['&']->buffer)[i], SEEK_SET) == 0)
         { vf->object = i;
-          return (TRUE);
+          return (true);
         }
-  return (FALSE);
+  return (false);
 }
 
 I64 vgpGotoGroup (VgpFile *vf, I64 i)
@@ -1137,7 +1138,7 @@ I64 vgpGotoGroup (VgpFile *vf, I64 i)
  **********************************************************************************/
 
 VgpFile *vgpFileOpenWriteNew (const char *path, FileType fileType, SubType subType,
-                              BOOL isBinary, int nthreads)
+                              bool isBinary, int nthreads)
 { VgpFile *vf, *v;
   FILE    *f;
   int      i, pid;
@@ -1161,10 +1162,10 @@ VgpFile *vgpFileOpenWriteNew (const char *path, FileType fileType, SubType subTy
     { vf = vgpFileCreate (fileType);
       vf->f = f;
 
-      vf->isWrite  = TRUE;
+      vf->isWrite  = true;
       vf->subType  = subType;
       vf->isBinary = isBinary;
-      vf->isLastLineBinary = TRUE; // we don't want to add a newline before the first true line
+      vf->isLastLineBinary = true; // we don't want to add a newline before the first true line
 
       vf->codecBufSize = MAX_FIELD*sizeof(Field) + 1;
       vf->codecBuf     = new (vf->codecBufSize, void); 
@@ -1178,7 +1179,7 @@ VgpFile *vgpFileOpenWriteNew (const char *path, FileType fileType, SubType subTy
   for (i = 0; i < nthreads; i++)
     { v = vgpFileCreate (fileType);
 
-      v->isWrite  = TRUE;
+      v->isWrite  = true;
       v->subType  = subType;
       v->isBinary = isBinary;
       
@@ -1196,7 +1197,7 @@ VgpFile *vgpFileOpenWriteNew (const char *path, FileType fileType, SubType subTy
         }
       else
         { v->share = nthreads;
-          v->isLastLineBinary = TRUE;
+          v->isLastLineBinary = true;
           v->fieldLock = mutexInit;
           v->listLock  = mutexInit;
         }
@@ -1208,7 +1209,7 @@ VgpFile *vgpFileOpenWriteNew (const char *path, FileType fileType, SubType subTy
   return (vf);
 }
 
-VgpFile *vgpFileOpenWriteFrom (const char *path, VgpFile *vfIn, BOOL useAccum, BOOL isBinary, int nthreads)
+VgpFile *vgpFileOpenWriteFrom (const char *path, VgpFile *vfIn, bool useAccum, bool isBinary, int nthreads)
 { VgpFile  *vf;
   LineInfo *li;
   int       i;
@@ -1258,14 +1259,14 @@ VgpFile *vgpFileOpenWriteFrom (const char *path, VgpFile *vfIn, BOOL useAccum, B
  *
  **********************************************************************************/
 
-static BOOL addProvenance(VgpFile *vf, Provenance *from, int n)
+static bool addProvenance(VgpFile *vf, Provenance *from, int n)
 { I64 i ;
   LineInfo   *l = vf->lineInfo['!'];
   I64         o = l->accum.count;
   Provenance *p;
 
   if (n == 0)
-    return (FALSE);
+    return (false);
   if (vf->isHeaderOut)
     die("VGP error: can't addProvenance after writing header");
 
@@ -1288,13 +1289,13 @@ static BOOL addProvenance(VgpFile *vf, Provenance *from, int n)
       p->date = strdup(p->date) ;
     }
 
-  return (TRUE);
+  return (true);
 }
 
-BOOL vgpInheritProvenance(VgpFile *vf, VgpFile *source)
+bool vgpInheritProvenance(VgpFile *vf, VgpFile *source)
 { return (addProvenance(vf, source->provenance, source->lineInfo['!']->accum.count)); }
 
-BOOL vgpAddProvenance(VgpFile *vf, char *prog, char *version, char *command, char *date)
+bool vgpAddProvenance(VgpFile *vf, char *prog, char *version, char *command, char *date)
 { Provenance p;
 
   p.program = prog;
@@ -1310,17 +1311,17 @@ BOOL vgpAddProvenance(VgpFile *vf, char *prog, char *version, char *command, cha
   addProvenance (vf, &p, 1);
   if (date == NULL)
     free (p.date) ;
-  return TRUE ; // always added something
+  return true ; // always added something
 }
 
-static BOOL addReference(VgpFile *vf, Reference *from, int n, BOOL isDeferred)
+static bool addReference(VgpFile *vf, Reference *from, int n, bool isDeferred)
 { I64        o;
   LineInfo  *l;
   Reference *r, **t;
   I64 i ;
 
   if (n == 0)
-    return FALSE;
+    return false;
   if (vf->isHeaderOut)
     die ("VGP error: can't addReference after writing header");
 
@@ -1346,26 +1347,26 @@ static BOOL addReference(VgpFile *vf, Reference *from, int n, BOOL isDeferred)
   for (i = 0 ; i < n ; ++i, ++r)
     r->filename = strdup (r->filename) ;
 
-  return TRUE;
+  return true;
 }
 
-BOOL vgpInheritReference(VgpFile *vf, VgpFile *source)
-{ return (addReference(vf, source->reference, source->lineInfo['<']->accum.count, FALSE)); }
+bool vgpInheritReference(VgpFile *vf, VgpFile *source)
+{ return (addReference(vf, source->reference, source->lineInfo['<']->accum.count, false)); }
 
-BOOL vgpAddReference(VgpFile *vf, char *filename, I64 count)
+bool vgpAddReference(VgpFile *vf, char *filename, I64 count)
 { Reference ref;
   ref.filename = filename;
   ref.count    = count;
-  return (addReference(vf, &ref, 1, FALSE));
+  return (addReference(vf, &ref, 1, false));
 }
 
-BOOL vgpInheritDeferred (VgpFile *vf, VgpFile *source)
-{ return (addReference (vf, source->deferred, source->lineInfo['>']->accum.count, TRUE)); }
+bool vgpInheritDeferred (VgpFile *vf, VgpFile *source)
+{ return (addReference (vf, source->deferred, source->lineInfo['>']->accum.count, true)); }
 
-BOOL vgpAddDeferred (VgpFile *vf, char *filename)
+bool vgpAddDeferred (VgpFile *vf, char *filename)
 { Reference ref;
   ref.filename = filename;
-  return (addReference (vf, &ref, 1, TRUE));
+  return (addReference (vf, &ref, 1, true));
 }
 
 /***********************************************************************************
@@ -1457,8 +1458,8 @@ void vgpWriteHeader (VgpFile *vf)
     }
   fflush (vf->f);
 
-  vf->isLastLineBinary = FALSE;
-  vf->isHeaderOut = TRUE;
+  vf->isLastLineBinary = false;
+  vf->isHeaderOut = true;
 }
 
 
@@ -1521,7 +1522,7 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
   vf->line  += 1;
   li->accum.count += 1;
   if (t == vf->groupType)
-    updateGroupCount(vf, TRUE);
+    updateGroupCount(vf, true);
 
   ix = li->listField-1;
   if (ix >= 0)
@@ -1626,7 +1627,7 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
               if (li->fieldTack > vf->codecTrainingSize)
                 { if (vf->share == 0)
                     { vcCreateCodec (li->fieldCodec, 1);
-                      li->isUseFieldCodec = TRUE;
+                      li->isUseFieldCodec = true;
                     }
                   else
                     { VgpFile  *ms;
@@ -1659,9 +1660,9 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                                   ms[i].lineInfo[(int) t]->fieldCodec = lx->fieldCodec;
                                   vcDestroy (m);
                                 }
-                              lx->isUseFieldCodec = TRUE;
+                              lx->isUseFieldCodec = true;
                               for (i = 1; i < ms->share; i++)
-                                ms[i].lineInfo[(int) t]->isUseFieldCodec = TRUE;
+                                ms[i].lineInfo[(int) t]->isUseFieldCodec = true;
                             }
                         }
 
@@ -1711,7 +1712,7 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                       if (li->listTack > vf->codecTrainingSize)
                         { if (vf->share == 0)
                             { vcCreateCodec (li->listCodec, 1);
-                              li->isUseListCodec = TRUE;
+                              li->isUseListCodec = true;
                             }
                           else
                             { VgpFile  *ms;
@@ -1744,9 +1745,9 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                                           ms[i].lineInfo[(int) t]->listCodec = lx->listCodec;
                                           vcDestroy (m);
                                         }
-                                      lx->isUseListCodec = TRUE;
+                                      lx->isUseListCodec = true;
                                       for (i = 1; i < ms->share; i++)
-                                        ms[i].lineInfo[(int) t]->isUseListCodec = TRUE;
+                                        ms[i].lineInfo[(int) t]->isUseListCodec = true;
                                     }
                                 }
  
@@ -1757,7 +1758,7 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
                 }
             }
         }
-      vf->isLastLineBinary = TRUE;
+      vf->isLastLineBinary = true;
     }
 
   // ASCII - write field by field
@@ -1803,7 +1804,7 @@ void vgpWriteLine (VgpFile *vf, char t, I64 listLen, void *listBuf)
               writeStringList (vf, t, listLen);
             break;
         }
-      vf->isLastLineBinary = FALSE;
+      vf->isLastLineBinary = false;
     }
 }
 
@@ -1884,10 +1885,10 @@ void vgpFinalizeCounts(VgpFile *vf)
   if (vf->share < 0)
     die ("VGP write error: cannot call vgpFileClose on a slave VgpFile");
 
-  vf->isFinal = TRUE;
+  vf->isFinal = true;
 
   if (vf->share == 0)
-    { updateGroupCount(vf,FALSE);
+    { updateGroupCount(vf, false);
       return;
     }
 
@@ -2121,7 +2122,7 @@ FILE *fopenTag (char* root, char* tag, char* mode)
 static struct rusage rLast, rFirst;
 
 void timeUpdate(FILE *f)
-{ static BOOL   isFirst = 1;
+{ static bool   isFirst = 1;
   struct rusage rNew;
   int           secs, mics;
 
@@ -2129,7 +2130,7 @@ void timeUpdate(FILE *f)
 
   if (isFirst)
     { rFirst  = rNew;
-      isFirst = FALSE;
+      isFirst = false;
     }
   else
     { secs = rNew.ru_utime.tv_sec  - rLast.ru_utime.tv_sec;

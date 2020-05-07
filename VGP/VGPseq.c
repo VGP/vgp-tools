@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -2296,9 +2297,9 @@ int main(int argc, char *argv[])
       int      i, error;
 
       if (PAIRING)
-        vf = vgpFileOpenWriteNew("-",SEQ,IRP,TRUE,NTHREADS);
+        vf = vgpFileOpenWriteNew("-",SEQ,IRP,true,NTHREADS);
       else
-        vf = vgpFileOpenWriteNew("-",SEQ,0,TRUE,NTHREADS);
+        vf = vgpFileOpenWriteNew("-",SEQ,0,true,NTHREADS);
       vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
       vgpWriteHeader(vf);
 

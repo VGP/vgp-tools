@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -1192,7 +1193,7 @@ static void *output_thread(void *arg)
   if ( ! vg->isLastLineBinary)      // terminate previous ascii line
     fputc ('\n', vg->f);
   vg->byte = ftello (vg->f);
-  vg->isLastLineBinary = TRUE;
+  vg->isLastLineBinary = true;
 
   aptr = array + beg*reclen;
   if (beg == 0)
@@ -1813,7 +1814,7 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
 
-      vg = vgpFileOpenWriteNew(gname,SEQ,X10,TRUE,NTHREADS);
+      vg = vgpFileOpenWriteNew(gname,SEQ,X10,true,NTHREADS);
       if (vg == NULL)
         { fprintf(stderr,"%s: Cannot open %s.10x for writing\n",Prog_Name,root);
           exit (1);

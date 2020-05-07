@@ -18,6 +18,7 @@
 
 #include <stdio.h>    // for FILE etc.
 #include <stdint.h>   // for standard size int types
+#include <stdbool.h>  // for true, false, bool
 #include <limits.h>   // for INT_MAX etc.
 #include <pthread.h>  // for mutex locks
 
@@ -31,12 +32,11 @@
 
 #ifndef UTILS_DEFINED
   // Basic Types
-typedef char          BOOL;
+
 typedef int64_t       I64;
 typedef unsigned char U8;
 
-#define TRUE 1
-#define FALSE 0
+
 static const I64 I64MAX = 0x7fffffffffffffffll;
 #endif // UTILS_DEFINED
 
@@ -95,15 +95,15 @@ typedef struct
     int        listByteSize;  // size of list field elements (if present)
     int        listField;     // field index of list + 1, 0 if no list
 
-    BOOL       isUserBuf;     // flag for whether buffer is owned by user
+    bool       isUserBuf;     // flag for whether buffer is owned by user
     I64        bufSize;       // system buffer and size if not user supplied
     void      *buffer;
 
     VGPcodec *fieldCodec;       // compression codecs and flags
     VGPcodec *listCodec;
-    BOOL      isUseFieldCodec;  // on once enough data collected to train associated codec
-    BOOL      isUseListCodec;
-    BOOL      isIntListDiff;    // diff int lists before compressing with codec
+    bool      isUseFieldCodec;  // on once enough data collected to train associated codec
+    bool      isUseListCodec;
+    bool      isIntListDiff;    // diff int lists before compressing with codec
     char      binaryTypePack;   // binary code for line type, bit 8 set.
                                 //     bit 0: fields compressed
                                 //     bit 1: list compressed
@@ -117,7 +117,7 @@ typedef struct
   {
     // this field may be set by the user
 
-    BOOL        isCheckString;       // set if want to validate string char by char, else fread()
+    bool        isCheckString;       // set if want to validate string char by char, else fread()
 
     // these fields may be read by user - but don't change them!
 
@@ -142,13 +142,13 @@ typedef struct
     // fields below here are private to the package
 
     FILE *f;
-    BOOL  isWrite;                // true if open for writing
-    BOOL  isHeaderOut;            // true if header already written
-    BOOL  isBinary;               // true if writing a binary file
-    BOOL  inGroup;                // set once inside a group
-    BOOL  isLastLineBinary;       // needed to deal with newlines on ascii files
-    BOOL  isIndexIn;              // index read in
-    BOOL  isBig;                  // are we on a big-endian machine?
+    bool  isWrite;                // true if open for writing
+    bool  isHeaderOut;            // true if header already written
+    bool  isBinary;               // true if writing a binary file
+    bool  inGroup;                // set once inside a group
+    bool  isLastLineBinary;       // needed to deal with newlines on ascii files
+    bool  isIndexIn;              // index read in
+    bool  isBig;                  // are we on a big-endian machine?
     char  lineBuf[128];           // working buffers
     char  numberBuf[32];
     char *codecBuf;
@@ -219,9 +219,9 @@ char *vgpReadComment (VgpFile *vf);
 //  WRITING VGP FILES:
 
 VgpFile *vgpFileOpenWriteNew(const char *path, FileType type, SubType sub,
-                             BOOL isBinary, int nthreads);
-VgpFile *vgpFileOpenWriteFrom(const char *path, VgpFile *vfIn, BOOL useAccum,
-                              BOOL isBinary, int nthreads);
+                             bool isBinary, int nthreads);
+VgpFile *vgpFileOpenWriteFrom(const char *path, VgpFile *vfIn, bool useAccum,
+                              bool isBinary, int nthreads);
 
   // Create a new vgpFile that will be written to 'path'.  For the 'New' variant supply
   //   the file type, subtype (if non-zero), and whether it should be binary or ASCII.
@@ -237,16 +237,16 @@ VgpFile *vgpFileOpenWriteFrom(const char *path, VgpFile *vfIn, BOOL useAccum,
   //   segment of the initial data lines.  Upon close the final result is effectively
   //   the concatenation of the master, followed by the output of each slave in sequence.
 
-BOOL vgpInheritProvenance (VgpFile *vf, VgpFile *source);
-BOOL vgpInheritReference  (VgpFile *vf, VgpFile *source);
-BOOL vgpInheritDeferred   (VgpFile *vf, VgpFile *source);
+bool vgpInheritProvenance (VgpFile *vf, VgpFile *source);
+bool vgpInheritReference  (VgpFile *vf, VgpFile *source);
+bool vgpInheritDeferred   (VgpFile *vf, VgpFile *source);
 
   // Add all provenance/reference/deferred entries in source to header of vf.  Must be
   //   called before call to vgpWriteHeader.
 
-BOOL vgpAddProvenance (VgpFile *vf, char *prog, char *version, char *command, char *dateTime);
-BOOL vgpAddReference  (VgpFile *vf, char *filename, I64 count);
-BOOL vgpAddDeferred   (VgpFile *vf, char *filename);
+bool vgpAddProvenance (VgpFile *vf, char *prog, char *version, char *command, char *dateTime);
+bool vgpAddReference  (VgpFile *vf, char *filename, I64 count);
+bool vgpAddDeferred   (VgpFile *vf, char *filename);
 
   // Append provenance/reference/deferred to header information.  Must be called before
   //   call to vgpWriteHeader.  Current data & time filled in if dateTime == NULL.
@@ -295,7 +295,7 @@ void vgpUserBuffer (VgpFile *vf, char lineType, void *buffer);
   //   (if any) is freed.  The user must ensure that a buffer they supply is large
   //   enough.  BTW, this buffer is overwritten with each new line read of the given type.
 
-BOOL vgpGotoObject (VgpFile *vf, I64 i);
+bool vgpGotoObject (VgpFile *vf, I64 i);
 
   // Goto i'th object in the file.  This only works on binary files, which have an index.
 
