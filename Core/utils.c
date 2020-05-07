@@ -59,16 +59,18 @@ char *fgetword (FILE *f)
   while (!feof (f) && (*cp = getc (f)))
     if (isgraph(*cp) && !isspace(*cp))
       { ++cp ; ++n ;
-	if (n >= bufSize)
+	  if (n >= bufSize)
 	  { bufSize *= 2 ;
 	    if (!(buf = (char*) realloc (buf, bufSize)))
 	      die ("fgetword realloc failure requesting %d bytes", bufSize) ;
 	  }
       }
     else
-      { while ((*cp = getc (f)) && (isspace(*cp) || !isgraph(*cp)) && *cp != '\n' && !feof(f)) ;
-	ungetc (*cp, f) ;
-	break ;
+      { while ((*cp = getc (f)) && (isspace(*cp) || !isgraph(*cp)) && *cp != '\n' && !feof(f))
+        {
+          ungetc (*cp, f) ;
+          break ;
+        }
       }
   *cp = 0 ;
   return buf ;

@@ -23,22 +23,22 @@
 
 
 typedef int8_t I8 ;
-const static I8 I8MAX = 0x7f ;
+static const I8 I8MAX = 0x7f ;
 typedef int16_t I16 ;
-const static I16 I16MAX = 0x7fff ;
+static const I16 I16MAX = 0x7fff ;
 typedef int32_t I32 ;
-const static I32 I32MAX = 0x7fffffff ;
+static const I32 I32MAX = 0x7fffffff ;
 typedef int64_t I64 ;
-const static I64 I64MAX = 0x7fffffffffffffff ;
+static const I64 I64MAX = 0x7fffffffffffffff ;
 
 typedef uint8_t U8 ;
-const static U8 U8MAX = 0xff ;
+static const U8 U8MAX = 0xff ;
 typedef uint16_t U16 ;
-const static U16 U16MAX = 0xffff ;
+static const U16 U16MAX = 0xffff ;
 typedef uint32_t U32 ;
-const static U32 U32MAX = 0xffffffff ;
+static const U32 U32MAX = 0xffffffff ;
 typedef uint64_t U64 ;
-const static U64 U64MAX = 0xffffffffffffffff ;
+static const U64 U64MAX = 0xffffffffffffffff ;
 #endif
 
 void die (char *format, ...) ;
