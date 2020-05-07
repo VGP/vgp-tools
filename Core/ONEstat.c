@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May  3 09:16 2020 (rd109)
+ * Last edited: May  7 10:30 2020 (rd109)
  *   * Dec 27 09:20 2019 (gene): style edits
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *
@@ -24,7 +24,7 @@ int main (int argc, char **argv)
 { int        i ;
   char      *fileType = 0 ;
   char      *outFileName = "-" ;
-  BOOL       isHeader = FALSE, isUsage = FALSE, isVerbose = FALSE ;
+  bool       isHeader = false, isUsage = false, isVerbose = false ;
   char      *schemaFileName = 0 ;
   char      *checkText = 0 ;
   
@@ -51,11 +51,11 @@ int main (int argc, char **argv)
   
   while (argc && **argv == '-')
     if (!strcmp (*argv, "-H") || !strcmp (*argv, "--header"))
-      { isHeader = TRUE ; --argc ; ++argv ; }
+      { isHeader = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-u") || !strcmp (*argv, "--usage"))
-      { isUsage = TRUE ; --argc ; ++argv ; }
+      { isUsage = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-v") || !strcmp (*argv, "--verbose"))
-      { isVerbose = TRUE ; --argc ; ++argv ; }
+      { isVerbose = true ; --argc ; ++argv ; }
     else if (argc > 1 && (!strcmp (*argv, "-t") || !strcmp (*argv, "--type")))
       { fileType = argv[1] ;
 	argc -= 2 ; argv += 2 ;
@@ -97,7 +97,7 @@ int main (int argc, char **argv)
   if (checkText)
     oneFileCheckSchema (vf, checkText) ;
 
-  vf->isCheckString = TRUE ;
+  vf->isCheckString = true ;
 
   // if requesting usage, then 
 
@@ -185,7 +185,7 @@ int main (int argc, char **argv)
   //  Write header if requested
 
       if (isHeader)
-	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vf, TRUE, FALSE, 1) ;
+	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vf, true, false, 1) ;
 	  if (vfOut == NULL)
 	    die ("failed to open output file %s", outFileName) ;
   
