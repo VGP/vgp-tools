@@ -9,7 +9,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019-
  *
  * HISTORY:
- * Last edited: Feb  3 15:59 2020 (rd109)
+ * Last edited: May  6 23:29 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Jul  7 22:14 2019 (rd109): add DNAcodec for sequence S data
  *   * Jul  7 22:13 2019 (rd109): added code to build auxiliary structures, pack etc. last 2 days
@@ -54,6 +54,7 @@ static void defineFormat(VgpFile *vf, FileType fileType)
       info['N'] = vgpDefineLine (REAL, REAL, REAL, REAL, 0, 0); // SNR in A,C,G,T channels
       info['A'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0);        // capped pulse widths 1-4
       info['C'] = vgpDefineLine (INT, 0, 0, 0, 0, 0);           // count (for kmers)
+      info['I'] = vgpDefineLine (STRING, 0, 0, 0, 0, 0);        // for the identifier
         info['S']->listCodec = DNAcodec;
           info['S']->isUseListCodec = TRUE;
         info['Q']->listCodec = vcCreate();
