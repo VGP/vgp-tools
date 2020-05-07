@@ -1,47 +1,51 @@
-# The One Tools C library interface
+# The ONE-Code C-library Interface
+
+### Authors:  Gene Myers, Richard Durbin, and the Vertebrate Genome Project Assembly Group
+### Last Update: April 13, 2020
 
 
-The interface is defined in `Onelib.h`.  There are 23 functions and 9 macros, with one primary
-type `OneFile` which maintains information about the current line.
+The interface is defined in `ONElib.h` (in subdirectory Core/).  There are 19 functions and 8 macros, with one primary type `OneFile` which maintains information about the current line.
 
 As a brief synopsis, the following reads a sequence file, prints out some simple stats, and writes a binary file containing the reverse-complemented sequences.
 
 ```
-{  int totLen   = 0;
-   int totCount = 0;
-   
-   # Must open schema ??
+ { OneFile *in = oneFileOpenRead(inFile, "seq", 1);
+	if (!in)
+	  { fprintf(stderr,"Can't open sequence file %s to read\n",inFile);
+	    exit (1);
+	  }
 
-   OneFile *in = oneFileOpenRead(inFile, "seq", 1);
-   if (in == NULL)
-     die("can't open VGP sequence file %s to read", inFile);
-
-   OneFile *out = oneFileOpenWriteFrom(outFile, in, FALSE, TRUE, 1);
-   if (out == NULL)
-     die("can't open VGP sequence file %s to write", outFile);
-     
-   oneAddProvenance(out,"revcomp","1.0","revcomp inFile outFile",0);
-   oneWriteHeader(out);
-   while (oneReadLine(in))
-     if (in->lineType == 'S')
-       { totLen += oneLen(in);
-         reverseComplement(oneString(in), oneLen(in)); // user-provided, assume acts in place
-         oneWriteLine(out, 'S', oneLen(in), oneString(in));
-       }
-     else if (in->lineType == 'C')
-       totCount += oneInt(in,0);
-	    
-   printf("total sequence length %d and counts %d\n", totLen, totCount);
-   printf("auto-accumulated length %d should be the same\n", in->lineInfo['S']->accum.total);
-   oneFileClose(in);
-   oneFileClose(out);
-}
+	OneFile *out = oneFileOpenWriteFrom(outFile, in, FALSE, TRUE, 1);
+	if (!out)
+	  { fprintf(stderr,"Can't open sequence file %s to write\n",outFile);
+	  	 exit (1);
+	  }
+	oneAddProvenance(out,"revcomp","1.0","revcomp inFile outFile",0);
+	oneWriteHeader(out);
+	
+	int totLen = 0, totCount = 0;
+	while (oneReadLine(in))
+	  if (in->lineType == 'S')
+	    { totLen += oneLen(in);
+	      reverseComplement(oneString(in), oneLen(in)); // user-provided, assume acts in place
+	      oneWriteLine(out, 'S', onepLen(in), oneString(in));
+	    }
+	  else if (in->lineType == 'C')
+	    totCount += oneInt(in,0);
+	printf("total sequence length %d and counts %d\n", totLen, totCount);
+	printf("auto-accumulated length %d should be the same\n", in->lineInfo['S']->accum.total);
+	oneFileClose(in);
+	oneFileClose(out);
+ }
 ```
-For now, more details are provided in `Onelib.h`.
+
+For now, more details are provided in `ONElib.h`.
+
 
 ```
 #define TRUE  1
 #define FALSE 0
+
 typedef char          BOOL;
 typedef int64_t       I64;
 typedef unsigned char U8;
@@ -49,47 +53,28 @@ typedef unsigned char U8;
 static const I64 I64MAX = 0x7fffffffffffffffll;
 ```
 
-I would prefer the above all went away except for U8 and I64.  stdbool.h is C99 and
-would take care of the booleans.
-
 ```
-typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING,
-	                       oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
+typedef enum { vINT = 1, vREAL, vCHAR, vSTRING, vINT_LIST, vREAL_LIST, vSTRING_LIST } OneType;
 
-static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING",
-				                    "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
-```
-
-Allowable data types.
-
-```
 typedef union
   { I64    i;
     double r;
     char   c;
-    I64    len; // For lists : top 8 bits encode excess bytes, low 56 length
+    I64    len;
   } OneField;
-```
 
-Encoding of a data value.
-
-```
 typedef struct
   { char *program;
     char *version;
     char *command;
     char *date;
   } OneProvenance;
-```
 
-```
 typedef struct
   { char *filename; 
     I64   count;
   } OneReference;
-```
 
-```
 typedef struct
   { I64 count;
     I64 max;
@@ -97,38 +82,37 @@ typedef struct
     I64 groupCount;
     I64 groupTotal;
   } OneCounts;
-```
 
-```
+  // OneCodecs are a private package for binary one file compression
+
 typedef void OneCodec; // forward declaration of opaque type for compression codecs
+
+  // DNAcodec is a special pre-existing compressor one should use for DNA.
+  // It compresses every base to 2-bits, where any non-ACGT letter is
+  // effectively converted to an A.  Compression is case insensitive,
+  // but decompression always delivers lower-case.
+
 extern  OneCodec *DNAcodec;
-```
 
-OneCodecs are a private package for binary one file compression
-DNAcodec is a special pre-existing compressor one should use for DNA.
-It compresses every base to 2-bits, where any non-ACGT letter is
-effectively converted to an A.  Compression is case insensitive,
-but decompression always delivers lower-case.
+  // Record for a particular line type.  There is at most one list element.
 
-
-```
 typedef struct
-  { OneCounts accum;            // counts read or written to this moment
-    OneCounts given;            // counts read from header
-    I64       gCount;           // used internally to calculate groupCount and groupTotal
-    I64       gTotal;
-    I64       oCount;           // # of objects in prefix before first group (if any)
-    I64       oTotal;           // + of objects in prefix (these 2 are for thread parallel apps)
+  { OneCounts  accum;           // counts read or written to this moment
+    OneCounts  given;           // counts read from header
+    I64        gCount;          // used internally to calculate groupCount and groupTotal
+    I64        gTotal;
+    I64        oCount;          // # of objects in prefix before first group (if any)
+    I64        oTotal;          // + of objects in prefix (these 2 are for thread parallel apps)
 
-    int       nField;           // number of fields
-    OneType  *fieldType;        // type of each field
-    int       listEltSize;      // size of list field elements (if present, else 0)
-    int       listField;        // field index of list
-    char     *comment;          // the comment on the definition line in the schema
-    
-    BOOL      isUserBuf;        // flag for whether buffer is owned by user
-    I64       bufSize;          // system buffer and size if not user supplied
-    void     *buffer;
+    int        nField;          // number of fields
+    OneType   *fieldType;       // type of each field
+    int        listEltSize;     // size of list field elements (if present, else 0)
+    int        listField;       // field index of list
+    BOOL       isIntListDiff;   // diff int lists before compressing with codec
+
+    BOOL       isUserBuf;       // flag for whether buffer is owned by user
+    I64        bufSize;         // system buffer and size if not user supplied
+    void      *buffer;
 
     OneCodec *fieldCodec;       // compression codecs and flags
     OneCodec *listCodec;
@@ -140,27 +124,25 @@ typedef struct
     I64       fieldTack;        // accumulated training data for this threads fieldCodec (master)
     I64       listTack;         // accumulated training data for this threads codeCodec (master)
   } OneInfo;
-```
 
-Record for a particular line type.  There is at most one list element.
+  // the schema type - the first record is the header spec, then a linked list of primary classes
 
-```
 typedef struct OneSchema
-  {
-    char       primary[4] ;
-    int        nSecondary ;
-    char     **secondary ;
-    OneInfo   *info[128] ;
-    int        nFieldMax ;
-    char       objectType ;
-    char       groupType ;
-    struct OneSchema *nxt ;
+  { int               major, minor;
+    char              primary[4];
+    int               nSecondary;
+    char            **secondary;
+    OneInfo          *info[128];
+    int               nFieldMax;
+    char              objectType;
+    char              groupType;
+    int               nBinary;  // number of line types which allow binary encoding
+    int               nBinaryHeader ; // need to start counting nBinary from here
+    struct OneSchema *nxt;
   } OneSchema ;
-```
 
-The schema type - the first record is the header spec, then a linked list of primary classes
+  // The main OneFile type - this is the primary handle used by the end user
 
-```
 typedef struct
   {
     // this field may be set by the user
@@ -171,6 +153,8 @@ typedef struct
 
     char           fileType[4];
     char           subType[4];
+    I64            major;              // actual major and minor versions of this file
+    I64            minor;
     char           lineType;           // current lineType
     char           objectType;         // line designation character for primary objects
     char           groupType;          // line designation character for groups (optional)
@@ -210,69 +194,26 @@ typedef struct
   } OneFile;                      //   the footer will be in the concatenated result.
 ```
 
-The main OneFile type - this is the primary handle used by the end user
 
+# THE ROUTINES
 
-# ROUTINES FOR MANIPULATING ONE FILES
-
-## CREATING AND DESTROYING SCHEMAS
+## Creating and Destroying Schemas
 
 ```
-OneSchema *oneSchemaCreateFromFile (char *path) ;
-OneSchema *oneSchemaCreateFromText (char *text) ;
+OneSchema *oneSchemaCreateFromFile (char *path);
+void oneSchemaDestroy (OneSchema *vs);
 ```
 
-These functions create a schema handle that can be used to open One-code data files 
-for reading and writing.  A schema file is itself a One-code file, consisting of
-a set of objects, one per primary file type.  Valid lines in this file are:
+## Reading ONE Files
 
 ```
-   P <primary file type>   // a string of length 3
-   S <secondary file type> // a string of length 3 - any number of these
-   D <char> <field_list>   // definition of line with uncompressed fields
-   C <char> <field_list>   // definition of line with compressed fields
-```
-
-```<char>``` must be a lower or upper case letter.  Maximum one lower case letter 
-determines the group type. The first upper case letter definition determines 
-the objects in this file type.
-```<field_list>``` is a list of field types from: ```CHAR, INT, REAL,
-STRING, INT_LIST, REAL_LIST, STRING_LIST, DNA```.
-By convention comments on each line explain the definition.  
-Example, with lists and strings preceded by their length in OneCode style
-
-```
-   P 3 seq                            this is a sequence file
-   D S 1 3 DNA                        the DNA sequence - each S line starts an object
-   D Q 1 6 STRING                     the phred encoded quality score + ASCII 33
-   C N 4 4 REAL 4 REAL 4 REAL 4 REAL  signal to noise ratio in A, C, G, T channels
-   D g 2 3 INT 6 STRING               group designator: number of objects, name
-```
-
-The ...FromText() alternative writes the text to a temp file and reads it with 
-```oneSchemaCreateFromFile()```. This allows code to set the schema.
-Internally a schema is a linked list of OneSchema objects, with the first holding
-the (hard-coded) schema for the header and footer, and the remainder each 
-corresponding to one primary file type.
-
-```
-void oneSchemaDestroy (OneSchema *schema);
-```
-
-## READING ONE FILES:
-
-```
-OneFile *oneFileOpenRead (const char *path, OneSchema *schema, char *type, int nthreads) ;
+OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *type, int nthreads);
 ```
 
 Open ONE file 'path', either binary or ascii encoded, for reading.
 If the file doesn't have a header, then 'type' must be specified,
 otherwise, if 'type' is non-zero it must match the header type.
 All header information (if present) is read.
-'schema' is also optional.  If it is NULL then the file must contain its own schema.  
-If 'schema' is present then it must support 'type', and if the file contains its 
-own schema, then that must be a subset of the one for this type in 'schema'.
-
 If nthreads > 1 then nthreadds OneFiles are generated as an array and the pointer
 to the first, called the master, is returned.  The other nthreads-1 files are
 called slaves.  The package routines are aware of when a OneFile argument is a
@@ -281,23 +222,12 @@ The slaves only read data and have the virture of sharing indices and codecs wit
 the master if relevant.
 
 ```
-BOOL oneFileCheckSchema (OneFile *vf, char *textSchema) ; // EXPERIMENTAL
-```
-
-Checks if file schema is consistent with text schema.  Mismatches are reported to stderr.
-Filetype and all linetypes in text must match.  File schema can contain additional linetypes.
-e.g. if (! oneFileCheckSchema (vf, "P 3 seq\nD S 1 3 DNA\nD Q 1 6 STRING\nD P 0\n")) die () ;
-This is provided to enable a program to ensure that its assumptions about data layout
-are satisfied.
-
-```
 char oneReadLine (OneFile *vf);
 ```
 
 Read the next ONE formatted line returning the line type of the line, or 0
-if at the end of the data section.  The content macros immediately below are
-used to access the information of the line most recently read.
-
+if at the end of the data section.  The content macros immediately below can be
+used to access the information of the line just read.
 
 ```
 #define oneInt(vf,x)        ((vf)->field[x].i)
@@ -317,11 +247,11 @@ A "string list" is implicitly supported, get the first string with oneString, an
 subsequent strings sequentially with oneNextString, e.g.:
 
 ```
-         char *s = oneString(vf);
-         for (i = 0; i < oneLen(vf); i++)
-           { // do something with i'th string
-             s = oneNextString(vf,s);
-           }
+        char *s = oneString(vf);
+        for (i = 0; i < oneLen(vf); i++)
+          { // do something with i'th string
+            s = oneNextString(vf,s);
+          }
 ```
 
 ```
@@ -331,21 +261,21 @@ char *oneReadComment (OneFile *vf);
 Can be called after oneReadLine() to read any optional comment text after the fixed fields.
 Returns NULL if there is no comment.
 
-## WRITING ONE FILES:
+## Writing One Files
 
 ```
-OneFile *oneFileOpenWriteNew (const char *path, OneSchema *schema, char *type,
+OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *type,
 			      BOOL isBinary, int nthreads);
-OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, BOOL useAccum, 
-			       BOOL isBinary, int nthreads);
-```
+OneFile *oneFileOpenWriteFrom (const char *path, OneSchema *vs, OneFile *vfIn,
+			       BOOL useAccum, BOOL isBinary, int nthreads);
+```		
 
 Create a new oneFile that will be written to 'path'.  For the 'New' variant supply
 the file type, subtype (if non-zero), and whether it should be binary or ASCII.
-For the 'From' variant, specify binary or ASCII, schema and all other header 
-information is inherited from 'vfIn', where the count stats are from vfIn's 
-accumulation (assumes vfIn has been fully read or written) if 'useAccum is true, 
-and from vfIn's header otherwise.
+For the 'From' variant, specify binary or ASCII, all other header information is
+inherited from 'vfIn', where the count stats are from vfIn's accumulation (assumes
+vfIn has been fully read or written) if useAccum is true, and from vfIn's header
+otherwise.
 
 If nthreads > 1 then nthreads OneFiles are generated as an array and the pointer
 to the first, called the master, is returned.  The other nthreads-1 files are
@@ -371,7 +301,7 @@ BOOL oneAddDeferred   (OneFile *vf, char *filename);
 ```
 
 Append provenance/reference/deferred to header information.  Must be called before
-call to oneWriteHeader.  Current data & time filled in if 'dateTime' == NULL.
+call to oneWriteHeader.  Current data & time filled in if dateTime == NULL.
 
 ```
 void oneWriteHeader (OneFile *vf);
@@ -399,7 +329,7 @@ void oneWriteComment (OneFile *vf, char *comment);
 Adds a comment to the current line. Need to use this not fprintf() so as to keep the
 index correct in binary mode.
 
-## CLOSING FILES (FOR BOTH READ & WRITE)
+## Closing Files (for both read & write)
 
 ```
 void oneFinalizeCounts (OneFile *vf);
@@ -417,7 +347,7 @@ Close vf (opened either for reading or writing). Finalizes counts if not explici
 requested, merges theaded files, and writes footer if binary. Frees all non-user
 memory associated with vf.
 
-## GOTO & BUFFER MANAGEMENT
+## Indexing & Buffer Management
 
 ```
 void oneUserBuffer (OneFile *vf, char lineType, void *buffer);
@@ -438,7 +368,6 @@ Goto i'th object in the file. This only works on binary files, which have an ind
 ```
 I64  oneGotoGroup  (OneFile *vf, I64 i);
 ```
-
 Goto the first object in group i. Return the size (in objects) of the group, or 0
 if an error (i out of range or vf has not group type). Only works for binary files.
 
@@ -447,7 +376,7 @@ if an error (i out of range or vf has not group type). Only works for binary fil
 ```
 <bin file> <- <ASCII Prolog> <$-line> <binary data> <footer> <^-line> <footer-size:int64>
 ```
- 
+
 '$'-line flags file is binary and gives endian
 The data block ends with a blank line consisting of '\n'
 
@@ -457,7 +386,7 @@ The data block ends with a blank line consisting of '\n'
 
 The ASCII prolog contains the type, subtype, provenance, reference, and deferred lines
 in the ASCII format.  The ONE count statistic lines for each data line type are found
-in the footer along with binary ';' and ':' lines that encode their compressors as
+in the footer along with binary '\01' and '\02' lines that encode their compressors as
 needed.  The footer also contains binary '&' and '*' lines that encode the object index
 and group indices, respectively.
 

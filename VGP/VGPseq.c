@@ -1918,9 +1918,6 @@ static void *cram_output_thread(void *arg)
                 }
             }
 
-// fprintf(stderr,"%lld(%d): %.*s %08x\n",htell(fid->fp),extra,rec->name_len,
-                                       // (char *) rec->s->name_blk->data+rec->name,rec->flags);
-
           vgpInt(vf,0) = rec->len;
           vgpWriteLine(vf,'S',rec->len,rec->s->seqs_blk->data+rec->seq);
 
@@ -1969,7 +1966,7 @@ int main(int argc, char *argv[])
   { int   n, i;
     char *c;
 
-    n = -1;
+    n = 0;
     for (i = 1; i < argc; i++)
       n += strlen(argv[i])+1;
 

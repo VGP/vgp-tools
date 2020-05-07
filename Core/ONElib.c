@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May  7 01:14 2020 (rd109)
+ * Last edited: May  7 01:25 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -729,7 +729,6 @@ static inline void updateGroupCount(OneFile *vf, bool isGroupLine)
       vf->inGroup = true;
     }
 }
-
 
 /***********************************************************************************
  *
@@ -1780,7 +1779,7 @@ static void writeInfoSpec (OneFile *vf, char ci)
 {
   char c ;
   int i ;
-  OneInfo *vi = vf->info[(int)ci] ;
+  OneInfo *vi = vf->info[(int) ci] ;
   
   if (vi->fieldCodec) c = 'C' ;
   else c = 'D' ;

@@ -93,6 +93,14 @@ static uint8 *Uncompress_QV(uint8 *src, int len, char *qvec, int qbits, uint8 qm
     return (src+1);
 }
 
+static uint8 *Shift_SEQ(uint8 *src, char *s, int len)
+{ int i;
+
+  for (i = 0; i < len; i++)
+    s[i] = (src[i+2] << 7) | (src[i+3] >> 1);
+  return (src);
+}
+
   //  Uncompress read from 2-bits per base into [0-3] per byte representation
 
 static char Base[4] = { 'a', 'c', 'g', 't' };
@@ -1152,6 +1160,122 @@ typedef struct
     uint8       *array;
   } Out_Arg;
 
+static void appropriate_codecs (VgpFile *vg, VgpFile *vf)
+{ int i, n;
+
+  if (vg->share != vf->share)
+    { fprintf(stderr,"System error, threading of input and output not the same\n");
+      exit (1);
+    }
+
+  n = vg->share;
+  if (n <= 0)
+    n = 1;
+
+  for (i = 0; i < n; i++)
+    { vg->codecBuf     = vf[i].codecBuf;
+      vg->codecBufSize = vf[i].codecBufSize;
+      vg->lineInfo['S']->fieldCodec = vf->lineInfo['S']->fieldCodec;
+      vg->lineInfo['S']->isUseFieldCodec = TRUE;
+      vg->lineInfo['Q']->fieldCodec = vf->lineInfo['Q']->fieldCodec;
+      vg->lineInfo['Q']->isUseFieldCodec = TRUE;
+      vg->lineInfo['Q']->listCodec = vf->lineInfo['Q']->listCodec;
+      vg->lineInfo['Q']->isUseListCodec = TRUE;
+      vg += 1;
+    }
+
+  for (i = 0; i < n; i++)
+    { vf->codecBuf     = NULL;
+      vf->lineInfo['S']->fieldCodec = NULL;
+      vf->lineInfo['Q']->fieldCodec = NULL;
+      vf->lineInfo['Q']->listCodec = NULL;
+      vf += 1;
+    }
+}
+
+static void write_raw_seq (VgpFile *vf, I64 listLen, void *listBuf, LineInfo *li, LineInfo *lx)
+{ U8  x, cBits;
+  I64 fieldSize, nBits;
+
+  li->accum.count += 1;
+  li->accum.total += listLen;
+  if (listLen > li->accum.max)
+    li->accum.max = listLen;
+
+  ((I64 *) lx->buffer)[vf->object] = vf->byte;
+  vf->object += 1;
+
+  x = li->binaryTypePack | 0x02;   //  Binary line code + compression flags
+  vf->field[0].len = listLen;
+  fieldSize = sizeof(Field);
+
+  nBits = vcEncode (li->fieldCodec, fieldSize, (char *) vf->field, vf->codecBuf);
+  if (nBits < 256)
+    { x |= 0x01;
+      cBits = nBits;
+
+      fputc (x, vf->f);
+      fputc (cBits,vf->f) ;
+      if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
+        die("VGP write error: fail to write compressed fields");
+      vf->byte += 2 + ((nBits+7) >> 3);
+    }
+  else
+    { fputc (x, vf->f);
+      if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
+        die ("VGP write error: write fields: t S, nField 1, fieldSize %lld",fieldSize);
+      vf->byte += 1 + fieldSize;
+    }
+
+  nBits = 2*listLen;
+  if (fwrite (&nBits, sizeof(I64), 1, vf->f) != 1)
+    die ("VGP write error: failed to write list nBits");
+  nBits = (nBits+7) >> 3;
+  if (fwrite (listBuf, nBits, 1, vf->f) != 1)
+    die ("VGP write error: failed to write compressed list");
+  vf->byte += sizeof(I64) + nBits;
+}
+
+static void write_raw_qv (VgpFile *vf, I64 listLen, void *listBuf, LineInfo *li)
+{ U8  x, cBits;
+  I64 fieldSize, nBits;
+
+  li->accum.count += 1;
+  li->accum.total += listLen;
+  if (listLen > li->accum.max)
+    li->accum.max = listLen;
+
+  x = li->binaryTypePack | 0x02;   //  Binary line code + compression flags
+  vf->field[0].len = listLen;
+  fieldSize = sizeof(Field);
+
+  nBits = vcEncode (li->fieldCodec, fieldSize, (char *) vf->field, vf->codecBuf);
+  if (nBits < 256)
+    { x |= 0x01;
+      cBits = nBits;
+
+      fputc (x, vf->f);
+      fputc (cBits,vf->f) ;
+      if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
+        die("VGP write error: fail to write compressed fields");
+      vf->byte += 2 + ((nBits+7) >> 3);
+    }
+  else
+    { fputc (x, vf->f);
+      if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
+        die ("VGP write error: write fields: t S, nField 1, fieldSize %lld",fieldSize);
+      vf->byte += 1 + fieldSize;
+    }
+
+  nBits = vcEncode(li->listCodec,listLen,listBuf,vf->codecBuf);
+  if (fwrite (&nBits, sizeof(I64), 1, vf->f) != 1)
+    die ("VGP write error: failed to write list nBits");
+  nBits = (nBits+7) >> 3;
+  if (fwrite (listBuf, nBits, 1, vf->f) != 1)
+    die ("VGP write error: failed to write compressed list");
+  vf->byte += sizeof(I64) + nBits;
+}
+
 static void *output_thread(void *arg)
 { Out_Arg  *parm   = (Out_Arg *) arg;
   VgpFile  *vg     = parm->vg;
@@ -1170,7 +1294,7 @@ static void *output_thread(void *arg)
   char  *fqvs, *rqvs;
   uint32 code, last;
   uint8 *aptr;
-  LineInfo *ls, *lx;
+  LineInfo *ls, *lq, *lx;
   int    i;
 
   data = Malloc(2*(flen+rlen),"Allocating decompression buffers");
@@ -1181,13 +1305,14 @@ static void *output_thread(void *arg)
 
   lx = vg->lineInfo['&'];
   ls = vg->lineInfo['S'];
+  lq = vg->lineInfo['Q'];
 
   if (lx->buffer != NULL)
     { fprintf(stderr,"Surprised\n"); fflush(stdout);
       free(lx->buffer);
     }
-  lx->buffer  = Malloc((end-beg)*sizeof(I64),"Sequence index setup");
-  lx->bufSize = end-beg; 
+  lx->buffer  = Malloc(2*(end-beg)*sizeof(I64),"Sequence index setup");
+  lx->bufSize = 2*(end-beg); 
 
   if ( ! vg->isLastLineBinary)      // terminate previous ascii line
     fputc ('\n', vg->f);
@@ -1203,9 +1328,13 @@ static void *output_thread(void *arg)
   for (i = beg; i < end; i++)
     { code = *((uint32 *) aptr);
 
-      aptr = Uncompress_SEQ(aptr,forw,flen);
+      forw  = (char *) aptr;
+      aptr += ((flen+7)>>3);
+      // aptr = Uncompress_SEQ(aptr,forw,flen);
       aptr = Uncompress_QV(aptr,flen,fqvs,qbits,qmask,inv);
-      aptr = Uncompress_SEQ(aptr,revr,rlen);
+      revr  = (char *) aptr;
+      aptr += ((rlen+7)>>3);
+      // aptr = Uncompress_SEQ(aptr,revr,rlen);
       aptr = Uncompress_QV(aptr,rlen,rqvs,qbits,qmask,inv);
 
       if (code != last)
@@ -1217,13 +1346,19 @@ static void *output_thread(void *arg)
 
       vgpWriteLine(vg,'P',0,NULL);
 
-      vgpInt(vg,0) = flen-23;
-      vgpWriteLine(vg,'S',flen-23,forw+23);
-      vgpWriteLine(vg,'Q',flen-23,fqvs+23);
+      write_raw_seq (vg, flen, forw, ls, lx);
+      write_raw_qv (vg, flen, fqvs, lq);
 
-      vgpInt(vg,0) = rlen;
-      vgpWriteLine(vg,'S',rlen,revr);
-      vgpWriteLine(vg,'Q',rlen,rqvs);
+      // vgpInt(vg,0) = flen-23;
+      // vgpWriteLine(vg,'S',flen-23,forw+23);
+      // vgpWriteLine(vg,'Q',flen-23,fqvs+23);
+
+      write_raw_seq (vg, rlen, revr, ls, lx);
+      write_raw_qv (vg, rlen, rqvs, lq);
+
+      // vgpInt(vg,0) = rlen;
+      // vgpWriteLine(vg,'S',rlen,revr);
+      // vgpWriteLine(vg,'Q',rlen,rqvs);
     }
 
   free(data);
@@ -1264,7 +1399,7 @@ int main(int argc, char *argv[])
   { int   n, i;
     char *c;
 
-    n = 0;
+    n = -1;
     for (i = 1; i < argc; i++)
       n += strlen(argv[i])+1;
 
@@ -1828,6 +1963,8 @@ int main(int argc, char *argv[])
 
       vgpWriteHeader(vg);
 
+      appropriate_codecs(vg,vf);
+
       vgpFileClose(vf);
 
       if (VERBOSE)
@@ -1850,6 +1987,7 @@ int main(int argc, char *argv[])
           parm[i].rlen   = rlen;
           parm[i].reclen = reclen;
           parm[i].array  = array;
+// setvbuf(vg[i].f,NULL,_IOFBF,0x10000000);
         }
 
 #ifdef DEBUG_OUT
