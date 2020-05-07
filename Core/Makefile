@@ -2,9 +2,9 @@
 
 DEST_DIR = ~/bin
 
-CC=gcc-9
+
 #CFLAGS= -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
-CFLAGS= -g -DOMP -fopenmp -Wall -Wextra -Wno-unused-result -fno-strict-aliasing  # for debugging
+CFLAGS= -g -Wall -Wextra -Wno-unused-result -fno-strict-aliasing # for debugging
 #CFLAGS= -03 -DOMP -fopenmp	# for OMP parallelisation - doesn't compile on Mac
 
 LIB = libONE.a
