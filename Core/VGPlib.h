@@ -184,7 +184,7 @@ VgpFile *vgpFileOpenRead (const char *path, FileType type, int nthreads);
   //   The slaves only read data and have the virture of sharing indices and codecs with
   //   the master if relevant.
 
-char vgpReadLine (VgpFile *vf);
+bool vgpReadLine (VgpFile *vf);
 
   // Read the next VGP formatted line returning the line type of the line, or 0
   //   if at the end of the data section.  The content macros immediately below can be
