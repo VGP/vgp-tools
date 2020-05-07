@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
@@ -270,7 +271,7 @@ int main(int argc, char *argv[])
 
       HAS_QVS = (v1->info['Q']->given.count > 0);
 
-      vf = oneFileOpenWriteNew("-",schema,"irp",TRUE,NTHREADS);
+      vf = oneFileOpenWriteNew("-",schema,"irp",true, NTHREADS);
 
       oneInheritProvenance(vf,v1);
       oneInheritProvenance(vf,v2);
