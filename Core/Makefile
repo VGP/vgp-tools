@@ -4,7 +4,6 @@ DEST_DIR = ~/bin
 
 #CFLAGS= -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 CFLAGS= -g -Wall -Wextra -Wno-unused-result -fno-strict-aliasing  # for debugging
-#CFLAGS= -03 -DOMP -fopenmp	# for OMP parallelisation - doesn't compile on Mac
 
 LIB = libONE.a
 PROGS = ONEstat ONEview
