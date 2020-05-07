@@ -10,4 +10,4 @@ clean:
 	rm *.html
 
 %.html: %.md
-	pandoc -sS --toc --toc-depth=1 -o $@ $<
+	pandoc --toc --toc-depth=1 -o $@ $<
