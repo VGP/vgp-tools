@@ -570,7 +570,7 @@ static void readStringList(VgpFile *vf, char t, I64 len)
   free (string);
 }
 
-bool vgpReadLine (VgpFile *vf)
+char vgpReadLine (VgpFile *vf)
 { bool      isAscii;
   U8        x;
   char      t;
