@@ -1,8 +1,7 @@
 # The One Tools C library interface
 
-
 The interface is defined in `Onelib.h`.  There are 23 functions and 9 macros, with one primary
-type `OneFile` which maintains information about the current line.
+type `OneFile` which maintains information about the file being read or written, including the current line.
 
 ## Synopsis
 
@@ -37,12 +36,12 @@ As a brief synopsis, the following reads a sequence file, prints out some simple
    oneFileClose(out); // NB this writes out the footer as well as closing the file - don't omit!
 }
 ```
-In the above, there is no check that the schema of the file fits the expectations lower down the file.  It would have been possible to carry out such a check using
+In the above, there is no check that the schema of the file fits the expectations in the code below.  It would have been possible to carry out such a check using
 
 ```
   if (! oneFileCheckSchema (in, "D S 1 3 DNA\nD C 1 3 INT\n")) die ("schema mismatch") ;
 ```
-which checks that there are S lines with a single field encoding DNA, and C lines with a single field encoding an integer.  Alternatively, one could define the schema ahead of opening the file as in
+which confirms that there are S lines with a single field encoding DNA, and C lines with a single field encoding an integer.  Alternatively, one could define the schema ahead of opening the file as in
 ```
   OneSchema *schema = oneSchemaCreateFromText ("P 3 seq\nD S 1 3 DNA\nD C 1 3 INT\n") ;
   OneFile *in = oneFileOpenRead (inFile, schema, "seq", 1) ;
