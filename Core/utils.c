@@ -5,7 +5,7 @@
  * Description: core utility functions
  * Exported functions:
  * HISTORY:
- * Last edited: May  7 10:31 2020 (rd109)
+ * Last edited: May 11 02:19 2020 (rd109)
  * * Feb 22 14:52 2019 (rd109): added fzopen()
  * Created: Thu Aug 15 18:32:26 1996 (rd)
  *-------------------------------------------------------------------
@@ -73,7 +73,7 @@ char *fgetword (FILE *f)
   return buf ;
 }
 
-#define WITH_ZLIB
+// #define WITH_ZLIB
 #ifdef WITH_ZLIB
 #include <zlib.h>
 #endif

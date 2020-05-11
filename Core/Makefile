@@ -34,10 +34,10 @@ $(LIB): $(LIB_OBJS)
 ### programs
 
 ONEstat: ONEstat.c utils.o $(LIB)
-	$(CC) $(CFLAGS) -o $@ $^ -lm -lz
+	$(CC) $(CFLAGS) -o $@ $^
 
 ONEview: ONEview.c utils.o $(LIB)
-	$(CC) $(CFLAGS) -o $@ $^ -lm -lz
+	$(CC) $(CFLAGS) -o $@ $^
 
 ### crude test
 
