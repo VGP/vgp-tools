@@ -91,7 +91,7 @@ int main (int argc, char **argv)
     { if (vf->line == 1)
 	fprintf (stderr, "header missing\n") ;
       else
-	fprintf (stderr, "read %lld header lines\n", vf->line) ;
+	fprintf (stderr, "read %" PRId64 " header lines\n", vf->line) ;
     }
 
   if (checkText)
@@ -116,7 +116,7 @@ int main (int argc, char **argv)
 	f = stdout ;
       
       for (i = 'A' ; i < 128 ; ++i)
-	if (usage[i]) fprintf (f, "usage line type %c bytes %lld\n", (char)i, usage[i]) ;
+	if (usage[i]) fprintf (f, "usage line type %c bytes %" PRId64 "\n", (char)i,  usage[i]) ;
 
       if (f != stdout) fclose (f) ;
      }
@@ -131,24 +131,24 @@ int main (int argc, char **argv)
 	while (oneReadLine (vf))
 	  if (vf->lineType == vf->groupType)
 	    { if (lastLine > 0 && vf->object - lastObj != lastSize)
-		{ fprintf (stderr, "group size mismatch: group %c at line %lld asserted %lld objects",
-			   vf->groupType, lastLine, lastSize);
-		  fprintf (stderr, " but found %lld\n", vf->object-lastObj) ;
+		{ fprintf (stderr, "group size mismatch: group %c at line %" PRId64 " asserted %" PRId64 " objects",
+			   vf->groupType,  lastLine,  lastSize);
+		  fprintf (stderr, " but found %" PRId64 "\n", vf->object-lastObj) ;
 		}
 	      lastLine = vf->line ;
 	      lastSize = oneInt(vf,0) ;
 	      lastObj  = vf->object ;
 	    }
 	if (lastLine && vf->object - lastObj != lastSize)
-	  { fprintf (stderr, "group size mismatch: group %c at line %lld asserted %lld objects",
-		     vf->groupType, lastLine, lastSize) ;
-	    fprintf (stderr, " but found %lld\n", vf->object-lastObj) ;
+	  { fprintf (stderr, "group size mismatch: group %c at line %" PRId64 " asserted %" PRId64 " objects",
+		     vf->groupType,  lastLine,  lastSize) ;
+	    fprintf (stderr, " but found %" PRId64 "\n",  vf->object-lastObj) ;
 	  }
       }
 
       if (isVerbose)
-	fprintf (stderr, "read %lld objects in %lld lines from OneFile %s type %s\n",
-		 vf->object, vf->line, argv[0], vf->fileType) ;
+	fprintf (stderr, "read %" PRId64 " objects in %" PRId64 " lines from OneFile %s type %s\n",
+		  vf->object,  vf->line, argv[0], vf->fileType) ;
 
       oneFinalizeCounts (vf) ;
     
@@ -158,11 +158,11 @@ int main (int argc, char **argv)
 	  
 #define CHECK(X,Y,Z)							                       \
   if (li->X > 0 && li->X != li->Y)				                               \
-    { fprintf (stderr, "header mismatch %s %c: header %lld data %lld\n", Z, i, li->X, li->Y) ; \
+    { fprintf (stderr, "header mismatch %s %c: header %" PRId64 " data %" PRId64 "\n", Z, i,  li->X,  li->Y) ; \
       nBad += 1 ;							                       \
    } 											       \
  else if (li->Y > 0 && li->X == 0)							       \
-   { fprintf (stderr, "header %s line missing for %c, value is %lld\n", Z, i, li->Y) ;	       \
+   { fprintf (stderr, "header %s line missing for %c, value is %" PRId64 "\n", Z, i,  li->Y) ;	       \
      nMissing += 1 ;									       \
    } 											       \
  if (li->Y > 0)										       \
@@ -178,8 +178,8 @@ int main (int argc, char **argv)
 	      CHECK(given.groupTotal, accum.groupTotal, "group total") ;
 	  }
 	if (isVerbose || nBad || nMissing)
-	  fprintf (stderr, "expected %lld header content lines, of which %lld bad and %lld missing\n",
-		   nTotal, nBad, nMissing) ;
+	  fprintf (stderr, "expected %" PRId64 " header content lines, of which %" PRId64 " bad and %" PRId64 " missing\n",
+		    nTotal,  nBad,  nMissing) ;
       }
 
   //  Write header if requested

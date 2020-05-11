@@ -17,7 +17,7 @@
 #define ONE_DEFINED
 
 #include <stdio.h>    // for FILE etc.
-#include <stdint.h>   // for standard size int types
+#include <inttypes.h> // for standard size int types and their PRI print macros
 #include <stdbool.h>  // for standard bool types
 #include <limits.h>   // for INT_MAX etc.
 #include <pthread.h>
@@ -39,8 +39,8 @@ typedef unsigned char U8;
 
 typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING,
 	       oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
-static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING",
-				 "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
+extern char* oneTypeString[] ; 
+// = { 0, "INT", "REAL", "CHAR", "STRING", "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
 
 typedef union
   { I64    i;

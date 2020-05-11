@@ -46,7 +46,7 @@ TEST:
 	./ONEview -b -S ../VGP/VGP_1_1.def test.aln > ZZ.baln
 	./ONEstat -S ../VGP/VGP_1_1.def ZZ.baln
 	./ONEstat ZZ.baln
-	./ONEview ZZ > ZZ.aln
+	./ONEview ZZ.baln > ZZ.aln
 	./ONEstat ZZ.aln
 	./ONEstat -C "D C 1 6 STRING" ZZ.aln
 	./ONEstat -C "P 3 aln\nD C 1 6 STRING" ZZ.aln

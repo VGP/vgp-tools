@@ -178,6 +178,8 @@ int main (int argc, char **argv)
   free (command) ;
   if (isVerbose)
     timeTotal (stderr) ;
+
+  exit (0) ;
 }
 
 /********************* end of file ***********************/
