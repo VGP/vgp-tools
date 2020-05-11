@@ -4,19 +4,19 @@
 The interface is defined in `Onelib.h`.  There are 23 functions and 9 macros, with one primary
 type `OneFile` which maintains information about the current line.
 
+### Synopsis
+
 As a brief synopsis, the following reads a sequence file, prints out some simple stats, and writes a binary file containing the reverse-complemented sequences.
 
 ```
 {  int totLen   = 0;
    int totCount = 0;
    
-   # Must open schema ??
-
-   OneFile *in = oneFileOpenRead(inFile, "seq", 1);
-   if (in == NULL)
-     die("can't open VGP sequence file %s to read", inFile);
-
-   OneFile *out = oneFileOpenWriteFrom(outFile, in, FALSE, TRUE, 1);
+   OneFile *in = oneFileOpenRead(inFile, 0, "seq", 1); // 0 for read schema from file, 1 for single thread
+   if (in == NULL) 
+     die("can't open sequence file %s to read", inFile);
+   
+   OneFile *out = oneFileOpenWriteFrom(outFile, in, false, true, 1); // false for don't use counts from in's header, true for inary, 1 for single thread
    if (out == NULL)
      die("can't open VGP sequence file %s to write", outFile);
      
@@ -34,40 +34,42 @@ As a brief synopsis, the following reads a sequence file, prints out some simple
    printf("total sequence length %d and counts %d\n", totLen, totCount);
    printf("auto-accumulated length %d should be the same\n", in->lineInfo['S']->accum.total);
    oneFileClose(in);
-   oneFileClose(out);
+   oneFileClose(out); // NB this writes out the footer as well as closing the file - don't omit!
 }
 ```
-For now, more details are provided in `Onelib.h`.
+In the above, there is no check that the schema of the file fits the expectations lower down the file.  It would have been possible to carry out such a check using
 
 ```
-#define TRUE  1
-#define FALSE 0
-typedef char          BOOL;
+  if (! oneFileCheckSchema (in, "D S 1 3 DNA\nD C 1 3 INT\n")) die ("schema mismatch") ;
+```
+which checks that there are S lines with a single field encoding DNA, and C lines with a single field encoding an integer.  Alternatively, one could define the schema ahead of opening the file as in
+```
+  OneSchema *schema = oneSchemaCreateFromText ("P 3 seq\nD S 1 3 DNA\nD C 1 3 INT\n") ;
+  OneFile *in = oneFileOpenRead (inFile, schema, "seq", 1) ;
+  oneSchemaDestroy (schema) ;
+```
+Note that in this case it is necessary to define the file type "seq" in the schema, since a general schema can specify multiple file types.  Also there is a more subtle difference, in that the first version checks that the S and C lines are present and specified as required while allowing additional unspecified line types, while the second version requires that the file only contain S and C lines.  i.e. for oneFileCheckSchema() all defined lines must be in the file, and for a schema given as an argument to oneFileOpenRead all lines the in file must be in the schema.
+
+
+### Interface details
+
+The following is derived from the file `ONElib.h` which provides the entire interface.
+
+```
 typedef int64_t       I64;
 typedef unsigned char U8;
-
-static const I64 I64MAX = 0x7fffffffffffffffll;
+typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING, oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
+static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING", "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" };
 ```
 
-I would prefer the above all went away except for U8 and I64.  stdbool.h is C99 and
-would take care of the booleans.
-
-```
-typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING,
-	                       oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
-
-static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING",
-				                    "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
-```
-
-Allowable data types.
+Basic data types.
 
 ```
 typedef union
   { I64    i;
     double r;
     char   c;
-    I64    len; // For lists : top 8 bits encode excess bytes, low 56 length
+    I64    len; // for lists: top 8 bits encode excess bytes, low 56 bits encode length
   } OneField;
 ```
 
