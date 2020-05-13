@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May  7 01:25 2020 (rd109)
+ * Last edited: May 13 22:05 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -1072,7 +1072,7 @@ char *oneReadComment (OneFile *vf)
 OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int nthreads)
 {
   OneFile   *vf ;
-  off_t      startOff, footOff;
+  off_t      startOff = 0, footOff;
   OneSchema *vs0 = vs ;
   bool       isDynamic = false ; // if we are making the schema from the header
 
@@ -1559,8 +1559,7 @@ OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *fileType,
   return vf;
 }
 
-OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
-			       bool useAccum, bool isBinary, int nthreads)
+OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, bool isBinary, int nthreads)
 {
   // first build a schema from vfIn
   OneSchema *vs0 = oneSchemaCreateDynamic (vfIn->fileType, vfIn->subType) ;
@@ -1592,7 +1591,7 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
   for (i = 0; i < 128 ; ++i)
     if (vf->info[i])
       { OneInfo *vi = vf->info[i];
-	vi->given = useAccum ? vfIn->info[i]->accum : vfIn->info[i]->given ;
+	vi->given = vfIn->info[i]->given ;
 	if (vi->listCodec)
 	  { I64 sz = vi->given.max * vi->listEltSize;
 	    if (sz >= size)
@@ -1806,7 +1805,7 @@ void oneWriteHeader (OneFile *vf)
   if (vf->line > 0)
     die ("ONE error: cannot write header after writing one or more data lines");
   if (vf->info[(int) vf->objectType]->given.count == 0 && ! vf->isBinary)
-    die ("ONE error: information for ASCII header is not present, use <oneFileOpenWriteFrom");
+    die ("ONE error: count information for ASCII header is not present");
 
   vf->isLastLineBinary = false; // header is in ASCII
 
@@ -1847,6 +1846,7 @@ void oneWriteHeader (OneFile *vf)
     }
 
   // write the schema into the header - no need for file type, version etc. since already given
+  fprintf (vf->f, " schema") ;
   if (vf->groupType) writeInfoSpec (vf, vf->groupType) ;
   writeInfoSpec (vf, vf->objectType) ;
   for (i = 'A' ; i <= 'Z' ; ++i)
@@ -2312,6 +2312,10 @@ static void oneWriteFooter (OneFile *vf)
   if (fwrite (&footOff, sizeof(off_t), 1, vf->f) != 1)
     die ("ONE write error: failed writing footer offset");
 }
+
+  // After all input has been read, or all data has been written, this routine will finish
+  //   accumulating counts/statistics for the file and merge thread stats into those for
+  //   the master file (if a parallel OneFile).
 
 void oneFinalizeCounts(OneFile *vf)
 { int       i, j, n, k, len;
@@ -2913,10 +2917,10 @@ void vcPrint(OneCodec *vc, FILE *to)
 
   bits = v->codebits;
   lens = v->codelens;
-
+  hist = v->hist; // only needed if hashist, but compiler warning if assignment is conditional
+      
   if (hashist)
-    { hist = v->hist;
-      total_bits = 0;
+    { total_bits = 0;
       ucomp_bits = 0;
 
       count = 0;

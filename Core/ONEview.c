@@ -5,7 +5,7 @@
  * Description:
  * Exported functions:
  * HISTORY:
- * Last edited: May  7 10:31 2020 (rd109)
+ * Last edited: May 12 19:33 2020 (rd109)
  * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *-------------------------------------------------------------------
  */
@@ -125,7 +125,7 @@ int main (int argc, char **argv)
   if ((objList || groupList) && !vfIn->isBinary)
     die ("%s is ascii - you can only access objects and groups by index in binary files", argv[0]) ;
   
-  OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vfIn, false, isBinary, 1) ;
+  OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vfIn, isBinary, 1) ;
   if (!vfOut) die ("failed to open output file %s", outFileName) ;
 
   if (isHeaderOnly)

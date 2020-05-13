@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May  7 01:20 2020 (rd109)
+ * Last edited: May 13 21:44 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -276,7 +276,7 @@ char *oneReadComment (OneFile *vf);
 
 OneFile *oneFileOpenWriteNew (const char *path, OneSchema *schema, char *type,
 			      bool isBinary, int nthreads);
-OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, bool useAccum, 
+OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
 			       bool isBinary, int nthreads);
 
   // Create a new oneFile that will be written to 'path'.  For the 'New' variant supply
@@ -329,17 +329,10 @@ void oneWriteComment (OneFile *vf, char *comment);
 
 // CLOSING FILES (FOR BOTH READ & WRITE)
 
-void oneFinalizeCounts (OneFile *vf);
-
-  // After all input has been read, or all data has been written, this routine will finish
-  //   accumulating counts/statistics for the file and merge thread stats into those for
-  //   the master file (if a parallel OneFile).
-
 void oneFileClose (OneFile *vf);
 
-  // Close vf (opened either for reading or writing). Finalizes counts if not explicitly
-  //   requested, merges theaded files, and writes footer if binary. Frees all non-user
-  //   memory associated with vf.
+  // Close vf (opened either for reading or writing). Finalizes counts, merges theaded files,
+  // and writes footer if binary. Frees all non-user memory associated with vf.
 
 //  GOTO & BUFFER MANAGEMENT
 

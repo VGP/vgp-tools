@@ -171,15 +171,13 @@ Returns NULL if there is no comment.
 ```
 OneFile *oneFileOpenWriteNew (const char *path, OneSchema *schema, char *type,
 			      BOOL isBinary, int nthreads);
-OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, BOOL useAccum, 
+OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
 			       BOOL isBinary, int nthreads);
 ```
 Create a new oneFile that will be written to 'path'.  For the 'New' variant supply
 the file type, subtype (if non-zero), and whether it should be binary or ASCII.
 For the 'From' variant, specify binary or ASCII, schema and all other header 
-information is inherited from 'vfIn', where the count stats are from vfIn's 
-accumulation (assumes vfIn has been fully read or written) if 'useAccum is true, 
-and from vfIn's header otherwise.
+information is inherited from 'vfIn'.
 
 If nthreads > 1 then nthreads OneFiles are generated as an array and the pointer
 to the first, called the master, is returned.  The other nthreads-1 files are
@@ -231,18 +229,11 @@ index correct in binary mode.
 ### Closing files (for both read and write)
 
 ```
-void oneFinalizeCounts (OneFile *vf);
-```
-After all input has been read, or all data has been written, this routine will finish
-accumulating counts/statistics for the file and merge thread stats into those for
-the master file (if a parallel OneFile).  This is only str
-
-```
 void oneFileClose (OneFile *vf);
 ```
-Close vf (opened either for reading or writing). Finalizes counts if not explicitly
-requested, merges theaded files, and writes footer if binary. Frees all non-user
-memory associated with vf.
+Close vf (opened either for reading or writing).  Merges theaded
+files, and writes footer if binary. Frees all non-user memory
+associated with vf. 
 
 ## Goto and buffer management
 

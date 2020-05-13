@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May  7 10:30 2020 (rd109)
+ * Last edited: May 12 19:36 2020 (rd109)
  *   * Dec 27 09:20 2019 (gene): style edits
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *
@@ -19,6 +19,8 @@
 
 #include "utils.h"
 #include "ONElib.h"
+
+extern void oneFinalizeCounts (OneFile *vf) ; // secret connection into ONElib.c for checking
 
 int main (int argc, char **argv)
 { int        i ;
@@ -185,9 +187,13 @@ int main (int argc, char **argv)
   //  Write header if requested
 
       if (isHeader)
-	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vf, true, false, 1) ;
+	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vf, false, 1) ;
 	  if (vfOut == NULL)
 	    die ("failed to open output file %s", outFileName) ;
+
+	  for (i = 0 ; i < 128 ; i++) // transfer accumulated counts for vfIn to given for vfOut
+	    if (vfOut->info[i])
+	      vfOut->info[i]->given = vf->info[i]->accum ;
   
 	  oneWriteHeader (vfOut) ;
 	  fflush (vfOut->f) ;
