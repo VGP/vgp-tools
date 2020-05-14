@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May 13 22:05 2020 (rd109)
+ * Last edited: May 14 13:08 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -1163,12 +1163,12 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
       if (isalpha(peek))
         break;    // loop exit at standard data line
 
-      else if (peek == '!')  // hack to insert a count of 4 for vSTRING_LIST
-        { getc(vf->f);
-          ungetc('4',vf->f);
-          ungetc(' ',vf->f);
-          ungetc('!',vf->f);
-        }
+      //      else if (peek == '!')  // hack to insert a count of 4 for vSTRING_LIST
+      //        { getc(vf->f);
+      //          ungetc('4',vf->f);
+      //          ungetc(' ',vf->f);
+      //          ungetc('!',vf->f);
+      //        }
       
       oneReadLine(vf);  // can't fail because we checked file eof already
 
@@ -1804,8 +1804,6 @@ void oneWriteHeader (OneFile *vf)
     die ("ONE error: trying to write header to a file open for reading");
   if (vf->line > 0)
     die ("ONE error: cannot write header after writing one or more data lines");
-  if (vf->info[(int) vf->objectType]->given.count == 0 && ! vf->isBinary)
-    die ("ONE error: count information for ASCII header is not present");
 
   vf->isLastLineBinary = false; // header is in ASCII
 
@@ -1820,7 +1818,7 @@ void oneWriteHeader (OneFile *vf)
   p = vf->provenance; 
   n = vf->info['!']->accum.count;
   for (i = 0; i < n; i++, p++)
-    { fprintf (vf->f, "\n! %lu %s %lu %s %lu %s %lu %s",
+    { fprintf (vf->f, "\n! 4 %lu %s %lu %s %lu %s %lu %s",
                      strlen (p->program), p->program, strlen (p->version), p->version,
                      strlen (p->command), p->command, strlen (p->date), p->date);
       vf->line += 1;
@@ -1846,20 +1844,21 @@ void oneWriteHeader (OneFile *vf)
     }
 
   // write the schema into the header - no need for file type, version etc. since already given
-  fprintf (vf->f, " schema") ;
+
   if (vf->groupType) writeInfoSpec (vf, vf->groupType) ;
-  writeInfoSpec (vf, vf->objectType) ;
+  if (vf->objectType) writeInfoSpec (vf, vf->objectType) ;
   for (i = 'A' ; i <= 'Z' ; ++i)
     if (vf->info[i] && i != vf->objectType)
       writeInfoSpec (vf, i) ;
-  fprintf (vf->f, "\n.") ;
 
   if (vf->isBinary)         // defer writing rest of header
     { fprintf (vf->f, "\n$ %d", vf->isBig);
       vf->line += 1;
     }
   else             // write counts based on those supplied in input header
-    { for (i = 'A'; i <= 'Z'+1 ; i++)
+    { fprintf (vf->f, "\n.") ;
+      bool isCountWritten = false ;
+      for (i = 'A'; i <= 'Z'+1 ; i++)
 	{ if (i == 'Z'+1)
 	    { if (vf->groupType) // NB group types are all lower case so > 'Z'+1
 		i = vf->groupType ;
@@ -1868,7 +1867,8 @@ void oneWriteHeader (OneFile *vf)
 	    }
 	  li = vf->info[i];
           if (li != NULL && li->given.count > 0)
-            { fprintf (vf->f, "\n# %c %" PRId64 "", i, li->given.count);
+            { isCountWritten = true ;
+	      fprintf (vf->f, "\n# %c %" PRId64 "", i, li->given.count);
               vf->line += 1;
               if (li->given.max > 0)
                 { fprintf (vf->f, "\n@ %c %" PRId64 "", i, li->given.max);
@@ -1888,8 +1888,9 @@ void oneWriteHeader (OneFile *vf)
                 }
             }
         }
+      if (isCountWritten)
+	fprintf (vf->f, "\n.") ;
     }
-  fprintf (vf->f, "\n.\n. end of header\n.") ;
   fflush (vf->f);
 
   vf->isHeaderOut = true;
@@ -1901,13 +1902,10 @@ void oneWriteHeader (OneFile *vf)
  *
  **********************************************************************************/
 
-static int writeStringList (OneFile *vf, char t, int len)
+static int writeStringList (OneFile *vf, char t, int len, char *buf)
 { OneInfo *li;
   int       j, nByteWritten = 0;
   I64       sLen, totLen;
-  char     *buf;
-
-  buf = (char *) vf->info[(int) t]->buffer;
 
   totLen = 0;
   for (j = 0; j < len; j++)
@@ -2114,7 +2112,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
               listSize  = listLen * listBytes;
 
               if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
-                vf->byte += writeStringList (vf, t, listLen);
+                vf->byte += writeStringList (vf, t, listLen, listBuf);
 
               else if (x & 0x2)
                 { if (listSize >= vf->codecBufSize)
@@ -2233,7 +2231,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
                   fprintf (vf->f, " %f", b[j]);
               }
             else // vSTRING_LIST
-              writeStringList (vf, t, listLen);
+              writeStringList (vf, t, listLen, listBuf);
             break;
         }
       vf->isLastLineBinary = false;

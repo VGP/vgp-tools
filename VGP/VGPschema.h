@@ -5,25 +5,23 @@
  * Description: schema to include in VGP ONEcode applications
  * Exported functions:
  * HISTORY:
- * Last edited: May 13 23:58 2020 (rd109)
+ * Last edited: May 14 03:11 2020 (rd109)
  * Created: Wed May 13 23:34:04 2020 (rd109)
  *-------------------------------------------------------------------
  */
 
 static char *vgpSchemaText =
   "1 3 def 1 0  OneCode schema for VGP genome assembly pipeline and related purposes\n"
-  "! 14 Richard Durbin 1 0 1 0 7 by hand 24 Wed Apr 22 20:00:00 2020\n"
+  "! 4 14 Richard Durbin 1 0 1 0 7 by hand 24 Wed Apr 22 20:00:00 2020\n"
    ".\n"
    ". these are blank lines, which can also be used for arbitrary comments, anywhere in the file\n"
    ".\n"
   ". below P lines give primary file types, and define the objects in this file\n"
   ". then S is for secondary file types\n"
-  ". and L, C, F and B define the legal record types, all taking a CHAR, then STRING_LIST\n"
-  ".     L for standard linetypes saved with no compression in binary mode\n"
-  ".     C means compress the list - perhaps all lists should be compressed by default?\n"
-  ".     F means compress the fields - not default because it slows IO down for small gain\n"
-  ".     B means compress both\n"
-  ". note we can, and do, also add arbitrary comments/descriptions after the data on each line\n"
+  ". and D and C define the legal record types, all taking a CHAR, then STRING_LIST\n"
+  ".     D for linetypes without field compression in binary mode\n"
+  ".     C for linetypes with field compression in binary mode\n"
+  ". note we can also add arbitrary comments/descriptions after the data on each line\n"
   ".\n"
   "P 3 seq SEQUENCE\n"
   "S 3 irp   read pairs\n"
