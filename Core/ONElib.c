@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May 14 13:08 2020 (rd109)
+ * Last edited: May 31 21:34 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -160,6 +160,7 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
   else if (t == ':') vi->binaryTypePack = (28 << 2) | (char) 0x80 ;
   else if (t == '&') vi->binaryTypePack = (29 << 2) | (char) 0x80 ;
   else if (t == '*') vi->binaryTypePack = (30 << 2) | (char) 0x80 ;
+  else if (t == '/') vi->binaryTypePack = (31 << 2) | (char) 0x80 ;
 
   vs->info[(int)t] = vi ;
 }
@@ -444,6 +445,9 @@ static OneFile *oneFileCreate (OneSchema **vsp, char *type)
 	vf->binaryTypeUnpack[x+2] = i ;
 	vf->binaryTypeUnpack[x+3] = i ;
       }
+  // special case '.' to overload '/' field compression bit, to keep within 32 binary symbols
+  U8 x = vf->info['.']->binaryTypePack = vf->info['/']->binaryTypePack + 1 ;
+  vf->binaryTypeUnpack[(int)x] = '.' ;
   
   // set other information
   vf->objectType = vs->objectType ;
@@ -532,6 +536,14 @@ static void oneFileDestroy (OneFile *vf)
       infoDestroy (vf->info[i]);
 
   if (vf->field) free (vf->field) ;
+
+  if (vf->headerText)
+    { OneHeaderText *t = vf->headerText ;
+      while (t)
+	{ free (t->text) ;
+	  { OneHeaderText *nxt = t->nxt ; free (t) ; t = nxt ; }
+	}
+    }
 
   free (vf) ;
 }
@@ -1196,8 +1208,16 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    }
 	  break;
 
-	case '.': // blank line for spacing, ignore
-	  break ;
+	case '.': // blank line for spacing and header text
+	  { char *text = oneReadComment (vf) ;
+	    if (text)
+	      { OneHeaderText **t = &vf->headerText ;
+		while (*t) t = &((*t)->nxt) ;
+		*t = new0 (1, OneHeaderText) ;
+		(*t)->text = strdup (text) ;
+	      }
+	    break ;
+	  }
 
 	case '~': // schema definition line
 	  { char t = oneChar(vf,1) ;
@@ -1796,8 +1816,6 @@ static void writeInfoSpec (OneFile *vf, char ci)
 
 void oneWriteHeader (OneFile *vf)
 { int         i,n;
-  OneReference  *r;
-  OneProvenance *p;
   OneInfo   *li;
 
   if (!vf->isWrite)
@@ -1809,25 +1827,28 @@ void oneWriteHeader (OneFile *vf)
 
   fprintf (vf->f, "1 %lu %s %d %d", strlen(vf->fileType), vf->fileType, MAJOR, MINOR);
   vf->line += 1;
-
   if (*vf->subType)
     { fprintf (vf->f, "\n2 %lu %s", strlen(vf->subType), vf->subType);
       vf->line += 1;
     }
-  
-  p = vf->provenance; 
-  n = vf->info['!']->accum.count;
-  for (i = 0; i < n; i++, p++)
-    { fprintf (vf->f, "\n! 4 %lu %s %lu %s %lu %s %lu %s",
-                     strlen (p->program), p->program, strlen (p->version), p->version,
-                     strlen (p->command), p->command, strlen (p->date), p->date);
-      vf->line += 1;
+
+  // provenance
+  if (vf->info['!']->accum.count)
+    { OneProvenance *p = vf->provenance; 
+      n = vf->info['!']->accum.count;
+      for (i = 0; i < n; i++, p++)
+	{ fprintf (vf->f, "\n! 4 %lu %s %lu %s %lu %s %lu %s",
+		   strlen(p->program), p->program, strlen(p->version), p->version,
+		   strlen(p->command), p->command, strlen(p->date), p->date);
+	  vf->line += 1;
+	}
     }
 
-  fprintf (vf->f, "\n.") ;
+  fprintf (vf->f, "\n.") ; // always have a spacer after this
 
+  // reference and deferred
   if (vf->info['<']->accum.count || vf->info['>']->accum.count)
-    { r = vf->reference;
+    { OneReference *r = vf->reference;
       n = vf->info['<']->accum.count;
       for (i = 0; i < n; i++, r++)
 	{ fprintf (vf->f, "\n< %lu %s %" PRId64 "", strlen(r->filename), r->filename, r->count);
@@ -1844,12 +1865,21 @@ void oneWriteHeader (OneFile *vf)
     }
 
   // write the schema into the header - no need for file type, version etc. since already given
-
   if (vf->groupType) writeInfoSpec (vf, vf->groupType) ;
   if (vf->objectType) writeInfoSpec (vf, vf->objectType) ;
   for (i = 'A' ; i <= 'Z' ; ++i)
     if (vf->info[i] && i != vf->objectType)
       writeInfoSpec (vf, i) ;
+
+  // any header text on '.' lines
+  if (vf->headerText)
+    { OneHeaderText *t = vf->headerText ;
+      while (t)
+	{ fprintf (vf->f, "\n. %s", t->text) ;
+	  t = t->nxt ;
+	}
+      fprintf (vf->f, "\n.") ;
+    }
 
   if (vf->isBinary)         // defer writing rest of header
     { fprintf (vf->f, "\n$ %d", vf->isBig);

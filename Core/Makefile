@@ -50,8 +50,8 @@ TEST:
 	./ONEstat ZZ.aln
 	./ONEstat -C "D C 1 6 STRING" ZZ.aln
 	./ONEstat -C "P 3 aln\nD C 1 6 STRING" ZZ.aln
-	./ONEstat -C "D C 1 3 INT" ZZ.aln
-	./ONEstat -C "D C 2 3 INT 4 CHAR" ZZ.aln
-	./ONEstat -C "D X 1 3 INT" ZZ.aln
+#	./ONEstat -C "D C 1 3 INT" ZZ.aln
+#	./ONEstat -C "D C 2 3 INT 4 CHAR" ZZ.aln
+#	./ONEstat -C "D X 1 3 INT" ZZ.aln
 
 ### end of file

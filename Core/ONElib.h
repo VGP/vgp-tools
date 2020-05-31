@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May 13 21:44 2020 (rd109)
+ * Last edited: May 16 19:07 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -125,6 +125,11 @@ typedef struct OneSchema
     struct OneSchema *nxt ;
   } OneSchema ;
 
+typedef struct OneHeaderText
+  { char *text ;
+    struct OneHeaderText *nxt ;
+  } OneHeaderText ;
+
   // The main OneFile type - this is the primary handle used by the end user
 
 typedef struct
@@ -153,25 +158,26 @@ typedef struct
 
     // fields below here are private to the package
 
-    FILE *f;
-    bool  isWrite;                // true if open for writing
-    bool  isHeaderOut;            // true if header already written
-    bool  isBinary;               // true if writing a binary file
-    bool  inGroup;                // set once inside a group
-    bool  isLastLineBinary;       // needed to deal with newlines on ascii files
-    bool  isIndexIn;              // index read in
-    bool  isBig;                  // are we on a big-endian machine?
-    char  lineBuf[128];           // working buffers
-    char  numberBuf[32];
-    int   nFieldMax;
-    I64   codecBufSize;
-    char *codecBuf;
-    I64   linePos;                // current line position
+    FILE  *f;
+    bool   isWrite;                // true if open for writing
+    bool   isHeaderOut;            // true if header already written
+    bool   isBinary;               // true if writing a binary file
+    bool   inGroup;                // set once inside a group
+    bool   isLastLineBinary;       // needed to deal with newlines on ascii files
+    bool   isIndexIn;              // index read in
+    bool   isBig;                  // are we on a big-endian machine?
+    char   lineBuf[128];           // working buffers
+    char   numberBuf[32];
+    int    nFieldMax;
+    I64    codecBufSize;
+    char  *codecBuf;
+    I64    linePos;                // current line position
+    OneHeaderText *headerText;     // arbitrary descriptive text that goes with the header
 
-    char  binaryTypeUnpack[256];  // invert binary line code to ASCII line character.
-    int   share;                  // index if slave of threaded write, +nthreads > 0 if master
-    int   isFinal;                // oneFinalizeCounts has been called on file
-    pthread_mutex_t fieldLock;    // Mutexs to protect training accumumulation stats when threadded
+    char   binaryTypeUnpack[256];  // invert binary line code to ASCII line character.
+    int    share;                  // index if slave of threaded write, +nthreads > 0 if master
+    int    isFinal;                // oneFinalizeCounts has been called on file
+    pthread_mutex_t fieldLock;     // Mutexs to protect training accumumulation stats when threadded
     pthread_mutex_t listLock;
   } OneFile;                      //   the footer will be in the concatenated result.
 
