@@ -1,3 +1,4 @@
+/*  Last edited: May 13 23:47 2020 (rd109) */
 /*******************************************************************************************
  *
  *  VGPseq can read fasta, fastq, sam, bam, and cram files and outputs to the standard output
@@ -24,7 +25,8 @@
 
 #include "LIBDEFLATE/libdeflate.h"
 #include "gene_core.h"
-#include "../Core/VGPlib.h"
+#include "../Core/ONElib.h"
+#include "VGPschema.h"
 #include "HTSLIB/htslib/hts.h"
 #include "HTSLIB/htslib/hfile.h"
 #include "HTSLIB/cram/cram.h"
@@ -73,7 +75,7 @@ typedef struct
     int64   zsize;  //    Size of zip index (in blocks)
     int64  *zoffs;  //    zoffs[i] = offset to compressed block i
                     //  Fasta/q specific:
-    int     zipd;   //    Is file VGPzip'd (has paired .vzi file)
+    int     zipd;   //    Is file ONEzip'd (has paired .vzi file)
     int     recon;  //    Is file an uncompressed regular zip-file?
   } File_Object;
 
@@ -86,7 +88,7 @@ typedef struct
   { File_Object *fobj;   //  array of file objects
     uint8       *buf;    //  block buffer
     int          fid;    //  fid of fobj[bidx].path
-    VgpFile     *vf;     //  One-file for output
+    OneFile     *vf;     //  One-file for output
     int          bidx;   //  Scan range is [bidx:beg,eidx:end)
     Location     beg; 
     int          eidx;
@@ -151,7 +153,7 @@ static void Fetch_File(char *arg, File_Object *input)
       free(pwd);
       if (idx < 0)
         { if (VERBOSE)
-            fprintf(stderr,"  File %s not VGPzip'd, decompressing\n",arg);
+            fprintf(stderr,"  File %s not ONEzip'd, decompressing\n",arg);
           system(Catenate("gunzip -k ",path,"",""));
           path[strlen(path)-3] = '\0';
           zipd  = 0;
@@ -165,7 +167,7 @@ static void Fetch_File(char *arg, File_Object *input)
         }
       else
         { read(idx,&zsize,sizeof(int64));
-          zoffs = (int64 *) Malloc(sizeof(int64)*(zsize+1),"Allocating VGPzip index");
+          zoffs = (int64 *) Malloc(sizeof(int64)*(zsize+1),"Allocating ONEzip index");
           if (zoffs == NULL)
             exit (1);
           read(idx,zoffs+1,sizeof(int64)*zsize);
@@ -441,7 +443,7 @@ static char *Name2[] =
 static void *fast_output_thread(void *arg)
 { Thread_Arg  *parm   = (Thread_Arg *) arg;
   File_Object *fobj   = parm->fobj;
-  VgpFile     *vf     = parm->vf;
+  OneFile     *vf     = parm->vf;
   uint8       *buf    = parm->buf;
   uint8       *zuf    = parm->zuf;
   DEPRESS     *decomp = parm->decomp;
@@ -589,15 +591,15 @@ static void *fast_output_thread(void *arg)
 
                       if (GROUP)
                         { if (strncmp(lane,last,glen) != 0)
-                            { vgpInt(vf,0) = 0;
-                              vgpInt(vf,1) = glen;
-                              vgpWriteLine(vf,'g',glen,lane);
+                            { oneInt(vf,0) = 0;
+                              oneInt(vf,1) = glen;
+                              oneWriteLine(vf,'g',glen,lane);
                             }
                         }
 
                       if (PAIRING)
                         { if (strncmp(lane,last,llen) != 0)
-                            { vgpWriteLine(vf,'P',0,NULL);
+                            { oneWriteLine(vf,'P',0,NULL);
                               if (first == 0)
                                 { parm->error = 1;
                                   return (NULL);
@@ -654,11 +656,11 @@ static void *fast_output_thread(void *arg)
                       line[olen++] = c;
                     }
                   else
-                    { vgpInt(vf,0) = olen;
-                      vgpWriteLine(vf,'S',olen,line);
+                    { oneInt(vf,0) = olen;
+                      oneWriteLine(vf,'S',olen,line);
                       if (QNAME)
-                        { vgpInt(vf,0) = ilen;
-                          vgpWriteLine(vf,'I',ilen,last);
+                        { oneInt(vf,0) = ilen;
+                          oneWriteLine(vf,'I',ilen,last);
                         }
                       olen  = 0;
                       state = QPLS;
@@ -687,8 +689,8 @@ static void *fast_output_thread(void *arg)
                     }
                   else
                     { if (QVS_OUT)
-                        { vgpInt(vf,0) = olen;
-                          vgpWriteLine(vf,'Q',olen,line);
+                        { oneInt(vf,0) = olen;
+                          oneWriteLine(vf,'Q',olen,line);
                         }
                       olen  = 0;
                       state = QAT;
@@ -711,8 +713,8 @@ static void *fast_output_thread(void *arg)
 
                 case AEOL:
                   if (c == '>')
-                    { vgpInt(vf,0) = olen;
-                      vgpWriteLine(vf,'S',olen,line);
+                    { oneInt(vf,0) = olen;
+                      oneWriteLine(vf,'S',olen,line);
                       olen  = 0;
                       if (GROUP)
                         state = HEAD;
@@ -728,8 +730,8 @@ static void *fast_output_thread(void *arg)
           off = 0;
         }
       if (state == AEOL)
-        { vgpInt(vf,0) = olen;
-          vgpWriteLine(vf,'S',olen,line);
+        { oneInt(vf,0) = olen;
+          oneWriteLine(vf,'S',olen,line);
           olen  = 0;
         }
       close(fid);
@@ -1450,7 +1452,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 /*******************************************************************************************
  *
  *  Parallel:  Each thread processes a contiguous stripe across the input files
- *               sending the compressed binary data lines to their assigned VgpFile.
+ *               sending the compressed binary data lines to their assigned OneFile.
  *
  ********************************************************************************************/
 
@@ -1460,7 +1462,7 @@ static void *bam_output_thread(void *arg)
 { Thread_Arg  *parm  = (Thread_Arg *) arg;
   File_Object *fobj  = parm->fobj;
   uint8       *buf   = parm->buf;
-  VgpFile     *vf    = parm->vf;
+  OneFile     *vf    = parm->vf;
 
   samRecord    _theR, *theR = &_theR;
   BAM_FILE     _bam, *bam = &_bam;
@@ -1584,15 +1586,15 @@ static void *bam_output_thread(void *arg)
                       continue;
                     }
 
-                  vgpInt(vf,0) = 0;
-                  vgpInt(vf,1) = glen;
-                  vgpWriteLine(vf,'g',glen,theR->header);
+                  oneInt(vf,0) = 0;
+                  oneInt(vf,1) = glen;
+                  oneWriteLine(vf,'g',glen,theR->header);
                 }
             }
 
           if (PAIRING)
             { if ((theR->flags & 0xc0) == 0x40)
-                { vgpWriteLine(vf,'P',0,NULL);
+                { oneWriteLine(vf,'P',0,NULL);
                   if (first == 0)
                     { parm->error = 1;
                       return (NULL);
@@ -1608,17 +1610,17 @@ static void *bam_output_thread(void *arg)
                 }
             }
 
-          vgpInt(vf,0) = theR->len;
-          vgpWriteLine(vf,'S',theR->len,theR->seq);
+          oneInt(vf,0) = theR->len;
+          oneWriteLine(vf,'S',theR->len,theR->seq);
     
           if (hasQV && QVS_OUT)
-            { vgpInt(vf,0) = theR->len;
-              vgpWriteLine(vf,'Q',theR->len,theR->qvs);
+            { oneInt(vf,0) = theR->len;
+              oneWriteLine(vf,'Q',theR->len,theR->qvs);
             }
 
           // if (QNAME)
-            // { vgpInt(vf,0) = theR->hlen;
-              // vgpWriteLine(vf,'I',theR->hlen,theR->header);
+            // { oneInt(vf,0) = theR->hlen;
+              // oneWriteLine(vf,'I',theR->hlen,theR->header);
             // }
         }
 
@@ -1802,7 +1804,7 @@ void cram_nearest(Thread_Arg *data)
 static void *cram_output_thread(void *arg)
 { Thread_Arg  *parm  = (Thread_Arg *) arg;
   File_Object *fobj  = parm->fobj;
-  VgpFile     *vf    = parm->vf;
+  OneFile     *vf    = parm->vf;
 
   File_Object *inp;
   int          f;
@@ -1894,15 +1896,15 @@ static void *cram_output_thread(void *arg)
                       continue;
                     }
 
-                  vgpInt(vf,0) = 0;
-                  vgpInt(vf,1) = glen;
-                  vgpWriteLine(vf,'g',glen,h);
+                  oneInt(vf,0) = 0;
+                  oneInt(vf,1) = glen;
+                  oneWriteLine(vf,'g',glen,h);
                 }
             }
 
           if (PAIRING)
             { if ((rec->flags & 0xc0) == 0x40)
-                { vgpWriteLine(vf,'P',0,NULL);
+                { oneWriteLine(vf,'P',0,NULL);
                   if (first == 0)
                     { parm->error = 1;
                       return (NULL);
@@ -1918,21 +1920,21 @@ static void *cram_output_thread(void *arg)
                 }
             }
 
-          vgpInt(vf,0) = rec->len;
-          vgpWriteLine(vf,'S',rec->len,rec->s->seqs_blk->data+rec->seq);
+          oneInt(vf,0) = rec->len;
+          oneWriteLine(vf,'S',rec->len,rec->s->seqs_blk->data+rec->seq);
 
           qual = rec->s->qual_blk->data+rec->qual;
           if (QVS_OUT && qual[0] != 0xff)
             { int i;
               for (i = 0; i < rec->len; i++)
                 qual[i] += 33;
-              vgpInt(vf,0) = rec->len;
-              vgpWriteLine(vf,'Q',rec->len,qual);
+              oneInt(vf,0) = rec->len;
+              oneWriteLine(vf,'Q',rec->len,qual);
             }
 
           // if (QNAME)
-            // { vgpInt(vf,0) = rec->name_len;
-              // vgpWriteLine(vf,'I',rec->name_len,rec->s->name_blk->data+rec->name);
+            // { oneInt(vf,0) = rec->name_len;
+              // oneWriteLine(vf,'I',rec->name_len,rec->s->name_blk->data+rec->name);
             // }
         }
     }
@@ -2054,7 +2056,7 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: verbose mode, output progress as proceed\n");
-        fprintf(stderr,"      -i: Output identify\n");
+        fprintf(stderr,"      -i: Output identifier\n");
         fprintf(stderr,"      -q: Output QV string\n");
         fprintf(stderr,"      -g: Output group where names = identifier prefix\n");
         fprintf(stderr,"                   to #'th instance of character x\n");
@@ -2292,15 +2294,28 @@ int main(int argc, char *argv[])
 
     //  Produce output in parallel threads based on partition
 
-    { VgpFile *vf;
-      int      i, error;
+    { OneSchema *vs;
+      OneFile   *vf;
+      int        i, error;
 
+      vs = oneSchemaCreateFromText (vgpSchemaText) ;
+      if (vs == NULL)
+	{ fprintf (stderr, "FATAL: failed to load ONEcode schema - can't write to /tmp/?\n") ;
+	  exit (-1) ;
+	}
+      
       if (PAIRING)
-        vf = vgpFileOpenWriteNew("-",SEQ,IRP,TRUE,NTHREADS);
+        vf = oneFileOpenWriteNew("-",vs,"irp",true,NTHREADS);
       else
-        vf = vgpFileOpenWriteNew("-",SEQ,0,TRUE,NTHREADS);
-      vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
-      vgpWriteHeader(vf);
+        vf = oneFileOpenWriteNew("-",vs,"seq",true,NTHREADS);
+      if (vf == NULL)
+	{ fprintf (stderr, "FATAL: failed to open stdout as ONEcode file for output\n") ;
+	  exit (-1) ;
+	}
+      oneSchemaDestroy (vs) ;
+		   
+      oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+      oneWriteHeader(vf);
 
 #ifdef DEBUG_OUT
       fprintf(stderr,"Opened\n");
@@ -2349,7 +2364,7 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
 
-      vgpFileClose(vf);
+      oneFileClose(vf);
     }
 
     //  Free everything as a matter of good form
@@ -2373,3 +2388,5 @@ int main(int argc, char *argv[])
 
   exit (0);
 }
+
+

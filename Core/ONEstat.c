@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May  3 09:16 2020 (rd109)
+ * Last edited: May 12 19:36 2020 (rd109)
  *   * Dec 27 09:20 2019 (gene): style edits
  *   * Created: Thu Feb 21 22:40:28 2019 (rd109)
  *
@@ -20,11 +20,13 @@
 #include "utils.h"
 #include "ONElib.h"
 
+extern void oneFinalizeCounts (OneFile *vf) ; // secret connection into ONElib.c for checking
+
 int main (int argc, char **argv)
 { int        i ;
   char      *fileType = 0 ;
   char      *outFileName = "-" ;
-  BOOL       isHeader = FALSE, isUsage = FALSE, isVerbose = FALSE ;
+  bool       isHeader = false, isUsage = false, isVerbose = false ;
   char      *schemaFileName = 0 ;
   char      *checkText = 0 ;
   
@@ -51,11 +53,11 @@ int main (int argc, char **argv)
   
   while (argc && **argv == '-')
     if (!strcmp (*argv, "-H") || !strcmp (*argv, "--header"))
-      { isHeader = TRUE ; --argc ; ++argv ; }
+      { isHeader = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-u") || !strcmp (*argv, "--usage"))
-      { isUsage = TRUE ; --argc ; ++argv ; }
+      { isUsage = true ; --argc ; ++argv ; }
     else if (!strcmp (*argv, "-v") || !strcmp (*argv, "--verbose"))
-      { isVerbose = TRUE ; --argc ; ++argv ; }
+      { isVerbose = true ; --argc ; ++argv ; }
     else if (argc > 1 && (!strcmp (*argv, "-t") || !strcmp (*argv, "--type")))
       { fileType = argv[1] ;
 	argc -= 2 ; argv += 2 ;
@@ -91,13 +93,13 @@ int main (int argc, char **argv)
     { if (vf->line == 1)
 	fprintf (stderr, "header missing\n") ;
       else
-	fprintf (stderr, "read %lld header lines\n", vf->line) ;
+	fprintf (stderr, "read %" PRId64 " header lines\n", vf->line) ;
     }
 
   if (checkText)
     oneFileCheckSchema (vf, checkText) ;
 
-  vf->isCheckString = TRUE ;
+  vf->isCheckString = true ;
 
   // if requesting usage, then 
 
@@ -116,7 +118,7 @@ int main (int argc, char **argv)
 	f = stdout ;
       
       for (i = 'A' ; i < 128 ; ++i)
-	if (usage[i]) fprintf (f, "usage line type %c bytes %lld\n", (char)i, usage[i]) ;
+	if (usage[i]) fprintf (f, "usage line type %c bytes %" PRId64 "\n", (char)i,  usage[i]) ;
 
       if (f != stdout) fclose (f) ;
      }
@@ -131,24 +133,24 @@ int main (int argc, char **argv)
 	while (oneReadLine (vf))
 	  if (vf->lineType == vf->groupType)
 	    { if (lastLine > 0 && vf->object - lastObj != lastSize)
-		{ fprintf (stderr, "group size mismatch: group %c at line %lld asserted %lld objects",
-			   vf->groupType, lastLine, lastSize);
-		  fprintf (stderr, " but found %lld\n", vf->object-lastObj) ;
+		{ fprintf (stderr, "group size mismatch: group %c at line %" PRId64 " asserted %" PRId64 " objects",
+			   vf->groupType,  lastLine,  lastSize);
+		  fprintf (stderr, " but found %" PRId64 "\n", vf->object-lastObj) ;
 		}
 	      lastLine = vf->line ;
 	      lastSize = oneInt(vf,0) ;
 	      lastObj  = vf->object ;
 	    }
 	if (lastLine && vf->object - lastObj != lastSize)
-	  { fprintf (stderr, "group size mismatch: group %c at line %lld asserted %lld objects",
-		     vf->groupType, lastLine, lastSize) ;
-	    fprintf (stderr, " but found %lld\n", vf->object-lastObj) ;
+	  { fprintf (stderr, "group size mismatch: group %c at line %" PRId64 " asserted %" PRId64 " objects",
+		     vf->groupType,  lastLine,  lastSize) ;
+	    fprintf (stderr, " but found %" PRId64 "\n",  vf->object-lastObj) ;
 	  }
       }
 
       if (isVerbose)
-	fprintf (stderr, "read %lld objects in %lld lines from OneFile %s type %s\n",
-		 vf->object, vf->line, argv[0], vf->fileType) ;
+	fprintf (stderr, "read %" PRId64 " objects in %" PRId64 " lines from OneFile %s type %s\n",
+		  vf->object,  vf->line, argv[0], vf->fileType) ;
 
       oneFinalizeCounts (vf) ;
     
@@ -158,11 +160,11 @@ int main (int argc, char **argv)
 	  
 #define CHECK(X,Y,Z)							                       \
   if (li->X > 0 && li->X != li->Y)				                               \
-    { fprintf (stderr, "header mismatch %s %c: header %lld data %lld\n", Z, i, li->X, li->Y) ; \
+    { fprintf (stderr, "header mismatch %s %c: header %" PRId64 " data %" PRId64 "\n", Z, i,  li->X,  li->Y) ; \
       nBad += 1 ;							                       \
    } 											       \
  else if (li->Y > 0 && li->X == 0)							       \
-   { fprintf (stderr, "header %s line missing for %c, value is %lld\n", Z, i, li->Y) ;	       \
+   { fprintf (stderr, "header %s line missing for %c, value is %" PRId64 "\n", Z, i,  li->Y) ;	       \
      nMissing += 1 ;									       \
    } 											       \
  if (li->Y > 0)										       \
@@ -178,16 +180,20 @@ int main (int argc, char **argv)
 	      CHECK(given.groupTotal, accum.groupTotal, "group total") ;
 	  }
 	if (isVerbose || nBad || nMissing)
-	  fprintf (stderr, "expected %lld header content lines, of which %lld bad and %lld missing\n",
-		   nTotal, nBad, nMissing) ;
+	  fprintf (stderr, "expected %" PRId64 " header content lines, of which %" PRId64 " bad and %" PRId64 " missing\n",
+		    nTotal,  nBad,  nMissing) ;
       }
 
   //  Write header if requested
 
       if (isHeader)
-	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vf, TRUE, FALSE, 1) ;
+	{ OneFile *vfOut = oneFileOpenWriteFrom (outFileName, vf, false, 1) ;
 	  if (vfOut == NULL)
 	    die ("failed to open output file %s", outFileName) ;
+
+	  for (i = 0 ; i < 128 ; i++) // transfer accumulated counts for vfIn to given for vfOut
+	    if (vfOut->info[i])
+	      vfOut->info[i]->given = vf->info[i]->accum ;
   
 	  oneWriteHeader (vfOut) ;
 	  fflush (vfOut->f) ;

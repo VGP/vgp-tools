@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May  3 10:03 2020 (rd109)
+ * Last edited: May 16 19:07 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -17,7 +17,8 @@
 #define ONE_DEFINED
 
 #include <stdio.h>    // for FILE etc.
-#include <stdint.h>   // for standard size int types
+#include <inttypes.h> // for standard size int types and their PRI print macros
+#include <stdbool.h>  // for standard bool types
 #include <limits.h>   // for INT_MAX etc.
 #include <pthread.h>
 
@@ -28,22 +29,18 @@
  **********************************************************************************/
 
 // Basic Types
-#ifndef TRUE  // this is an inexact test for whether BOOL, I64 and U8 are typedef'd
+#ifndef U8_DEFINED
+#define U8_DEFINED
 
-#define TRUE  1
-#define FALSE 0
-typedef char          BOOL;
 typedef int64_t       I64;
 typedef unsigned char U8;
 
-static const I64 I64MAX = 0x7fffffffffffffffll;
-
-#endif // TRUE
+#endif // U8_DEFINED
 
 typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING,
 	       oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
-static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING",
-				 "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
+extern char* oneTypeString[] ; 
+// = { 0, "INT", "REAL", "CHAR", "STRING", "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
 
 typedef union
   { I64    i;
@@ -99,14 +96,14 @@ typedef struct
     int       listField;        // field index of list
     char     *comment;          // the comment on the definition line in the schema
     
-    BOOL      isUserBuf;        // flag for whether buffer is owned by user
+    bool      isUserBuf;        // flag for whether buffer is owned by user
     I64       bufSize;          // system buffer and size if not user supplied
     void     *buffer;
 
     OneCodec *fieldCodec;       // compression codecs and flags
     OneCodec *listCodec;
-    BOOL      isUseFieldCodec;  // on once enough data collected to train associated codec
-    BOOL      isUseListCodec;
+    bool      isUseFieldCodec;  // on once enough data collected to train associated codec
+    bool      isUseListCodec;
     char      binaryTypePack;   // binary code for line type, bit 8 set.
                                 //     bit 0: fields compressed
                                 //     bit 1: list compressed
@@ -128,13 +125,18 @@ typedef struct OneSchema
     struct OneSchema *nxt ;
   } OneSchema ;
 
+typedef struct OneHeaderText
+  { char *text ;
+    struct OneHeaderText *nxt ;
+  } OneHeaderText ;
+
   // The main OneFile type - this is the primary handle used by the end user
 
 typedef struct
   {
     // this field may be set by the user
 
-    BOOL           isCheckString;      // set if want to validate string char by char
+    bool           isCheckString;      // set if want to validate string char by char
 
     // these fields may be read by user - but don't change them!
 
@@ -156,25 +158,26 @@ typedef struct
 
     // fields below here are private to the package
 
-    FILE *f;
-    BOOL  isWrite;                // true if open for writing
-    BOOL  isHeaderOut;            // true if header already written
-    BOOL  isBinary;               // true if writing a binary file
-    BOOL  inGroup;                // set once inside a group
-    BOOL  isLastLineBinary;       // needed to deal with newlines on ascii files
-    BOOL  isIndexIn;              // index read in
-    BOOL  isBig;                  // are we on a big-endian machine?
-    char  lineBuf[128];           // working buffers
-    char  numberBuf[32];
-    int   nFieldMax;
-    I64   codecBufSize;
-    char *codecBuf;
-    I64   linePos;                // current line position
+    FILE  *f;
+    bool   isWrite;                // true if open for writing
+    bool   isHeaderOut;            // true if header already written
+    bool   isBinary;               // true if writing a binary file
+    bool   inGroup;                // set once inside a group
+    bool   isLastLineBinary;       // needed to deal with newlines on ascii files
+    bool   isIndexIn;              // index read in
+    bool   isBig;                  // are we on a big-endian machine?
+    char   lineBuf[128];           // working buffers
+    char   numberBuf[32];
+    int    nFieldMax;
+    I64    codecBufSize;
+    char  *codecBuf;
+    I64    linePos;                // current line position
+    OneHeaderText *headerText;     // arbitrary descriptive text that goes with the header
 
-    char  binaryTypeUnpack[256];  // invert binary line code to ASCII line character.
-    int   share;                  // index if slave of threaded write, +nthreads > 0 if master
-    int   isFinal;                // oneFinalizeCounts has been called on file
-    pthread_mutex_t fieldLock;    // Mutexs to protect training accumumulation stats when threadded
+    char   binaryTypeUnpack[256];  // invert binary line code to ASCII line character.
+    int    share;                  // index if slave of threaded write, +nthreads > 0 if master
+    int    isFinal;                // oneFinalizeCounts has been called on file
+    pthread_mutex_t fieldLock;     // Mutexs to protect training accumumulation stats when threadded
     pthread_mutex_t listLock;
   } OneFile;                      //   the footer will be in the concatenated result.
 
@@ -235,7 +238,7 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *schema, char *type, int n
   //   The slaves only read data and have the virture of sharing indices and codecs with
   //   the master if relevant.
 
-BOOL oneFileCheckSchema (OneFile *vf, char *textSchema) ; // EXPERIMENTAL
+bool oneFileCheckSchema (OneFile *vf, char *textSchema) ;
 
   // Checks if file schema is consistent with text schema.  Mismatches are reported to stderr.
   // Filetype and all linetypes in text must match.  File schema can contain additional linetypes.
@@ -278,9 +281,9 @@ char *oneReadComment (OneFile *vf);
 //  WRITING ONE FILES:
 
 OneFile *oneFileOpenWriteNew (const char *path, OneSchema *schema, char *type,
-			      BOOL isBinary, int nthreads);
-OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, BOOL useAccum, 
-			       BOOL isBinary, int nthreads);
+			      bool isBinary, int nthreads);
+OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
+			       bool isBinary, int nthreads);
 
   // Create a new oneFile that will be written to 'path'.  For the 'New' variant supply
   //   the file type, subtype (if non-zero), and whether it should be binary or ASCII.
@@ -296,16 +299,16 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, BOOL useAccum,
   //   segment of the initial data lines.  Upon close the final result is effectively
   //   the concatenation of the master, followed by the output of each slave in sequence.
 
-BOOL oneInheritProvenance (OneFile *vf, OneFile *source);
-BOOL oneInheritReference  (OneFile *vf, OneFile *source);
-BOOL oneInheritDeferred   (OneFile *vf, OneFile *source);
+bool oneInheritProvenance (OneFile *vf, OneFile *source);
+bool oneInheritReference  (OneFile *vf, OneFile *source);
+bool oneInheritDeferred   (OneFile *vf, OneFile *source);
 
   // Add all provenance/reference/deferred entries in source to header of vf.  Must be
   //   called before call to oneWriteHeader.
 
-BOOL oneAddProvenance (OneFile *vf, char *prog, char *version, char *command, char *dateTime);
-BOOL oneAddReference  (OneFile *vf, char *filename, I64 count);
-BOOL oneAddDeferred   (OneFile *vf, char *filename);
+bool oneAddProvenance (OneFile *vf, char *prog, char *version, char *command, char *dateTime);
+bool oneAddReference  (OneFile *vf, char *filename, I64 count);
+bool oneAddDeferred   (OneFile *vf, char *filename);
 
   // Append provenance/reference/deferred to header information.  Must be called before
   //   call to oneWriteHeader.  Current data & time filled in if 'dateTime' == NULL.
@@ -332,17 +335,10 @@ void oneWriteComment (OneFile *vf, char *comment);
 
 // CLOSING FILES (FOR BOTH READ & WRITE)
 
-void oneFinalizeCounts (OneFile *vf);
-
-  // After all input has been read, or all data has been written, this routine will finish
-  //   accumulating counts/statistics for the file and merge thread stats into those for
-  //   the master file (if a parallel OneFile).
-
 void oneFileClose (OneFile *vf);
 
-  // Close vf (opened either for reading or writing). Finalizes counts if not explicitly
-  //   requested, merges theaded files, and writes footer if binary. Frees all non-user
-  //   memory associated with vf.
+  // Close vf (opened either for reading or writing). Finalizes counts, merges theaded files,
+  // and writes footer if binary. Frees all non-user memory associated with vf.
 
 //  GOTO & BUFFER MANAGEMENT
 
@@ -354,7 +350,7 @@ void oneUserBuffer (OneFile *vf, char lineType, void *buffer);
   //   (if any) is freed.  The user must ensure that a buffer they supply is large
   //   enough. BTW, this buffer is overwritten with each new line read of the given type.
 
-BOOL oneGotoObject (OneFile *vf, I64 i);
+bool oneGotoObject (OneFile *vf, I64 i);
 
   // Goto i'th object in the file. This only works on binary files, which have an index.
 

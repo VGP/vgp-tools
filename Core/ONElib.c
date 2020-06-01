@@ -1,13 +1,13 @@
 /*****************************************************************************************
  *
- *  File: ONElib.c
+ *  file: ONElib.c
  *    implementation for ONElib.h
  *
  *  Author: Richard Durbin (rd109@cam.ac.uk)
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May  5 12:38 2020 (rd109)
+ * Last edited: May 31 21:34 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -68,6 +68,9 @@ int       vcDecode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
  *
  **********************************************************************************/
 
+char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING", 
+			  "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" } ;
+
 /******************* OneInfo ********************/
 
 static OneInfo *infoCreate (int nField)
@@ -90,14 +93,14 @@ static OneInfo *infoDeepCopy (OneInfo *vi0)
   return vi ;
 }
 
-static BOOL infoCheckFields (OneInfo *vi, OneFile *vf)
+static bool infoCheckFields (OneInfo *vi, OneFile *vf)
 { // check field types against the STRING_LIST in vf
   char *s = oneString(vf) ;
   int i ;
-  if (vi->nField != oneLen(vf)) return FALSE ;
+  if (vi->nField != oneLen(vf)) return false ;
   for (i = 0 ; i < vi->nField ; ++i, s = oneNextString(vf,s))
-    if (strcmp (oneTypeString[vi->fieldType[i]], s)) return FALSE ;
-  return TRUE ;
+    if (strcmp (oneTypeString[vi->fieldType[i]], s)) return false ;
+  return true ;
 }
 
 static void infoDestroy (OneInfo *vi)
@@ -113,10 +116,10 @@ static void infoDestroy (OneInfo *vi)
 
 // a utility to set the OneInfo list information
 
-static int listEltSize[8] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1 } ;
+static int listEltSize[9] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1, 1 } ;
 
 static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
-				    char t, BOOL isFieldCompress)
+				    char t, bool isFieldCompress)
 {
   // use during the bootstrap, while parsing .def files, and while parsing ~ lines in other files
   
@@ -144,7 +147,7 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
 	vi->listEltSize = listEltSize[vi->fieldType[i]] ;
 	vi->listField = i ;
 	if (a[i] == oneDNA)
-	  { vi->listCodec = DNAcodec ; vi->isUseListCodec = TRUE ; }
+	  { vi->listCodec = DNAcodec ; vi->isUseListCodec = true ; }
 	else
 	  vi->listCodec = vcCreate () ; // always make a listCodec for any list typeinfoList
       }
@@ -157,11 +160,12 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
   else if (t == ':') vi->binaryTypePack = (28 << 2) | (char) 0x80 ;
   else if (t == '&') vi->binaryTypePack = (29 << 2) | (char) 0x80 ;
   else if (t == '*') vi->binaryTypePack = (30 << 2) | (char) 0x80 ;
+  else if (t == '/') vi->binaryTypePack = (31 << 2) | (char) 0x80 ;
 
   vs->info[(int)t] = vi ;
 }
 
-static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, BOOL isFieldCompress)
+static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, bool isFieldCompress)
 { // assumes field specification is in the STRING_LIST of the current vf line
   // need to set vi->comment separately
   
@@ -222,10 +226,10 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
       strcpy (vs->secondary[vs->nSecondary++], oneString(vf)) ;
       break ;
     case 'D':
-      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), FALSE) ;
+      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), false) ;
       break ;
     case 'C':
-      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), TRUE) ;
+      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), true) ;
       break ;
     default:
       die ("unrecognized schema line %d starting with %c", vf->line, vf->lineType) ;
@@ -393,6 +397,12 @@ void oneSchemaDestroy (OneSchema *vs)
 
 /*************************************/
 
+static inline void setCodecBuffer (OneInfo *vi)
+{
+  vi->bufSize = vcMaxSerialSize() + 1; // +1 for added but unused 0-terminator
+  vi->buffer  = new (vi->bufSize, void);
+}
+
 static OneFile *oneFileCreate (OneSchema **vsp, char *type)
 { // searches through the linked list of vs to find type, either as primary or a secondary
   // if found fills and returns vf, else returns 0
@@ -435,16 +445,24 @@ static OneFile *oneFileCreate (OneSchema **vsp, char *type)
 	vf->binaryTypeUnpack[x+2] = i ;
 	vf->binaryTypeUnpack[x+3] = i ;
       }
+  // special case '.' to overload '/' field compression bit, to keep within 32 binary symbols
+  U8 x = vf->info['.']->binaryTypePack = vf->info['/']->binaryTypePack + 1 ;
+  vf->binaryTypeUnpack[(int)x] = '.' ;
   
   // set other information
   vf->objectType = vs->objectType ;
   vf->groupType = vs->groupType ;
   strcpy (vf->fileType, vs->primary) ;
   if (secondary) strcpy (vf->subType, secondary) ;
-  vf->codecTrainingSize = 100000;
   vf->nFieldMax = vs->nFieldMax ;
   vf->field = new (vf->nFieldMax, OneField) ;
 
+  // setup for compression
+
+  vf->codecTrainingSize = 100000;
+  setCodecBuffer (vf->info[':']) ;
+  setCodecBuffer (vf->info[';']) ;
+  
   // determine endian of machine
   { int   t = 1;
     char *b = (char *) (&t);
@@ -519,6 +537,14 @@ static void oneFileDestroy (OneFile *vf)
 
   if (vf->field) free (vf->field) ;
 
+  if (vf->headerText)
+    { OneHeaderText *t = vf->headerText ;
+      while (t)
+	{ free (t->text) ;
+	  { OneHeaderText *nxt = t->nxt ; free (t) ; t = nxt ; }
+	}
+    }
+
   free (vf) ;
 }
 
@@ -538,12 +564,12 @@ void parseError (OneFile *vf, char *format, ...)
   va_end (args);
 
   vf->lineBuf[vf->linePos] = '\0';
-  fprintf (stderr, ", line %lld: %s\n", vf->line, vf->lineBuf);
+  fprintf (stderr, ", line %" PRId64 ": %s\n", vf->line, vf->lineBuf);
 
   exit (1);
 }
 
-static char inline vfGetc(OneFile *vf)
+static inline char vfGetc(OneFile *vf)
 { char c = getc(vf->f);
   if (vf->linePos < 127)
     vf->lineBuf[vf->linePos++] = c;
@@ -638,16 +664,14 @@ static inline void readFlush (OneFile *vf) // reads to the end of the line and s
   // check the first character - if it is newline then done
   x = getc (vf->f) ; 
   if (x == '\n')
-    { if (li->bufSize) *(char*)li->buffer = 0 ;
-      return ;
-    }
+    return ;
   else if (x != ' ')
     parseError (vf, "comment not separated by a space") ;
 
   // else the remainder of the line is a comment
   if (!li->bufSize)
     { li->bufSize = 1024 ;
-      li->buffer = new (1024, char) ;
+      li->buffer = new (li->bufSize, char) ;
     }
   while ((x = getc (vf->f)) && x != '\n')
     if (x == EOF)
@@ -692,7 +716,7 @@ static inline void updateCountsAndBuffer (OneFile *vf, char t, I64 size, I64 nSt
 
   //  Called when a new group starts or eof, accumulate group counts since last group start
 
-static inline void updateGroupCount(OneFile *vf, BOOL isGroupLine)
+static inline void updateGroupCount(OneFile *vf, bool isGroupLine)
 { int        i;
   OneInfo   *li;
   OneCounts  *ci;
@@ -717,10 +741,9 @@ static inline void updateGroupCount(OneFile *vf, BOOL isGroupLine)
     }
   if (isGroupLine)
     { vf->group  += 1;
-      vf->inGroup = TRUE;
+      vf->inGroup = true;
     }
 }
-
 
 /***********************************************************************************
  *
@@ -835,7 +858,7 @@ static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
 /***********************************************************************************
  *
  *  ONE_READ_LINE:
- *      Reads the next line and returns FALSE at end of file or on error. The line is
+ *      Reads the next line and returns false at end of file or on error. The line is
  *      parsed according to its linetype and contents accessed by macros that follow.
  *      The top bit of the first character determines whether the line is binary or ascii
  *
@@ -869,8 +892,8 @@ static void readStringList(OneFile *vf, char t, I64 len)
   free (string);
 }
 
-BOOL oneReadLine (OneFile *vf)
-{ BOOL      isAscii;
+char oneReadLine (OneFile *vf)
+{ bool      isAscii;
   U8        x;
   char      t;
   OneInfo *li;
@@ -884,16 +907,16 @@ BOOL oneReadLine (OneFile *vf)
   x = vfGetc (vf);                 // read first char
   if (feof (vf->f) || x == '\n')   // blank line (x=='\n') is end of records marker before footer
     { vf->lineType = 0 ;           // additional marker of end of file
-      return (FALSE);
+      return 0;
     }
 
   vf->line += 1;      // otherwise assume this is a good line, and die if not
   if (x & 0x80)
-    { isAscii = FALSE;
+    { isAscii = false;
       t = vf->binaryTypeUnpack[x];
     }
   else
-    { isAscii = TRUE;
+    { isAscii = true;
       t = x;
     }
   vf->lineType = t;
@@ -905,10 +928,13 @@ BOOL oneReadLine (OneFile *vf)
   if (t == vf->objectType)
     vf->object += 1;
   if (t == vf->groupType)
-    updateGroupCount (vf, TRUE);
+    updateGroupCount (vf, true);
 
-  //  fprintf (stderr, "reading line %lld type %c - expecting %d fields\n", vf->line, t, li->nField) ;
+  //  fprintf (stderr, "reading line %" PRId64 " type %c nField %d listElt %d\n", vf->line, t, li->nField, li->listEltSize) ;
 
+  if (vf->info['/']->bufSize) // clear the comment buffer
+    *(char*)(vf->info['/']->buffer) = 0 ;
+  
   if (isAscii)           // read field by field according to ascii spec
     { int     i, j;
       I64    *ilst, len;
@@ -1008,7 +1034,7 @@ BOOL oneReadLine (OneFile *vf)
                   listSize  = listLen * usedBytes;
 
                   if ((I64) fread (li->buffer, 1, listSize, vf->f) != listSize)
-                    die ("ONE read error: list read %lld not %lld", x, listSize);
+                    die ("ONE read error: list read %" PRId64 " not %" PRId64 "", x, listSize);
                 }
 
               if (li->fieldType[li->listField] == oneINT_LIST)
@@ -1058,9 +1084,9 @@ char *oneReadComment (OneFile *vf)
 OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int nthreads)
 {
   OneFile   *vf ;
-  off_t      startOff, footOff;
+  off_t      startOff = 0, footOff;
   OneSchema *vs0 = vs ;
-  BOOL       isDynamic = FALSE ; // if we are making the schema from the header
+  bool       isDynamic = false ; // if we are making the schema from the header
 
   assert (fileType == NULL || strlen(fileType) == 3) ;
 
@@ -1104,7 +1130,7 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    OPEN_ERROR1("end of file before end of line 1") ;
 	++curLine ;
 	if (major != MAJOR)
-	  OPEN_ERROR3("major version file %d != code %d", major, MAJOR) ;
+	  OPEN_ERROR3("minor version file %d > code %d", minor, MINOR) ;
 	if (minor > MINOR)
 	  OPEN_ERROR3("minor version file %d > code %d", minor, MINOR) ;
       }
@@ -1117,7 +1143,7 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 
     if (!vs) // create a shell schema, which can be filled from the header
       { vs0 = vs = oneSchemaCreateDynamic (name, 0) ;
-	isDynamic = TRUE ;
+	isDynamic = true ;
       }
 
     vf = oneFileCreate (&vs, name) ;
@@ -1135,8 +1161,8 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
   // read header and (optionally) footer
   // recognise end of header by peeking at the first char to check if alphabetic 
  
-  vf->isCheckString = TRUE;   // always check strings while reading header
-  while (TRUE)
+  vf->isCheckString = true;   // always check strings while reading header
+  while (true)
     { U8 peek = getc(vf->f);
 
       if (feof(vf->f))       // loop exit at end of file
@@ -1149,12 +1175,12 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
       if (isalpha(peek))
         break;    // loop exit at standard data line
 
-      else if (peek == '!')  // hack to insert a count of 4 for vSTRING_LIST
-        { getc(vf->f);
-          ungetc('4',vf->f);
-          ungetc(' ',vf->f);
-          ungetc('!',vf->f);
-        }
+      //      else if (peek == '!')  // hack to insert a count of 4 for vSTRING_LIST
+      //        { getc(vf->f);
+      //          ungetc('4',vf->f);
+      //          ungetc(' ',vf->f);
+      //          ungetc('!',vf->f);
+      //        }
       
       oneReadLine(vf);  // can't fail because we checked file eof already
 
@@ -1182,15 +1208,23 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    }
 	  break;
 
-	case '.': // blank line for spacing, ignore
-	  break ;
+	case '.': // blank line for spacing and header text
+	  { char *text = oneReadComment (vf) ;
+	    if (text)
+	      { OneHeaderText **t = &vf->headerText ;
+		while (*t) t = &((*t)->nxt) ;
+		*t = new0 (1, OneHeaderText) ;
+		(*t)->text = strdup (text) ;
+	      }
+	    break ;
+	  }
 
 	case '~': // schema definition line
 	  { char t = oneChar(vf,1) ;
 	    OneInfo *vi = vs->info[(int)t] ;
 	    if (vi)
 	      { if (!infoCheckFields (vi, vf))
-		  { fprintf (stderr, "ONE file error %s: schema mismatch line %lld linetype %c\n",
+		  { fprintf (stderr, "ONE file error %s: schema mismatch line %" PRId64 " linetype %c\n",
 			     path, vf->line, t) ;
 		    oneFileDestroy (vf) ;
 		    return NULL ;
@@ -1200,8 +1234,8 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	      { int oldMax = vf->nFieldMax ;
 		switch (oneChar(vf,0))
 		  {
-		  case 'D': schemaAddInfoFromLine (vs, vf, t, FALSE) ; break ;
-		  case 'C': schemaAddInfoFromLine (vs, vf, t, TRUE) ; break ;
+		  case 'D': schemaAddInfoFromLine (vs, vf, t, false) ; break ;
+		  case 'C': schemaAddInfoFromLine (vs, vf, t, true) ; break ;
 		  default: parseError (vf, "schema defn line must have first char D or C") ;
 		  }
 		vi = vs->info[(int)t] ;
@@ -1296,7 +1330,7 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
         case '$':  // read footer - goto end, find offset to start of footer and go there
           if (oneInt(vf,0) != vf->isBig)
             die ("ONE file error: endian mismatch - convert file to ascii");
-          vf->isBinary = TRUE;
+          vf->isBinary = true;
 
           startOff = ftello (vf->f);
           if (fseek (vf->f, -sizeof(off_t), SEEK_END) != 0)
@@ -1315,17 +1349,17 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
           break;
 
         case '&':
-          vf->isIndexIn = TRUE;
+          vf->isIndexIn = true;
           break;
 
         case '*':
           break;
 
-        case 1:
+        case ':':
           vf->info[(int) oneChar(vf,0)]->fieldCodec = vcDeserialize (oneString(vf));
           break;
 
-        case 2:
+        case ';':
           vf->info[(int) oneChar(vf,0)]->listCodec = vcDeserialize (oneString(vf));
           break;
 
@@ -1334,7 +1368,7 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
           break;
       }
     }
-  vf->isCheckString = FALSE;   // user can set this back to TRUE if they wish
+  vf->isCheckString = false;   // user can set this back to true if they wish
 
   if (!vf->objectType)  // failed to get a schema from function call or from file
     { fprintf (stderr, "ONEfile error %s: no schema available\n", path) ;
@@ -1441,25 +1475,25 @@ void oneUserBuffer (OneFile *vf, char lineType, void *buffer)
           li->bufSize = 0;
         }
       li->buffer    = buffer;
-      li->isUserBuf = TRUE;
+      li->isUserBuf = true;
     }
   else
     { if (li->isUserBuf)
         { li->bufSize = li->given.max + 1;
           li->buffer  = new (li->given.max*li->listEltSize, void);
         }
-      li->isUserBuf = FALSE;
+      li->isUserBuf = false;
     }
 }
 
-BOOL oneGotoObject (OneFile *vf, I64 i)
+bool oneGotoObject (OneFile *vf, I64 i)
 { if (vf != NULL && vf->isIndexIn && vf->objectType)
     if (0 <= i && i < vf->info[(int) vf->objectType]->given.count)
       if (fseek (vf->f, ((I64 *) vf->info['&']->buffer)[i], SEEK_SET) == 0)
         { vf->object = i;
-          return (TRUE);
+          return (true);
         }
-  return (FALSE);
+  return (false);
 }
 
 I64 oneGotoGroup (OneFile *vf, I64 i)
@@ -1480,7 +1514,7 @@ I64 oneGotoGroup (OneFile *vf, I64 i)
  **********************************************************************************/
 
 OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *fileType,
-                              BOOL isBinary, int nthreads)
+                              bool isBinary, int nthreads)
 { OneFile   *vf ;
   FILE      *f ;
   OneSchema *vs0 = vs ;
@@ -1498,9 +1532,9 @@ OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *fileType,
     return NULL ;
   
   vf->f = f;
-  vf->isWrite  = TRUE;
+  vf->isWrite  = true;
   vf->isBinary = isBinary;
-  vf->isLastLineBinary = TRUE; // we don't want to add a newline before the first true line
+  vf->isLastLineBinary = true; // we don't want to add a newline before the first true line
   
   vf->codecBufSize = vf->nFieldMax*sizeof(OneField) + 1;
   vf->codecBuf     = new (vf->codecBufSize, void); 
@@ -1522,7 +1556,7 @@ OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *fileType,
 	{ vs = vs0 ; // needed because vs will have changed in prevous oneFileCreate call
 	  v = oneFileCreate (&vs, fileType);
 
-	  v->isWrite  = TRUE;
+	  v->isWrite  = true;
 	  v->isBinary = isBinary;
           v->isLastLineBinary = isBinary;
 	  
@@ -1545,20 +1579,19 @@ OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *fileType,
   return vf;
 }
 
-OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
-			       BOOL useAccum, BOOL isBinary, int nthreads)
+OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, bool isBinary, int nthreads)
 {
   // first build a schema from vfIn
   OneSchema *vs0 = oneSchemaCreateDynamic (vfIn->fileType, vfIn->subType) ;
   OneSchema *vs = vs0->nxt ; // this is the actual schema - vs0 is for the header
   int i = vfIn->objectType ;
   OneInfo *vi = vfIn->info[i] ; // need to list the object type first
-  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i, vi->fieldCodec ? TRUE : FALSE) ;
+  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i, vi->fieldCodec ? true : false) ;
   if (vi->comment) vs->info[i]->comment = strdup (vi->comment) ;
   for (i = 'A' ; i <= 'z' ; ++i)
     if (isalnum(i) && vfIn->info[i] && i != vfIn->objectType)
       { OneInfo *vi = vfIn->info[i] ;
-	schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i, vi->fieldCodec ? TRUE : FALSE) ;
+	schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i, vi->fieldCodec ? true : false) ;
 	if (vi->comment) vs->info[i]->comment = strdup (vi->comment) ;
       }
 
@@ -1578,7 +1611,7 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
   for (i = 0; i < 128 ; ++i)
     if (vf->info[i])
       { OneInfo *vi = vf->info[i];
-	vi->given = useAccum ? vfIn->info[i]->accum : vfIn->info[i]->given ;
+	vi->given = vfIn->info[i]->given ;
 	if (vi->listCodec)
 	  { I64 sz = vi->given.max * vi->listEltSize;
 	    if (sz >= size)
@@ -1596,7 +1629,7 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
   return vf ;
 }
 
-BOOL oneFileCheckSchema (OneFile *vf, char *textSchema)
+bool oneFileCheckSchema (OneFile *vf, char *textSchema)
 {
   char * fixedText = schemaFixNewlines (textSchema) ;
   OneSchema *vs = oneSchemaCreateFromText (fixedText) ;
@@ -1609,11 +1642,11 @@ BOOL oneFileCheckSchema (OneFile *vf, char *textSchema)
 	{ fprintf (stderr, "OneSchema mismatch: file type %s not found in schema\n",
 		   vf->fileType) ;
 	  oneSchemaDestroy (vs0) ;
-	  return FALSE ;
+	  return false ;
 	}
     }
 
-  BOOL isMatch = TRUE ;
+  bool isMatch = true ;
   int  i, j ;
 
   for (i = 'A' ; i <= 'Z' ; ++i)
@@ -1622,19 +1655,19 @@ BOOL oneFileCheckSchema (OneFile *vf, char *textSchema)
 	OneInfo *vif = vf->info[i] ;
 	if (!vif)
 	  { fprintf (stderr, "OneSchema mismatch: record type %c missing in file schema\n", i) ;
-	    isMatch = FALSE ;
+	    isMatch = false ;
 	  }
 	else if (vif->nField != vis->nField)
 	  { fprintf (stderr, "OneSchema mismatch: number of fields for type %c file %d != %d\n",
 		     i, vif->nField, vis->nField) ;
-	    isMatch = FALSE ;
+	    isMatch = false ;
 	  }
 	else
 	  for (j = 0 ; j < vif->nField ; ++j)
 	    if (vif->fieldType[j] != vis->fieldType[j])
 	      { fprintf (stderr, "OneSchema mismatch: field %d for type %c file %s != %s\n",
 			 j,i,oneTypeString[vif->fieldType[j]],oneTypeString[vis->fieldType[j]]);
-		isMatch = FALSE ;
+		isMatch = false ;
 	      }
       }
 
@@ -1648,14 +1681,14 @@ BOOL oneFileCheckSchema (OneFile *vf, char *textSchema)
  *
  **********************************************************************************/
 
-static BOOL addProvenance(OneFile *vf, OneProvenance *from, int n)
+static bool addProvenance(OneFile *vf, OneProvenance *from, int n)
 { I64 i ;
   OneInfo   *l = vf->info['!'];
   I64         o = l->accum.count;
   OneProvenance *p;
 
   if (n == 0)
-    return (FALSE);
+    return (false);
   if (vf->isHeaderOut)
     die("ONE error: can't addProvenance after writing header");
 
@@ -1678,13 +1711,13 @@ static BOOL addProvenance(OneFile *vf, OneProvenance *from, int n)
       p->date = strdup(p->date) ;
     }
 
-  return (TRUE);
+  return (true);
 }
 
-BOOL oneInheritProvenance(OneFile *vf, OneFile *source)
+bool oneInheritProvenance(OneFile *vf, OneFile *source)
 { return (addProvenance(vf, source->provenance, source->info['!']->accum.count)); }
 
-BOOL oneAddProvenance(OneFile *vf, char *prog, char *version, char *command, char *date)
+bool oneAddProvenance(OneFile *vf, char *prog, char *version, char *command, char *date)
 { OneProvenance p;
 
   p.program = prog;
@@ -1700,17 +1733,17 @@ BOOL oneAddProvenance(OneFile *vf, char *prog, char *version, char *command, cha
   addProvenance (vf, &p, 1);
   if (date == NULL)
     free (p.date) ;
-  return TRUE ; // always added something
+  return true ; // always added something
 }
 
-static BOOL addReference(OneFile *vf, OneReference *from, int n, BOOL isDeferred)
+static bool addReference(OneFile *vf, OneReference *from, int n, bool isDeferred)
 { I64        o;
   OneInfo  *l;
   OneReference *r, **t;
   I64 i ;
 
   if (n == 0)
-    return FALSE;
+    return false;
   if (vf->isHeaderOut)
     die ("ONE error: can't addReference after writing header");
 
@@ -1736,26 +1769,26 @@ static BOOL addReference(OneFile *vf, OneReference *from, int n, BOOL isDeferred
   for (i = 0 ; i < n ; ++i, ++r)
     r->filename = strdup (r->filename) ;
 
-  return TRUE;
+  return true;
 }
 
-BOOL oneInheritReference(OneFile *vf, OneFile *source)
-{ return (addReference(vf, source->reference, source->info['<']->accum.count, FALSE)); }
+bool oneInheritReference(OneFile *vf, OneFile *source)
+{ return (addReference(vf, source->reference, source->info['<']->accum.count, false)); }
 
-BOOL oneAddReference(OneFile *vf, char *filename, I64 count)
+bool oneAddReference(OneFile *vf, char *filename, I64 count)
 { OneReference ref;
   ref.filename = filename;
   ref.count    = count;
-  return (addReference(vf, &ref, 1, FALSE));
+  return (addReference(vf, &ref, 1, false));
 }
 
-BOOL oneInheritDeferred (OneFile *vf, OneFile *source)
-{ return (addReference (vf, source->deferred, source->info['>']->accum.count, TRUE)); }
+bool oneInheritDeferred (OneFile *vf, OneFile *source)
+{ return (addReference (vf, source->deferred, source->info['>']->accum.count, true)); }
 
-BOOL oneAddDeferred (OneFile *vf, char *filename)
+bool oneAddDeferred (OneFile *vf, char *filename)
 { OneReference ref;
   ref.filename = filename;
-  return (addReference (vf, &ref, 1, TRUE));
+  return (addReference (vf, &ref, 1, true));
 }
 
 /***********************************************************************************
@@ -1783,43 +1816,42 @@ static void writeInfoSpec (OneFile *vf, char ci)
 
 void oneWriteHeader (OneFile *vf)
 { int         i,n;
-  OneReference  *r;
-  OneProvenance *p;
   OneInfo   *li;
 
   if (!vf->isWrite)
     die ("ONE error: trying to write header to a file open for reading");
   if (vf->line > 0)
     die ("ONE error: cannot write header after writing one or more data lines");
-  if (vf->info[(int) vf->objectType]->given.count == 0 && ! vf->isBinary)
-    die ("ONE error: information for ASCII header is not present, use <oneFileOpenWriteFrom");
 
-  vf->isLastLineBinary = FALSE; // header is in ASCII
+  vf->isLastLineBinary = false; // header is in ASCII
 
   fprintf (vf->f, "1 %lu %s %d %d", strlen(vf->fileType), vf->fileType, MAJOR, MINOR);
   vf->line += 1;
-
   if (*vf->subType)
     { fprintf (vf->f, "\n2 %lu %s", strlen(vf->subType), vf->subType);
       vf->line += 1;
     }
-  
-  p = vf->provenance; 
-  n = vf->info['!']->accum.count;
-  for (i = 0; i < n; i++, p++)
-    { fprintf (vf->f, "\n! %lu %s %lu %s %lu %s %lu %s",
-                     strlen (p->program), p->program, strlen (p->version), p->version,
-                     strlen (p->command), p->command, strlen (p->date), p->date);
-      vf->line += 1;
+
+  // provenance
+  if (vf->info['!']->accum.count)
+    { OneProvenance *p = vf->provenance; 
+      n = vf->info['!']->accum.count;
+      for (i = 0; i < n; i++, p++)
+	{ fprintf (vf->f, "\n! 4 %lu %s %lu %s %lu %s %lu %s",
+		   strlen(p->program), p->program, strlen(p->version), p->version,
+		   strlen(p->command), p->command, strlen(p->date), p->date);
+	  vf->line += 1;
+	}
     }
 
-  fprintf (vf->f, "\n.") ;
+  fprintf (vf->f, "\n.") ; // always have a spacer after this
 
+  // reference and deferred
   if (vf->info['<']->accum.count || vf->info['>']->accum.count)
-    { r = vf->reference;
+    { OneReference *r = vf->reference;
       n = vf->info['<']->accum.count;
       for (i = 0; i < n; i++, r++)
-	{ fprintf (vf->f, "\n< %lu %s %lld", strlen(r->filename), r->filename, r->count);
+	{ fprintf (vf->f, "\n< %lu %s %" PRId64 "", strlen(r->filename), r->filename, r->count);
 	  vf->line += 1;
 	}
       
@@ -1834,18 +1866,29 @@ void oneWriteHeader (OneFile *vf)
 
   // write the schema into the header - no need for file type, version etc. since already given
   if (vf->groupType) writeInfoSpec (vf, vf->groupType) ;
-  writeInfoSpec (vf, vf->objectType) ;
+  if (vf->objectType) writeInfoSpec (vf, vf->objectType) ;
   for (i = 'A' ; i <= 'Z' ; ++i)
     if (vf->info[i] && i != vf->objectType)
       writeInfoSpec (vf, i) ;
-  fprintf (vf->f, "\n.") ;
+
+  // any header text on '.' lines
+  if (vf->headerText)
+    { OneHeaderText *t = vf->headerText ;
+      while (t)
+	{ fprintf (vf->f, "\n. %s", t->text) ;
+	  t = t->nxt ;
+	}
+      fprintf (vf->f, "\n.") ;
+    }
 
   if (vf->isBinary)         // defer writing rest of header
     { fprintf (vf->f, "\n$ %d", vf->isBig);
       vf->line += 1;
     }
   else             // write counts based on those supplied in input header
-    { for (i = 'A'; i <= 'Z'+1 ; i++)
+    { fprintf (vf->f, "\n.") ;
+      bool isCountWritten = false ;
+      for (i = 'A'; i <= 'Z'+1 ; i++)
 	{ if (i == 'Z'+1)
 	    { if (vf->groupType) // NB group types are all lower case so > 'Z'+1
 		i = vf->groupType ;
@@ -1854,31 +1897,33 @@ void oneWriteHeader (OneFile *vf)
 	    }
 	  li = vf->info[i];
           if (li != NULL && li->given.count > 0)
-            { fprintf (vf->f, "\n# %c %lld", i, li->given.count);
+            { isCountWritten = true ;
+	      fprintf (vf->f, "\n# %c %" PRId64 "", i, li->given.count);
               vf->line += 1;
               if (li->given.max > 0)
-                { fprintf (vf->f, "\n@ %c %lld", i, li->given.max);
+                { fprintf (vf->f, "\n@ %c %" PRId64 "", i, li->given.max);
                   vf->line += 1;
                 }
               if (li->given.total > 0)
-                { fprintf (vf->f, "\n+ %c %lld", i, li->given.total);
+                { fprintf (vf->f, "\n+ %c %" PRId64 "", i, li->given.total);
                   vf->line += 1;
                 }
               if (li->given.groupCount > 0)
-                { fprintf (vf->f, "\n%% %c # %c %lld", vf->groupType, i, li->given.groupCount);
+                { fprintf (vf->f, "\n%% %c # %c %" PRId64 "", vf->groupType, i, li->given.groupCount);
                   vf->line += 1;
                 }
               if (li->given.groupTotal > 0)
-                { fprintf (vf->f, "\n%% %c + %c %lld", vf->groupType, i, li->given.groupTotal);
+                { fprintf (vf->f, "\n%% %c + %c %" PRId64 "", vf->groupType, i, li->given.groupTotal);
                   vf->line += 1;
                 }
             }
         }
+      if (isCountWritten)
+	fprintf (vf->f, "\n.") ;
     }
-  fprintf (vf->f, "\n.\n. end of header\n.") ;
   fflush (vf->f);
 
-  vf->isHeaderOut = TRUE;
+  vf->isHeaderOut = true;
 }
 
 /***********************************************************************************
@@ -1887,19 +1932,16 @@ void oneWriteHeader (OneFile *vf)
  *
  **********************************************************************************/
 
-static int writeStringList (OneFile *vf, char t, int len)
+static int writeStringList (OneFile *vf, char t, int len, char *buf)
 { OneInfo *li;
   int       j, nByteWritten = 0;
   I64       sLen, totLen;
-  char     *buf;
-
-  buf = (char *) vf->info[(int) t]->buffer;
 
   totLen = 0;
   for (j = 0; j < len; j++)
     { sLen = strlen (buf);
       totLen += sLen;
-      nByteWritten += fprintf (vf->f, " %lld %s", sLen, buf);
+      nByteWritten += fprintf (vf->f, " %" PRId64 " %s", sLen, buf);
       buf += sLen + 1;
     }
 
@@ -1921,7 +1963,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 
   //  fprintf (stderr, "write line type %c\n", t) ;
   
-  if ( ! vf->isWrite)
+  if (!vf->isWrite)
     die ("ONE write error: trying to write a line to a file open for reading");
   if (vf->isFinal && isalpha(t))
     die ("ONE write error: annot write more data after counts are finalized %c", t);
@@ -1933,19 +1975,19 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
   if (listBuf == NULL)
     listBuf = li->buffer;
 
-  if ( ! vf->isLastLineBinary)      // terminate previous ascii line
+  if (!vf->isLastLineBinary)      // terminate previous ascii line
     fputc ('\n', vf->f);
 
   vf->line  += 1;
   li->accum.count += 1;
   if (t == vf->groupType)
-    updateGroupCount(vf, TRUE);
+    updateGroupCount(vf, true);
 
   if (li->listEltSize > 0)  // need to write the list
     { if (listLen >= 0)
 	vf->field[li->listField].len = listLen ;
       else
-	die ("ONE write error: listLen %lld must be non-negative", listLen) ;
+	die ("ONE write error: listLen %" PRId64 " must be non-negative", listLen) ;
     }
 
   // BINARY - block write and optionally compress
@@ -2022,7 +2064,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
             { fputc (x, vf->f);
               if (nField > 0)
                 { if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
-                    die ("ONE write error: write fields: t %c, nField %d, fieldSize %lld",
+                    die ("ONE write error: write fields: t %c, nField %d, fieldSize %" PRId64 "",
 			 t, nField, fieldSize);
                 }
 	      vf->byte += 1 + fieldSize ;
@@ -2032,7 +2074,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
         { fputc (x, vf->f);
           if (nField > 0)
             if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
-              die ("ONE write error: write fields: t %c, nField %d, fieldSize %lld",
+              die ("ONE write error: write fields: t %c, nField %d, fieldSize %" PRId64 "",
 		   t, nField, fieldSize);
 	  vf->byte += 1 + fieldSize ;
 
@@ -2043,7 +2085,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
               if (li->fieldTack > vf->codecTrainingSize)
                 { if (vf->share == 0)
                     { vcCreateCodec (li->fieldCodec, 1);
-                      li->isUseFieldCodec = TRUE;
+                      li->isUseFieldCodec = true;
                     }
                   else
                     { OneFile  *ms;
@@ -2076,9 +2118,9 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
                                   ms[i].info[(int) t]->fieldCodec = lx->fieldCodec;
                                   vcDestroy (m);
                                 }
-                              lx->isUseFieldCodec = TRUE;
+                              lx->isUseFieldCodec = true;
                               for (i = 1; i < ms->share; i++)
-                                ms[i].info[(int) t]->isUseFieldCodec = TRUE;
+                                ms[i].info[(int) t]->isUseFieldCodec = true;
                             }
                         }
 
@@ -2100,7 +2142,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
               listSize  = listLen * listBytes;
 
               if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
-                vf->byte += writeStringList (vf, t, listLen);
+                vf->byte += writeStringList (vf, t, listLen, listBuf);
 
               else if (x & 0x2)
                 { if (listSize >= vf->codecBufSize)
@@ -2118,7 +2160,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 
               else
                 { if (fwrite (listBuf, listSize, 1, vf->f) != 1)
-                    die ("ONE write error: failed to write list field %d listLen %lld listSize %lld listBuf %lx",
+                    die ("ONE write error: failed to write list field %d listLen %" PRId64 " listSize %" PRId64 " listBuf %lx",
 			 li->listField, listLen, listSize, listBuf);
 		  vf->byte += listSize;
                   if (li->listCodec != NULL)
@@ -2128,7 +2170,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
                       if (li->listTack > vf->codecTrainingSize)
                         { if (vf->share == 0)
                             { vcCreateCodec (li->listCodec, 1);
-                              li->isUseListCodec = TRUE;
+                              li->isUseListCodec = true;
                             }
                           else
                             { OneFile  *ms;
@@ -2161,9 +2203,9 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
                                           ms[i].info[(int) t]->listCodec = lx->listCodec;
                                           vcDestroy (m);
                                         }
-                                      lx->isUseListCodec = TRUE;
+                                      lx->isUseListCodec = true;
                                       for (i = 1; i < ms->share; i++)
-                                        ms[i].info[(int) t]->isUseListCodec = TRUE;
+                                        ms[i].info[(int) t]->isUseListCodec = true;
                                     }
                                 }
  
@@ -2174,7 +2216,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
                 }
             }
         }
-      vf->isLastLineBinary = TRUE;
+      vf->isLastLineBinary = true;
     }
 
   // ASCII - write field by field
@@ -2185,7 +2227,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
         switch (li->fieldType[i])
 	  {
 	  case oneINT:
-            fprintf (vf->f, " %lld", vf->field[i].i);
+            fprintf (vf->f, " %" PRId64 "", vf->field[i].i);
             break;
           case oneREAL:
             fprintf (vf->f, " %f", vf->field[i].r);
@@ -2202,16 +2244,16 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
             if (listLen > li->accum.max)
               li->accum.max = listLen;
 
-            fprintf (vf->f, " %lld", listLen);
+            fprintf (vf->f, " %" PRId64 "", listLen);
             if (li->fieldType[i] == oneSTRING || li->fieldType[i] == oneDNA)
               { if (listLen > INT_MAX)
-                  die ("ONE write error: string length %lld > current max %d", listLen, INT_MAX);
+                  die ("ONE write error: string length %" PRId64 " > current max %d", listLen, INT_MAX);
                 fprintf (vf->f, " %.*s", (int) listLen, (char *) listBuf);
               }
             else if (li->fieldType[i] == oneINT_LIST)
               { I64 *b = (I64 *) listBuf;
                 for (j = 0; j < listLen ; ++j)
-                  fprintf (vf->f, " %lld", b[j]);
+                  fprintf (vf->f, " %" PRId64 "", b[j]);
               }
             else if (li->fieldType[i] == oneREAL_LIST)
               { double *b = (double *) listBuf;
@@ -2219,10 +2261,10 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
                   fprintf (vf->f, " %f", b[j]);
               }
             else // vSTRING_LIST
-              writeStringList (vf, t, listLen);
+              writeStringList (vf, t, listLen, listBuf);
             break;
         }
-      vf->isLastLineBinary = FALSE;
+      vf->isLastLineBinary = false;
     }
 }
 
@@ -2261,25 +2303,25 @@ static void oneWriteFooter (OneFile *vf)
 	}
       li = vf->info[i];
       if (li != NULL && li->accum.count > 0)
-        { fprintf (vf->f, "# %c %lld\n", i, li->accum.count);
+        { fprintf (vf->f, "# %c %" PRId64 "\n", i, li->accum.count);
 	  if (li->listEltSize)
-            { fprintf (vf->f, "@ %c %lld\n", i, li->accum.max);
-	      fprintf (vf->f, "+ %c %lld\n", i, li->accum.total);
+            { fprintf (vf->f, "@ %c %" PRId64 "\n", i, li->accum.max);
+	      fprintf (vf->f, "+ %c %" PRId64 "\n", i, li->accum.total);
 	    }
 	  if (vf->groupType && i != vf->groupType && vf->group > 0)
-	    { fprintf (vf->f, "%% %c # %c %lld\n", vf->groupType, i, li->accum.groupCount);
+	    { fprintf (vf->f, "%% %c # %c %" PRId64 "\n", vf->groupType, i, li->accum.groupCount);
 	      if (li->listEltSize)
-		fprintf (vf->f, "%% %c + %c %lld\n", vf->groupType, i, li->accum.groupTotal);
+		fprintf (vf->f, "%% %c + %c %" PRId64 "\n", vf->groupType, i, li->accum.groupTotal);
 	    }
           if (li->isUseFieldCodec)
             { oneChar(vf,0) = i;
               n = vcSerialize (li->fieldCodec, codecBuf);
-              oneWriteLine (vf, 1, n, codecBuf);
+              oneWriteLine (vf, ':', n, codecBuf);
             }
           if (li->isUseListCodec && li->listCodec != DNAcodec)
             { oneChar(vf,0) = i;
               n = vcSerialize (li->listCodec, codecBuf);
-              oneWriteLine (vf, 2, n, codecBuf);
+              oneWriteLine (vf, ';', n, codecBuf);
             }
         }
     }
@@ -2299,6 +2341,10 @@ static void oneWriteFooter (OneFile *vf)
     die ("ONE write error: failed writing footer offset");
 }
 
+  // After all input has been read, or all data has been written, this routine will finish
+  //   accumulating counts/statistics for the file and merge thread stats into those for
+  //   the master file (if a parallel OneFile).
+
 void oneFinalizeCounts(OneFile *vf)
 { int       i, j, n, k, len;
   OneInfo *li, *ln;
@@ -2306,10 +2352,10 @@ void oneFinalizeCounts(OneFile *vf)
   if (vf->share < 0)
     die ("ONE write error: cannot call oneFileClose on a slave OneFile");
 
-  vf->isFinal = TRUE;
+  vf->isFinal = true;
 
   if (vf->share == 0)
-    { updateGroupCount(vf,FALSE);
+    { updateGroupCount(vf,false);
       return;
     }
 
@@ -2521,10 +2567,10 @@ int       vcMaxSerialSize();
 int       vcSerialize(OneCodec *vc, void *out);
 OneCodec *vcDeserialize(void *in);
 
-typedef unsigned long long uint64;
-typedef unsigned int       uint32;
-typedef unsigned short     uint16;
-typedef unsigned char      uint8;
+typedef uint64_t  uint64;
+typedef uint32_t  uint32;
+typedef uint16_t  uint16;
+typedef uint8_t   uint8;
 
 #define HUFF_CUTOFF  12     //  This cannot be larger than 16 !
 
@@ -2739,7 +2785,7 @@ void vcCreateCodec(OneCodec *vc, int partial)
     fprintf(stderr,"\nCoin Filter:\n");
     fprintf(stderr,"  Row %2d:",HUFF_CUTOFF);
     for (n = 0; n < ncode; n++)
-      fprintf(stderr," %lld*",countb[n]);
+      fprintf(stderr," %" PRId64 "*",countb[n]);
     fprintf(stderr,"\n");
 #endif
 
@@ -2769,7 +2815,7 @@ void vcCreateCodec(OneCodec *vc, int partial)
 #ifdef DEBUG
         fprintf(stderr,"  Row %2d:",L);
         for (n = 0; n <= llen; n++)
-          fprintf(stderr," %lld%c",lcnt[n],matrix[L][n]?'*':'+');
+          fprintf(stderr," %" PRId64 "%c",lcnt[n],matrix[L][n]?'*':'+');
         fprintf(stderr,"\n");
 #endif
       }
@@ -2899,10 +2945,10 @@ void vcPrint(OneCodec *vc, FILE *to)
 
   bits = v->codebits;
   lens = v->codelens;
-
+  hist = v->hist; // only needed if hashist, but compiler warning if assignment is conditional
+      
   if (hashist)
-    { hist = v->hist;
-      total_bits = 0;
+    { total_bits = 0;
       ucomp_bits = 0;
 
       count = 0;
@@ -2913,9 +2959,9 @@ void vcPrint(OneCodec *vc, FILE *to)
       for (i = 0; i < 256; i++)
         if (hist[i] > 0)
           { if (isprint(i))
-              fprintf(to,"      %c: %12llu %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
+              fprintf(to,"      %c: %12" PRIu64 " %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
             else
-              fprintf(to,"    %3d: %12llu %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
+              fprintf(to,"    %3d: %12" PRIu64 " %5.1f%%\n",i,hist[i],(hist[i]*100.)/count);
           }
     }
 
@@ -2950,7 +2996,7 @@ void vcPrint(OneCodec *vc, FILE *to)
         }
     }
   if (hashist)
-    fprintf(to,"\nTotal Bytes = %lld (%.2f%%)\n",(total_bits-1)/8+1,(100.*total_bits)/ucomp_bits);
+    fprintf(to,"\nTotal Bytes = %" PRIu64 " (%.2f%%)\n",(total_bits-1)/8+1,(100.*total_bits)/ucomp_bits);
 }
 
 

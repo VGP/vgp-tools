@@ -10,7 +10,7 @@ VGP_LIB = ../Core/VGPlib.c
 VGP_DPND = $(VGP_LIB) ../Core/VGPlib.h
 
 ONE_LIB = ../Core/ONElib.c
-ONE_DPND = $(ONE_LIB) ../Core/ONElib.h
+ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGPschema.h
 
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h
@@ -24,8 +24,8 @@ libhts.a: HTSLIB
 VGPzip: VGPzip.c $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPzip VGPzip.c $(GENE_CORE) -lpthread
 
-VGPseq: VGPseq.c $(VGP_DPND) $(GENE_DPND) HTSLIB/libhts.a
-	gcc $(CFLAGS) -o VGPseq -I./HTSLIB VGPseq.c $(VGP_LIB) $(GENE_CORE) HTSLIB/libhts.a -lpthread -lz -lm -lbz2 -llzma -lcurl
+VGPseq: VGPseq.c $(ONE_DPND) $(GENE_DPND) HTSLIB/libhts.a
+	gcc $(CFLAGS) -o VGPseq -I./HTSLIB VGPseq.c $(ONE_LIB) $(GENE_CORE) HTSLIB/libhts.a -lpthread -lz -lm -lbz2 -llzma -lcurl
 
 VGPpair: VGPpair.c $(ONE_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPpair VGPpair.c $(ONE_LIB) $(GENE_CORE) -lpthread
