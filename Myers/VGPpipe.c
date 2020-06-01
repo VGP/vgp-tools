@@ -1,4 +1,3 @@
-/*  Last edited: Feb  4 11:53 2020 (rd109) */
 /*******************************************************************************************
  *
  *  VGPpipe: Convert VGP files from ASCII to binary or vice versa
@@ -17,9 +16,12 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
-#include "../Core/VGPlib.h"
+#include "../Core/ONElib.h"
+
+#include "VGP_1_0.h"
 
 static char *Usage = "<in >out";
 
@@ -27,7 +29,8 @@ static char *Usage = "<in >out";
   //  Main
 
 int main(int argc, char* argv[])
-{
+{ OneSchema *schema;
+
   //  Process command line arguments
 
   { int   i, j, k;
@@ -51,24 +54,28 @@ int main(int argc, char* argv[])
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
         exit (1);
       } 
+
+    schema = oneSchemaCreateFromText(VGP_SPEC);
   } 
 
-  { VgpFile  *inf, *ouf;
-    LineInfo *li;
+  { OneFile  *inf, *ouf;
+    OneInfo  *li;
     int       i, t;
 
-    inf = vgpFileOpenRead("-",0,1);
-    ouf = vgpFileOpenWriteFrom("-",inf,FALSE,!inf->isBinary,1);
-    vgpWriteHeader(ouf);
-    while ((t = vgpReadLine(inf)) > 0)
-      { li = inf->lineInfo[t];
+    inf = oneFileOpenRead("-",schema,NULL,1);
+    ouf = oneFileOpenWriteFrom("-",inf,!inf->isBinary,1);
+    oneWriteHeader(ouf);
+    while ((t = oneReadLine(inf)) > 0)
+      { li = inf->info[t];
         for (i = 0; i < li->nField; i++)
           ouf->field[i] = inf->field[i];
-        vgpWriteLine(ouf,t,vgpLen(inf),li->buffer);
+        oneWriteLine(ouf,t,oneLen(inf),li->buffer);
       }
-    vgpFileClose(ouf);
-    vgpFileClose(inf);
+    oneFileClose(ouf);
+    oneFileClose(inf);
   }
+
+  oneSchemaDestroy(schema);
 
   exit (0);
 }

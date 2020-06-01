@@ -16,12 +16,15 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
 #include "pb_expr.h"
-#include "../Core/VGPlib.h"
+#include "../Core/ONElib.h"
 
 #include "LIBDEFLATE/libdeflate.h"
+
+#include "VGP_1_0.h"
 
 typedef  struct libdeflate_decompressor Deflator;
 
@@ -300,7 +303,7 @@ typedef struct
   { File_Object *fobj;     //  Reference to array of file objects
     uint8       *buf;      //  IO buffer for this thread
     Deflator    *decomp;   //  Decompression codec (LIBDEFLATE)
-    VgpFile     *vf;       //  VgpFile for output
+    OneFile     *vf;       //  OneFile for output
     BAM_FILE     bam;
     int          fid;      //  fid of fobj[bidx].fname
     int          bidx;     //  Scan range is [bidx:beg,eidx:end)
@@ -1149,7 +1152,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 /*******************************************************************************************
  *
  *  Parallel:  Each thread processes a contiguous stripe across the input files
- *               sending the compressed binary data lines to their assigned VgpFile.
+ *               sending the compressed binary data lines to their assigned OneFile.
  *
  ********************************************************************************************/
 
@@ -1160,7 +1163,7 @@ static void *output_thread(void *arg)
   File_Object *fobj  = parm->fobj;
   uint8       *buf   = parm->buf;
   BAM_FILE    *bam   = &(parm->bam);
-  VgpFile     *vf    = parm->vf;
+  OneFile     *vf    = parm->vf;
 
   samRecord    _theR, *theR = &_theR;
 
@@ -1254,38 +1257,38 @@ static void *output_thread(void *arg)
           if (head)
             { int len = strlen(theR->header);
     
-              vgpInt(vf,0) = 0;     //  don't actually know, OK for binary
-              vgpInt(vf,1) = len;
-              vgpWriteLine(vf,'g',len,theR->header);
+              oneInt(vf,0) = 0;     //  don't actually know, OK for binary
+              oneInt(vf,1) = len;
+              oneWriteLine(vf,'g',len,theR->header);
               head = 0;
             }
 
           if ( ! evaluate_bam_filter(EXPR,theR))
             continue;
     
-          vgpInt(vf,0) = theR->len;
-          vgpWriteLine(vf,'S',theR->len,theR->seq);
+          oneInt(vf,0) = theR->len;
+          oneWriteLine(vf,'S',theR->len,theR->seq);
     
-          vgpInt(vf,0) = theR->well;
-          vgpInt(vf,1) = theR->beg;
-          vgpInt(vf,2) = theR->end;
-          vgpReal(vf,3) = theR->qual;
-          vgpWriteLine(vf,'W',0,NULL);
+          oneInt(vf,0) = theR->well;
+          oneInt(vf,1) = theR->beg;
+          oneInt(vf,2) = theR->end;
+          oneReal(vf,3) = theR->qual;
+          oneWriteLine(vf,'W',0,NULL);
 
           if (QUALITY)
-            { vgpInt(vf,0) = theR->len;
-              vgpWriteLine(vf,'Q',theR->len,theR->qvs);
+            { oneInt(vf,0) = theR->len;
+              oneWriteLine(vf,'Q',theR->len,theR->qvs);
             }
     
           if (ARROW)
-            { vgpInt(vf,0) = theR->len;
-              vgpWriteLine(vf,'A',theR->len,theR->arr);
+            { oneInt(vf,0) = theR->len;
+              oneWriteLine(vf,'A',theR->len,theR->arr);
 
-              vgpReal(vf,0) = theR->snr[0];
-              vgpReal(vf,1) = theR->snr[1];
-              vgpReal(vf,2) = theR->snr[2];
-              vgpReal(vf,3) = theR->snr[3];
-              vgpWriteLine(vf,'N',0,NULL);
+              oneReal(vf,0) = theR->snr[0];
+              oneReal(vf,1) = theR->snr[1];
+              oneReal(vf,2) = theR->snr[2];
+              oneReal(vf,3) = theR->snr[3];
+              oneWriteLine(vf,'N',0,NULL);
             }
         }
 
@@ -1308,7 +1311,8 @@ static void *output_thread(void *arg)
   //  Main
 
 int main(int argc, char* argv[])
-{ char *command; 
+{ OneSchema *schema;
+  char      *command; 
 
   //  Capture command line for provenance
 
@@ -1330,6 +1334,8 @@ int main(int argc, char* argv[])
           c += sprintf(c," %s",argv[i]);
       }
     *c = '\0';
+
+    schema = oneSchemaCreateFromText(VGP_SPEC);
   }
 
   //  Process command line arguments
@@ -1560,14 +1566,14 @@ int main(int argc, char* argv[])
 #endif
     }
 
-    //  Setup a VgpFile for each thread, put the header in the first one
+    //  Setup a OneFile for each thread, put the header in the first one
 
-    { VgpFile *vf;
+    { OneFile *vf;
       int      i, error;
 
-      vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
-      vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
-      vgpWriteHeader(vf);
+      vf = oneFileOpenWriteNew("-",schema,"pbr",true,NTHREADS);
+      oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+      oneWriteHeader(vf);
 #ifdef DEBUG_OUT
       printf("Opened\n");
       fflush(stdout);
@@ -1600,7 +1606,7 @@ int main(int argc, char* argv[])
           fflush(stderr);
         }
 
-      vgpFileClose(vf);
+      oneFileClose(vf);
 
       //  If asked for arrow / qv vectors but not in input, then error will be 1 / 2.
 
@@ -1636,6 +1642,8 @@ int main(int argc, char* argv[])
       free(command);
     }
   }
+
+  oneSchemaDestroy(schema);
 
   if (VERBOSE)
     { fprintf(stderr,"  Done\n");

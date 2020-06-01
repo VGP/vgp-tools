@@ -1,9 +1,3 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-
-#include "../Core/ONElib.h"
-
 static char *VGP_SPEC = 
 
 "1 3 def 1 0  OneCode schema for VGP genome assembly pipeline and related purposes \n\
@@ -93,18 +87,3 @@ C N 1 6 STRING             name: optional name for list \n\
 L S 1 3 INT                seed: optional seed sequence for scaffold \n\
 . \n\
 . end of file \n";
-
-OneSchema *Startup_Schema()
-{ FILE *fd;
-  OneSchema *one;
-
-  fd = fopen(".schema","w");
-  fwrite(VGP_SPEC,strlen(VGP_SPEC),1,fd);
-  fclose(fd);
-
-  one = oneSchemaCreateFromFile(".schema");
-
-  unlink(".schema");
-
-  return (one);
-}

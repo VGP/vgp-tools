@@ -20,20 +20,20 @@
   //    to be compressed has been scanned.  At this point you have a compressor ready
   //    to operate.  You can destroy/free it with vcDestroy.
 
-VGPcodec *vcCreate();
-void      vcAddToTable(VGPcodec *vc, int len, char *bytes);
-void      vcCreateCodec(VGPcodec *vc, int partial);
-void      vcDestroy(VGPcodec *vc);
+OneCodec *vcCreate();
+void      vcAddToTable(OneCodec *vc, int len, char *bytes);
+void      vcCreateCodec(OneCodec *vc, int partial);
+void      vcDestroy(OneCodec *vc);
 
   //  In the instance of accumulating data over multiple threads, vcAddHistogram, will
   //    add the counts in the table for vh, to the table for vc.
 
-void      vcAddHistogram(VGPcodec *vc, VGPcodec *vh);
+void      vcAddHistogram(OneCodec *vc, OneCodec *vh);
 
   //  A diagnostic routine: shows you the compression scheme and if the distribution
   //    of the scanned corpus is available, it shows you that too.  Output to file 'to'.
 
-void vcPrint(VGPcodec *vc, FILE *to);
+void vcPrint(OneCodec *vc, FILE *to);
 
   //  You can encode and decode where ibytes/ilen are the input and the output
   //    is placed at obytes and the length of the compressed/decompressed result
@@ -43,8 +43,8 @@ void vcPrint(VGPcodec *vc, FILE *to);
   //    ilen is the number of bits in the compressed input, and the return value
   //    is the number of bytes in the uncompressed output.  The routines are endian safe.
 
-int vcEncode(VGPcodec *vc, int ilen, char *ibytes, char *obytes);
-int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes);
+int vcEncode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
+int vcDecode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
 
   //  Rather than directly reading or writing an encoding of a compressor, the routines
   //    below serialize or deserialize the compressor into/outof a user-supplied buffer.
@@ -54,7 +54,7 @@ int vcDecode(VGPcodec *vc, int ilen, char *ibytes, char *obytes);
   //    the process given a serialization.  The routines are endian-safe.
 
 int       vcMaxSerialSize();
-int       vcSerialize(VGPcodec *vc, void *out);
-VGPcodec *vcDeserialize(void *in);
+int       vcSerialize(OneCodec *vc, void *out);
+OneCodec *vcDeserialize(void *in);
 
 #endif // _COMPRESSOR

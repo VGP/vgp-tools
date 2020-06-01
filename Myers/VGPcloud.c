@@ -9,11 +9,13 @@
 #include <dirent.h>
 #include <sys/mman.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
 #include "msd.sort.h"
-#include "../Core/VGPlib.h"
-#include "compression.h"
+#include "../Core/ONElib.h"
+
+#include "VGP_1_0.h"
 
 #undef DEBUG
 
@@ -147,10 +149,10 @@ static uint8 *Uncompress_SEQ(uint8 *src, char *s, int len)
 
 //  Optimized ReadLine optimized to read binary S-line without decompression
 
-static char read_raw_seq(VgpFile *vf)
+static char read_raw_seq(OneFile *vf)
 { U8        x;
   char      t;
-  LineInfo *li;
+  OneInfo  *li;
 
   x = getc(vf->f);
   if (feof(vf->f) || x == '\n')
@@ -165,24 +167,32 @@ static char read_raw_seq(VgpFile *vf)
     return (0);
   vf->lineType = t;
 
-  li = vf->lineInfo['S'];
+  li = vf->info['S'];
 
   { int64 nBits;
 
     if (x & 0x1)
       { nBits = (U8) getc(vf->f);
         if (fread(vf->codecBuf,((nBits+7) >> 3),1,vf->f) != 1)
-          die("fail to read compressed fields");
+          { fprintf(stderr,"%s: *FATAL* fail to read compressed fields\n",Prog_Name);
+            exit (1);
+          }
       }
     else
-      { if (fread(vf->field,sizeof(Field),1,vf->f) != (unsigned long) 1)
-          die("fail to read fields");
+      { if (fread(vf->field,sizeof(OneField),1,vf->f) != (unsigned long) 1)
+          { fprintf(stderr,"%s: *FATAL* fail to read fields\n",Prog_Name);
+            exit (1);
+          }
       }
 
     if (fread(&nBits,sizeof(I64),1,vf->f) != 1)
-      die("fail to read list nBits");
+      { fprintf(stderr,"%s: *FATAL* fail to read list nBits\n",Prog_Name);
+        exit (1);
+      }
     if (fread(vf->codecBuf,((nBits+7) >> 3),1,vf->f) != 1)
-      die("fail to read compressed list");
+      { fprintf(stderr,"%s: *FATAL* fail to read compressed list\n",Prog_Name);
+        exit (1);
+      }
 
     vf->field[0].i = (nBits >> 1);
   }
@@ -192,8 +202,8 @@ static char read_raw_seq(VgpFile *vf)
     if (peek & 0x80)
       peek = vf->binaryTypeUnpack[peek];
     if (peek == '/')
-      { Field keepField0 = vf->field[0];
-        vgpReadLine(vf);
+      { OneField keepField0 = vf->field[0];
+        oneReadLine(vf);
         vf->lineType = t;
         vf->field[0] = keepField0;
       }
@@ -203,7 +213,7 @@ static char read_raw_seq(VgpFile *vf)
 }
 
 typedef struct
-  { VgpFile     *vf;       //  VgpFile for input
+  { OneFile     *vf;       //  OneFile for input
     int64        beg;      //  Range of reads to process
     int64        end;
     uint32      *codes;
@@ -248,7 +258,7 @@ static void error_report(int error, int64 line)
 
 static void *barcodes_thread(void *arg)
 { BarCode_Arg *parm  = (BarCode_Arg *) arg;
-  VgpFile     *vf    = parm->vf;
+  OneFile     *vf    = parm->vf;
   int64       *used  = parm->usedqvs;
   int64        beg   = 2*parm->beg;
   int64        end   = 2*parm->end;
@@ -260,12 +270,12 @@ static void *barcodes_thread(void *arg)
   int     t, n;
   int     flen, rlen;
 
-  fqvs = vf->lineInfo['Q']->buffer;
+  fqvs = vf->info['Q']->buffer;
   fcmp = (uint32 *) (vf->codecBuf);
 
   bzero(used,sizeof(int64)*256);
 
-  vgpGotoObject(vf,beg);
+  oneGotoObject(vf,beg);
 
   coll  = beg + 10000000/NTHREADS;
   rlen  = 0;
@@ -281,11 +291,11 @@ static void *barcodes_thread(void *arg)
       *codes++ = *fcmp;
 
       if (o > coll)
-        { vgpGotoObject(vf,o+2);
+        { oneGotoObject(vf,o+2);
           continue;
         }
 
-      n = vgpInt(vf,0);
+      n = oneInt(vf,0);
       if (flen == 0)
         flen = n;
       else if (flen != n)
@@ -294,13 +304,13 @@ static void *barcodes_thread(void *arg)
           return (NULL);
         }
 
-      t = vgpReadLine(vf);
+      t = oneReadLine(vf);
       if (t != 'Q')
         { parm->error = ERROR_QLINE;
           parm->where = o;
           return (NULL);
         }
-      if (vgpInt(vf,0) != flen)
+      if (oneInt(vf,0) != flen)
         { parm->error = ERROR_QLEN;
           parm->where = o;
           return (NULL);
@@ -315,7 +325,7 @@ static void *barcodes_thread(void *arg)
           parm->where = o+1;
           return (NULL);
         }
-      n = vgpInt(vf,0);
+      n = oneInt(vf,0);
       if (rlen == 0)
         rlen = n;
       else if (rlen != n)
@@ -324,13 +334,13 @@ static void *barcodes_thread(void *arg)
           return (NULL);
         }
 
-      t = vgpReadLine(vf);
+      t = oneReadLine(vf);
       if (t != 'Q')
         { parm->error = ERROR_QLINE;
           parm->where = o+1;
           return (NULL);
         }
-      if (vgpInt(vf,0) != rlen)
+      if (oneInt(vf,0) != rlen)
         { parm->error = ERROR_QLEN;
           parm->where = o+1;
           return (NULL);
@@ -338,9 +348,9 @@ static void *barcodes_thread(void *arg)
       for (n = 0; n < rlen; n++)
         used[(int) fqvs[n]] += 1;
 
-      t = vgpReadLine(vf);
+      t = oneReadLine(vf);
       if (t == 'g')
-        t = vgpReadLine(vf);
+        t = oneReadLine(vf);
 
       if (t != 'P')
         { parm->error = ERROR_PLINE;
@@ -1043,7 +1053,7 @@ static void *bucket_thread(void *arg)
  *****************************************************************************************/
 
 typedef struct
-  { VgpFile     *vf;       //  VgpFile for input
+  { OneFile     *vf;       //  OneFile for input
     int64        beg;      //  Range of reads to process
     int64        end;
     int          qbits;
@@ -1057,7 +1067,7 @@ typedef struct
 
 static void *load_thread(void *arg)
 { Load_Arg *parm  = (Load_Arg *) arg;
-  VgpFile  *vf    = parm->vf;
+  OneFile  *vf    = parm->vf;
   int64     beg   = 2*parm->beg;
   int64     end   = 2*parm->end;
   uint8    *ctype = parm->ctype;
@@ -1077,11 +1087,11 @@ static void *load_thread(void *arg)
   uint8  *aptr;
   int     t;
 
-  fqvs  = vf->lineInfo['Q']->buffer;
+  fqvs  = vf->info['Q']->buffer;
   bcode = (uint8 *)  (vf->codecBuf);
   dcode = (uint32 *) (vf->codecBuf);
 
-  vgpGotoObject(vf,beg);
+  oneGotoObject(vf,beg);
 
   o = beg;
   while (1)
@@ -1100,7 +1110,7 @@ static void *load_thread(void *arg)
         { o += 2;
           if (o >= end)
             break;
-          vgpGotoObject(vf,o);
+          oneGotoObject(vf,o);
           continue;
         }
 
@@ -1110,14 +1120,14 @@ static void *load_thread(void *arg)
       memcpy(aptr,bcode,fclen);
       aptr += fclen;
 
-      vgpReadLine(vf);
+      oneReadLine(vf);
       aptr = Compress_QV(aptr,flen,fqvs,qbits,map);
 
       read_raw_seq(vf);
       memcpy(aptr,bcode,rclen);
       aptr += rclen;
 
-      vgpReadLine(vf);
+      oneReadLine(vf);
       aptr = Compress_QV(aptr,rlen,fqvs,qbits,map);
 
       bptr[byte] = aptr - array;
@@ -1126,9 +1136,9 @@ static void *load_thread(void *arg)
       if (o >= end)
         break;
 
-      t = vgpReadLine(vf);
+      t = oneReadLine(vf);
       if (t == 'g')
-        vgpReadLine(vf);
+        oneReadLine(vf);
     }
 
   return (NULL);
@@ -1142,7 +1152,7 @@ static void *load_thread(void *arg)
  *****************************************************************************************/
 
 typedef struct
-  { VgpFile     *vg;       //  VgpFile for output
+  { OneFile     *vg;       //  OneFile for output
     int64        beg;      //  Range of read pairs to process
     int64        end;
     int          qbits;
@@ -1154,7 +1164,7 @@ typedef struct
 
 static void *output_thread(void *arg)
 { Out_Arg  *parm   = (Out_Arg *) arg;
-  VgpFile  *vg     = parm->vg;
+  OneFile  *vg     = parm->vg;
   int64     beg    = parm->beg;
   int64     end    = parm->end;
   int       qbits  = parm->qbits;
@@ -1170,7 +1180,7 @@ static void *output_thread(void *arg)
   char  *fqvs, *rqvs;
   uint32 code, last;
   uint8 *aptr;
-  LineInfo *ls, *lx;
+  OneInfo *ls, *lx;
   int    i;
 
   data = Malloc(2*(flen+rlen),"Allocating decompression buffers");
@@ -1179,8 +1189,8 @@ static void *output_thread(void *arg)
   revr = fqvs + flen;
   rqvs = revr + rlen;
 
-  lx = vg->lineInfo['&'];
-  ls = vg->lineInfo['S'];
+  lx = vg->info['&'];
+  ls = vg->info['S'];
 
   if (lx->buffer != NULL)
     { fprintf(stderr,"Surprised\n"); fflush(stdout);
@@ -1192,7 +1202,7 @@ static void *output_thread(void *arg)
   if ( ! vg->isLastLineBinary)      // terminate previous ascii line
     fputc ('\n', vg->f);
   vg->byte = ftello (vg->f);
-  vg->isLastLineBinary = TRUE;
+  vg->isLastLineBinary = true;
 
   aptr = array + beg*reclen;
   if (beg == 0)
@@ -1209,21 +1219,21 @@ static void *output_thread(void *arg)
       aptr = Uncompress_QV(aptr,rlen,rqvs,qbits,qmask,inv);
 
       if (code != last)
-        { vgpInt(vg,0) = 0;
-          vgpInt(vg,1) = 16;
-          vgpWriteLine(vg,'g',16,forw);
+        { oneInt(vg,0) = 0;
+          oneInt(vg,1) = 16;
+          oneWriteLine(vg,'g',16,forw);
           last = code;
         }
 
-      vgpWriteLine(vg,'P',0,NULL);
+      oneWriteLine(vg,'P',0,NULL);
 
-      vgpInt(vg,0) = flen-23;
-      vgpWriteLine(vg,'S',flen-23,forw+23);
-      vgpWriteLine(vg,'Q',flen-23,fqvs+23);
+      oneInt(vg,0) = flen-23;
+      oneWriteLine(vg,'S',flen-23,forw+23);
+      oneWriteLine(vg,'Q',flen-23,fqvs+23);
 
-      vgpInt(vg,0) = rlen;
-      vgpWriteLine(vg,'S',rlen,revr);
-      vgpWriteLine(vg,'Q',rlen,rqvs);
+      oneInt(vg,0) = rlen;
+      oneWriteLine(vg,'S',rlen,revr);
+      oneWriteLine(vg,'Q',rlen,rqvs);
     }
 
   free(data);
@@ -1238,9 +1248,10 @@ static void *output_thread(void *arg)
  *****************************************************************************************/
 
 int main(int argc, char *argv[])
-{ char    *command;
-  char    *fname;
-  VgpFile *vf;
+{ OneSchema *schema;
+  char      *command;
+  char      *fname;
+  OneFile   *vf;
 
   uint32 *codes;        // Barcode list
   int64   npairs;       // # of reads in each file
@@ -1279,6 +1290,8 @@ int main(int argc, char *argv[])
           c += sprintf(c," %s",argv[i]);
       }
     *c = '\0';
+
+    schema = oneSchemaCreateFromText(VGP_SPEC);
   }
 
   //  Parse command line options
@@ -1332,7 +1345,7 @@ int main(int argc, char *argv[])
 
     pwd   = PathTo(argv[1]);
     fname = Root(argv[1],".irp");
-    vf    = vgpFileOpenRead(Catenate(pwd,"/",fname,".irp"),SEQ,NTHREADS);
+    vf    = oneFileOpenRead(Catenate(pwd,"/",fname,".irp"),schema,"seq",NTHREADS);
     if (vf == NULL)
       { fprintf(stderr,"%s: Cannot open %s as an .irp file\n",Prog_Name,argv[1]);
         exit (1);
@@ -1343,25 +1356,21 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"%s: Input is not a binary file\n",Prog_Name);
         exit (1);
       }
-    if (vf->subType != IRP)
-      { fprintf(stderr,"%s: Input is not a .irp file\n",Prog_Name);
-        exit (1);
-      }
-    if (vf->lineInfo['Q']->given.count <= 0)
+    if (vf->info['Q']->given.count <= 0)
       { fprintf(stderr,"%s: Input file does not have QV vectors\n",Prog_Name);
         exit (1);
       }
     for (i = 'A'; i < 'Z'; i++)
-      if (vf->lineInfo[i] != NULL && vf->lineInfo[i]->given.count > 0)
+      if (vf->info[i] != NULL && vf->info[i]->given.count > 0)
         if ( ! (i == 'S' || i == 'Q' || i == 'P'))
           { fprintf(stderr,"%s: Input contains data lines other than S, Q, P, or g\n",Prog_Name);
             exit (1);
           }
-    if (vf->lineInfo['S']->given.count != vf->lineInfo['Q']->given.count)
+    if (vf->info['S']->given.count != vf->info['Q']->given.count)
       { fprintf(stderr,"%s: The number of sequences and QV's are not equal\n",Prog_Name);
         exit (1);
       }
-    if (2*vf->lineInfo['P']->given.count != vf->lineInfo['S']->given.count)
+    if (2*vf->info['P']->given.count != vf->info['S']->given.count)
       { fprintf(stderr,"%s: The sequences are not all paired\n",Prog_Name);
         exit (1);
       }
@@ -1371,8 +1380,8 @@ int main(int argc, char *argv[])
   //  Allocate vectors for code sorting (codes), code correction (ctype), and first radix
   //    sort bucket counts (bucks)
 
-  nreads = vf->lineInfo['S']->given.count;
-  npairs = vf->lineInfo['P']->given.count;
+  nreads = vf->info['S']->given.count;
+  npairs = vf->info['P']->given.count;
 
   bucks = (int64 *) Malloc(sizeof(int64)*256*NTHREADS,"Allocating bucket counters");
   ctype = (uint8 *) Malloc(0x100000000ll,"Allocating correction vector");
@@ -1800,7 +1809,7 @@ int main(int argc, char *argv[])
 
     { Out_Arg   parm[NTHREADS];
       pthread_t threads[NTHREADS];
-      VgpFile  *vg;
+      OneFile  *vg;
       char     *pwd, *root, *gname;
       int       i;
 
@@ -1813,7 +1822,7 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
 
-      vg = vgpFileOpenWriteNew(gname,SEQ,X10,TRUE,NTHREADS);
+      vg = oneFileOpenWriteNew(gname,schema,"x10",true,NTHREADS);
       if (vg == NULL)
         { fprintf(stderr,"%s: Cannot open %s.10x for writing\n",Prog_Name,root);
           exit (1);
@@ -1823,12 +1832,12 @@ int main(int argc, char *argv[])
       free(root);
       free(pwd);
 
-      vgpInheritProvenance(vg,vf);
-      vgpAddProvenance(vg,"VGPcloud","1.0",command,NULL);
+      oneInheritProvenance(vg,vf);
+      oneAddProvenance(vg,"VGPcloud","1.0",command,NULL);
 
-      vgpWriteHeader(vg);
+      oneWriteHeader(vg);
 
-      vgpFileClose(vf);
+      oneFileClose(vf);
 
       if (VERBOSE)
         { if (NTHREADS > 1)
@@ -1870,9 +1879,11 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
   
-      vgpFileClose(vg);
+      oneFileClose(vg);
     }
   }
+
+  oneSchemaDestroy(schema);
 
   free(command);
 
