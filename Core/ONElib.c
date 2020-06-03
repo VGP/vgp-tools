@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: May 31 21:34 2020 (rd109)
+ * Last edited: Jun  3 00:54 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -149,7 +149,7 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
 	if (a[i] == oneDNA)
 	  { vi->listCodec = DNAcodec ; vi->isUseListCodec = true ; }
 	else
-	  vi->listCodec = vcCreate () ; // always make a listCodec for any list typeinfoList
+	  vi->listCodec = vcCreate () ; // always make a listCodec for any list type
       }
 
   if (isFieldCompress) vi->fieldCodec = vcCreate () ;
@@ -297,8 +297,8 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "D - 1 3 INT                        binary file: offset of start of footer\n") ;
   fprintf (vf->f, "D & 1 8 INT_LIST                   binary file: object index\n") ;
   fprintf (vf->f, "D * 1 8 INT_LIST                   binary file: group index\n") ;
-  fprintf (vf->f, "D : 1 6 STRING                     binary file: field codec\n") ;
-  fprintf (vf->f, "D ; 1 6 STRING                     binary file: list codec\n") ;
+  fprintf (vf->f, "D : 2 4 CHAR 6 STRING              binary file: field codec\n") ;
+  fprintf (vf->f, "D ; 2 4 CHAR 6 STRING              binary file: list codec\n") ;
   fprintf (vf->f, "D / 1 6 STRING                     binary file: comment\n") ;
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
   while (oneReadLine (vf))
@@ -930,7 +930,7 @@ char oneReadLine (OneFile *vf)
   if (t == vf->groupType)
     updateGroupCount (vf, true);
 
-  //  fprintf (stderr, "reading line %" PRId64 " type %c nField %d listElt %d\n", vf->line, t, li->nField, li->listEltSize) ;
+  // fprintf (stderr, "reading line %" PRId64 " type %c nField %d listElt %d\n", vf->line, t, li->nField, li->listEltSize) ;
 
   if (vf->info['/']->bufSize) // clear the comment buffer
     *(char*)(vf->info['/']->buffer) = 0 ;
@@ -1961,7 +1961,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 { I64       i, j;
   OneInfo *li;
 
-  //  fprintf (stderr, "write line type %c\n", t) ;
+  // fprintf (stderr, "write line %d type %c char %c\n", vf->line, t, oneChar(vf,0)) ;
   
   if (!vf->isWrite)
     die ("ONE write error: trying to write a line to a file open for reading");
@@ -1991,7 +1991,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
     }
 
   // BINARY - block write and optionally compress
-  
+
   if (vf->isBinary)
     { U8  x, cBits;
       int nField;
