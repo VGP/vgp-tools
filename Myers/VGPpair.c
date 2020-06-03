@@ -21,6 +21,7 @@
 #include <zlib.h>
 #include <time.h>
 #include <limits.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
 #include "../Core/ONElib.h"
@@ -152,7 +153,7 @@ int main(int argc, char *argv[])
   char      *command;
   OneSchema *schema;
 
-  //  Capture command line for provenance & load VGP schema
+  //  Capture command line for provenance & load ONE schema
 
   { int   n, i;
     char *c;
@@ -173,7 +174,7 @@ int main(int argc, char *argv[])
       }
     *c = '\0';
 
-    schema = Startup_Schema();
+    schema = oneSchemaCreateFromText(VGP_SPEC);
   }
 
   //  Process options
@@ -270,7 +271,7 @@ int main(int argc, char *argv[])
 
       HAS_QVS = (v1->info['Q']->given.count > 0);
 
-      vf = oneFileOpenWriteNew("-",schema,"irp",TRUE,NTHREADS);
+      vf = oneFileOpenWriteNew("-",schema,"irp",true,NTHREADS);
 
       oneInheritProvenance(vf,v1);
       oneInheritProvenance(vf,v2);
@@ -328,6 +329,8 @@ int main(int argc, char *argv[])
     free(fname2);
     free(command);
   }
+
+  oneSchemaDestroy(schema);
 
   if (VERBOSE)
     { fprintf(stderr,"  Done\n");
