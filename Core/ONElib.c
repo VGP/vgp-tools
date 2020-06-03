@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Jun  3 00:54 2020 (rd109)
+ * Last edited: Jun  3 01:38 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -2325,6 +2325,14 @@ static void oneWriteFooter (OneFile *vf)
             }
         }
     }
+
+  li = vf->info['/'] ;		// may need to write list codec for comments
+  if (li->isUseListCodec)
+    { oneChar(vf,0) = '/' ;
+      n = vcSerialize (li->listCodec, codecBuf);
+      oneWriteLine (vf, ';', n, codecBuf);
+    }
+  
   free (codecBuf) ;
 
   oneWriteLine (vf, '&', vf->object, NULL); // number of objects in file = length of index
@@ -2335,7 +2343,7 @@ static void oneWriteFooter (OneFile *vf)
       oneWriteLine (vf, '*', vf->group+1, NULL); // number of groups in file + 1 = length of index
     }
 
-  fprintf (vf->f, "^\n");
+  fprintf (vf->f, "^\n"); // end of footer marker
 
   if (fwrite (&footOff, sizeof(off_t), 1, vf->f) != 1)
     die ("ONE write error: failed writing footer offset");
