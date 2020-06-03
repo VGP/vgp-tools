@@ -40,7 +40,7 @@
 #undef    DEBUG_BAM_IO
 #undef    DEBUG_BAM_RECORD
 
-static char *Usage = "[-viqp] [-g#x] [-T<int(4)>] <data:cram|[bs]am|fast[aq][.gz]> ...";
+static char *Usage = "[-viqp] [-g#x] [-T<int(4)>] <data:cram|[bs]am|f{ast}[aq][.gz]> ...";
 
 #define IO_BLOCK 10000000ll
 
@@ -116,9 +116,10 @@ static void do_nothing(Thread_Arg *parm)
   //  Open and get info about each input file
 
 static void Fetch_File(char *arg, File_Object *input)
-{ static char *suffix[7] = { ".cram", ".bam", ".sam",
-                                         ".fastq.gz",   ".fasta.gz", ".fastq", ".fasta" };
-  static char *sufidx[7] = { "", "", "", ".fastq.vzi", ".fasta.vzi", "", "" };
+{ static char *suffix[11] = { ".cram", ".bam", ".sam",
+                              ".fastq.gz",   ".fasta.gz", ".fastq", ".fasta",
+                              ".fq.gz",  ".fa.gz", ".fq", ".fa" };
+  static char *sufidx[11] = { "", "", "", ".fastq.vzi", ".fasta.vzi", "", "", ".fq.vzi", ".fa.vzi", "", "" };
 
   int64 *genes_cram_index(char *path, int64 fsize, int64 *zsize);
 
@@ -129,17 +130,22 @@ static void Fetch_File(char *arg, File_Object *input)
   int    ftype, zipd, recon;
 
   pwd = PathTo(arg);
-  OPEN2(arg,pwd,root,fid,suffix,7)
+  OPEN2(arg,pwd,root,fid,suffix,11)
   if (fid < 0)
-    { fprintf(stderr,"%s: Cannot open %s as a .cram|[bs]am|fast[aq] file\n",Prog_Name,arg);
+    { fprintf(stderr,"%s: Cannot open %s as a .cram|[bs]am|f{ast}[aq][.gz] file\n",Prog_Name,arg);
       exit (1);
     }
   path  = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating full path name");
   ftype = i;
   if (i >= 3)
-    { ftype = 4 - (i%2);
-      zipd  = (i < 5);
-    }
+    if (i >= 7)
+      { ftype = 4 - (i%2);
+        zipd  = (i < 9);
+      }
+    else
+      { ftype = 4 - (i%2);
+        zipd  = (i < 5);
+      }
   else
     { ftype = i;
       zipd  = 0;
