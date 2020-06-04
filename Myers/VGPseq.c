@@ -23,7 +23,7 @@
 #include <sys/stat.h>
 #include <stdbool.h>
 
-#include "VGP_1_0.h"
+#include "VGPschema.h"
 
 #include "gene_core.h"
 #include "../Core/ONElib.h"
@@ -1992,7 +1992,7 @@ int main(int argc, char *argv[])
       }
     *c = '\0';
 
-    schema = oneSchemaCreateFromText(VGP_SPEC);
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Parse command line options

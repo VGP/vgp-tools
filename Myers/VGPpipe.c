@@ -21,7 +21,7 @@
 #include "gene_core.h"
 #include "../Core/ONElib.h"
 
-#include "VGP_1_0.h"
+#include "VGPschema.h"
 
 static char *Usage = "<in >out";
 
@@ -55,7 +55,7 @@ int main(int argc, char* argv[])
         exit (1);
       } 
 
-    schema = oneSchemaCreateFromText(VGP_SPEC);
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   } 
 
   { OneFile  *inf, *ouf;

@@ -24,7 +24,7 @@
 
 #include "LIBDEFLATE/libdeflate.h"
 
-#include "VGP_1_0.h"
+#include "VGPschema.h"
 
 typedef  struct libdeflate_decompressor Deflator;
 
@@ -1335,7 +1335,7 @@ int main(int argc, char* argv[])
       }
     *c = '\0';
 
-    schema = oneSchemaCreateFromText(VGP_SPEC);
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Process command line arguments

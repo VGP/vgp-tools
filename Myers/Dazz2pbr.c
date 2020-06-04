@@ -22,7 +22,7 @@
 #include "gene_core.h"
 #include "../Core/ONElib.h"
 
-#include "VGP_1_0.h"
+#include "VGPschema.h"
 
 #define PATHSEP "/."
 
@@ -725,7 +725,7 @@ int main(int argc, char *argv[])
       }
     *c = '\0';
 
-    schema = oneSchemaCreateFromText(VGP_SPEC);
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Process arguments
