@@ -43,13 +43,13 @@ ONEview: ONEview.c utils.o $(LIB)
 
 TEST:
 	./ONEstat -S ../VGP/VGP_1_1.def test.aln
-	./ONEview -b -S ../VGP/VGP_1_1.def test.aln > ZZ.baln
-	./ONEstat -S ../VGP/VGP_1_1.def ZZ.baln
-	./ONEstat ZZ.baln
-	./ONEview ZZ.baln > ZZ.aln
+	./ONEview -b -S ../VGP/VGP_1_1.def test.aln > ZZ.1aln
+	./ONEstat -S ../VGP/VGP_1_1.def ZZ.1aln
+	./ONEstat ZZ.1aln
+	./ONEview ZZ.1aln > ZZ.aln
 	./ONEstat ZZ.aln
 	./ONEstat -C "D C 1 6 STRING" ZZ.aln
-	./ONEstat -C "P 3 aln\nD C 1 6 STRING" ZZ.aln
+	./ONEstat -C "P 3 aln\nD C 1 6 STRING" ZZ.1aln
 #	./ONEstat -C "D C 1 3 INT" ZZ.aln
 #	./ONEstat -C "D C 2 3 INT 4 CHAR" ZZ.aln
 #	./ONEstat -C "D X 1 3 INT" ZZ.aln

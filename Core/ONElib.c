@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Jun  3 01:38 2020 (rd109)
+ * Last edited: Jun 12 12:49 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -62,6 +62,15 @@ OneCodec *vcDeserialize(void *in);
 int       vcEncode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
 int       vcDecode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
 
+// forward declarations of 64-bit integer encoding/decoding
+
+#ifdef IN_PROGRESS
+
+static inline int ltfWrite (I64 x, FILE *f) ;
+static inline I64 ltfRead (FILE *f) ;
+
+#endif
+
 /***********************************************************************************
  *
  *    ONE_FILE CREATION & DESTRUCTION
@@ -109,7 +118,7 @@ static void infoDestroy (OneInfo *vi)
   if (vi->listCodec) vcDestroy (vi->listCodec) ;
   if (vi->fieldType) free (vi->fieldType) ;
   if (vi->comment) free (vi->comment) ;
-  free(vi);
+  free (vi);
 }
 
 /******************* OneSchema ********************/
@@ -506,17 +515,17 @@ static void oneFileDestroy (OneFile *vf)
   if (vf->share)
     { for (i = 0; i < 128 ; i++)
         { lx = vf->info[i];
-          if ((i == '&' || i == '*') && ! vf->isWrite)
-            continue;
           if (lx != NULL)
             { for (j = 1; j < vf->share; j++)
                 { li = vf[j].info[i];
-                  if (li->fieldCodec == lx->fieldCodec)
-                    li->fieldCodec = NULL;
-                  if (li->listCodec == lx->listCodec)
-                    li->listCodec  = NULL;
-                  infoDestroy(li);
-                }
+		  if (li != lx) // the index OneInfos are shared
+		    { if (li->fieldCodec == lx->fieldCodec)
+			li->fieldCodec = NULL;
+		      if (li->listCodec == lx->listCodec)
+			li->listCodec  = NULL;
+		      infoDestroy(li);
+		    }
+		}
             }
         }
 
@@ -751,10 +760,6 @@ static inline void updateGroupCount(OneFile *vf, bool isGroupLine)
  *
  **********************************************************************************/
 
-  //  EWM: it did not look like these have been fully debugged.  Logic does not
-  //    accommodate negative numbers, other bits of code looked incomplete.  I
-  //    have heavily rewritten and these need debug.
-
 static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
 { char *y;
   int   d, k;
@@ -854,6 +859,41 @@ static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
   }
 }
 
+// read and write compressed fields
+
+#ifdef IN_PROGRESS
+
+static int writeCompressedFields (FILE *f, OneField *field, OneInfo *li)
+{
+  int i, n = 0 ;
+  
+  for (i = 0 ; i < li->nField ; ++li)
+    switch (li->fieldType[i])
+      {
+      case oneREAL: fwrite (&field[i].r, 8, 1, f) ; n += 8 ; break ;
+      case oneCHAR: fputc (field[i].c, f) ; ++n ; break ;
+      default: // includes INT and all the LISTs, which store their length in field as an INT
+	n += ltfWrite (field[i].i, f) ;
+      }
+
+  return n ;
+}
+
+static void readCompressedFields (FILE *f, OneField *field, OneInfo *li)
+{
+  int i ;
+  
+  for (i = 0 ; i < li->nField ; ++li)
+    switch (li->fieldType[i])
+      {
+      case oneREAL: fread (&field[i].r, 8, 1, f) ; break ;
+      case oneCHAR: field[i].c = fgetc (f) ; break ;
+      default: // includes INT and all the LISTs, which store their length in field as an INT
+	field[i].i = ltfRead (f) ;
+      }
+}
+
+#endif // IN_PROGRESS
 
 /***********************************************************************************
  *
@@ -1401,8 +1441,8 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 
       { OneFile *vf0 = vf ;
 	vf = new (nthreads, OneFile);
-	vf->share = nthreads ;
 	vf[0] = *vf0 ;
+	vf->share = nthreads ;
 	free (vf0) ; // NB free() not oneFileDestroy because don't want deep destroy
       }
 
@@ -1424,10 +1464,13 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    { OneInfo *li = v->info[j];
 	      if (li != NULL)
 		{ OneInfo *l0 = vf->info[j];
+		  if (li->fieldCodec) vcDestroy (li->fieldCodec) ;
 		  li->fieldCodec = l0->fieldCodec;
+		  if (li->listCodec) vcDestroy (li->listCodec) ;
 		  li->listCodec  = l0->listCodec;
 		  if (li->listEltSize > 0)
 		    { li->bufSize = l0->bufSize;
+		      if (li->buffer) free (li->buffer) ;
 		      li->buffer  = new (l0->bufSize*l0->listEltSize, void);
 		    }
 		  li->given = l0->given;
@@ -1435,9 +1478,12 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    }
 
 	  v->codecBufSize = vf->codecBufSize;
+	  if (v->codecBuf) free (v->codecBuf) ;
 	  v->codecBuf = new (v->codecBufSize, void);
 
+	  v->info['&']->listCodec = 0 ;
 	  infoDestroy (v->info['&']);
+	  v->info['*']->listCodec = 0 ;
 	  infoDestroy (v->info['*']);
 	  v->info['&'] = vf->info['&'];
 	  v->info['*'] = vf->info['*'];
@@ -3460,6 +3506,334 @@ int vcDecode(OneCodec *vc, int ilen, char *ibytes, char *obytes)
   return (o - (uint8 *) obytes);
 }
   
+/***********************************************************************************
+ *
+ *    LTF encoding for integers
+ *    adapted from htslib/cram/cram_io.h with copyright statement:
+
+Copyright (c) 2012-2019 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+ *
+ **********************************************************************************/
+
+#ifdef IN_PROGRESS
+
+/* 64-bit itf8 variant */
+
+static inline int ltf8_put(char *cp, int64_t val) {
+    unsigned char *up = (unsigned char *)cp;
+    if        (!(val & ~((1LL<<7)-1))) {
+        *up = val;
+        return 1;
+    } else if (!(val & ~((1LL<<(6+8))-1))) {
+        *up++ = (val >> 8 ) | 0x80;
+        *up   = val & 0xff;
+        return 2;
+    } else if (!(val & ~((1LL<<(5+2*8))-1))) {
+        *up++ = (val >> 16) | 0xc0;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 3;
+    } else if (!(val & ~((1LL<<(4+3*8))-1))) {
+        *up++ = (val >> 24) | 0xe0;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 4;
+    } else if (!(val & ~((1LL<<(3+4*8))-1))) {
+        *up++ = (val >> 32) | 0xf0;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 5;
+    } else if (!(val & ~((1LL<<(2+5*8))-1))) {
+        *up++ = (val >> 40) | 0xf8;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 6;
+    } else if (!(val & ~((1LL<<(1+6*8))-1))) {
+        *up++ = (val >> 48) | 0xfc;
+        *up++ = (val >> 40) & 0xff;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 7;
+    } else if (!(val & ~((1LL<<(7*8))-1))) {
+        *up++ = (val >> 56) | 0xfe;
+        *up++ = (val >> 48) & 0xff;
+        *up++ = (val >> 40) & 0xff;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 8;
+    } else {
+        *up++ = 0xff;
+        *up++ = (val >> 56) & 0xff;
+        *up++ = (val >> 48) & 0xff;
+        *up++ = (val >> 40) & 0xff;
+        *up++ = (val >> 32) & 0xff;
+        *up++ = (val >> 24) & 0xff;
+        *up++ = (val >> 16) & 0xff;
+        *up++ = (val >> 8 ) & 0xff;
+        *up   = val & 0xff;
+        return 9;
+    }
+}
+
+static inline int ltf8_get(char *cp, int64_t *val_p) {
+    unsigned char *up = (unsigned char *)cp;
+
+    if (up[0] < 0x80) {
+        *val_p =   up[0];
+        return 1;
+    } else if (up[0] < 0xc0) {
+        *val_p = (((uint64_t)up[0]<< 8) |
+                   (uint64_t)up[1]) & (((1LL<<(6+8)))-1);
+        return 2;
+    } else if (up[0] < 0xe0) {
+        *val_p = (((uint64_t)up[0]<<16) |
+                  ((uint64_t)up[1]<< 8) |
+                   (uint64_t)up[2]) & ((1LL<<(5+2*8))-1);
+        return 3;
+    } else if (up[0] < 0xf0) {
+        *val_p = (((uint64_t)up[0]<<24) |
+                  ((uint64_t)up[1]<<16) |
+                  ((uint64_t)up[2]<< 8) |
+                   (uint64_t)up[3]) & ((1LL<<(4+3*8))-1);
+        return 4;
+    } else if (up[0] < 0xf8) {
+        *val_p = (((uint64_t)up[0]<<32) |
+                  ((uint64_t)up[1]<<24) |
+                  ((uint64_t)up[2]<<16) |
+                  ((uint64_t)up[3]<< 8) |
+                   (uint64_t)up[4]) & ((1LL<<(3+4*8))-1);
+        return 5;
+    } else if (up[0] < 0xfc) {
+        *val_p = (((uint64_t)up[0]<<40) |
+                  ((uint64_t)up[1]<<32) |
+                  ((uint64_t)up[2]<<24) |
+                  ((uint64_t)up[3]<<16) |
+                  ((uint64_t)up[4]<< 8) |
+                   (uint64_t)up[5]) & ((1LL<<(2+5*8))-1);
+        return 6;
+    } else if (up[0] < 0xfe) {
+        *val_p = (((uint64_t)up[0]<<48) |
+                  ((uint64_t)up[1]<<40) |
+                  ((uint64_t)up[2]<<32) |
+                  ((uint64_t)up[3]<<24) |
+                  ((uint64_t)up[4]<<16) |
+                  ((uint64_t)up[5]<< 8) |
+                   (uint64_t)up[6]) & ((1LL<<(1+6*8))-1);
+        return 7;
+    } else if (up[0] < 0xff) {
+        *val_p = (((uint64_t)up[1]<<48) |
+                  ((uint64_t)up[2]<<40) |
+                  ((uint64_t)up[3]<<32) |
+                  ((uint64_t)up[4]<<24) |
+                  ((uint64_t)up[5]<<16) |
+                  ((uint64_t)up[6]<< 8) |
+                   (uint64_t)up[7]) & ((1LL<<(7*8))-1);
+        return 8;
+    } else {
+        *val_p = (((uint64_t)up[1]<<56) |
+                  ((uint64_t)up[2]<<48) |
+                  ((uint64_t)up[3]<<40) |
+                  ((uint64_t)up[4]<<32) |
+                  ((uint64_t)up[5]<<24) |
+                  ((uint64_t)up[6]<<16) |
+                  ((uint64_t)up[7]<< 8) |
+                   (uint64_t)up[8]);
+        return 9;
+    }
+}
+
+// top bit of first byte: number is negative
+// second bit: one-byte: next six bits give number (make negative if top bit set)
+// third bit: two-byte: next 13 bits give number (make negative if top bit set)
+// if second and third bits are not set, remaining 5 bits give number of bytes to read
+
+static inline int intGet (unsigned char *u, I64 *pval)
+{
+  switch (u[0] >> 5)
+    {
+    case 2: case 3: // single byte positive
+      *pval = (I64) (u[0] & 0x3f) ; return 1 ;
+    case 6: case 7: // single byte negative
+      *pval = - (I64) (u[0] & 0x3f) ; return 1 ;
+    case 1: // two bytes positive
+      *pval = (I64) (u[0] & 0x1f) << 8 | (I64)u[1] ; return 2 ;
+    case 5: // two bytes negative
+      *pval = - ((I64) (u[0] & 0x1f) << 8 | (I64)u[1]) ; return 2 ;
+    default:
+      break ;
+    }
+
+  *pval = 0 ;
+  int n = u[0] & 0xf, i = n ;
+  unsigned char *v = u+1 ;
+  while (i--) *pval = *pval << 8 | v[i] ;
+  if (u[0] & 0x80) *pval = -*pval ;
+    
+  return n+1 ;
+}
+
+static inline int intPut (unsigned char *u, I64 val) // in progress
+{
+  *u = val & 0xff ; // junk to prevent compiler errors
+  return (int) u ;
+}
+
+static inline I64 ltfRead (FILE *f)
+{
+  unsigned char u[16] ;
+  I64 val ;
+
+  u[0] = fgetc (f) ;
+  if (u[0] & 0x40) intGet (u, &val) ;
+  else if (u[0] & 0x20) { u[1] = fgetc (f) ; intGet (u, &val) ; }
+  else { fread (&u[1], 1, u[0]&0xf, f) ; intGet (u, &val) ; }
+
+  return val ;
+}
+
+static inline int ltfWrite (I64 x, FILE *f)
+{
+  unsigned char u[16] ;
+  int n ;
+
+  if (x < 0)
+    { x = -x ;
+      u[0] = 0x80 ;
+    }
+  else
+    u[0] = 0 ;
+  
+  if (x < (1<<6) )
+    { u[0] |= x | 0x40 ; n = 1 ; }
+  else if (x < (1<<13))
+    { u[0] |= (x >> 8) | 0x20 ;
+      u[1] = x & 0xff ; n = 2 ;
+    }
+  else
+    { if (x >= ((I64)1 << 56))
+	n = 9 ;
+      else
+	{ n = 3 ;
+	  I64 z = x >> 16 ;
+	  while (z) { ++n ; z >>= 8 ; }
+	}
+      u[0] |= (n-1) ;
+      *(I64*)(u+1) = x ;
+    }
+
+  fwrite (u, 1, n, f) ;
+  return n ;
+}
+
+#ifdef TEST_LTF
+
+#include <sys/resource.h>
+#ifndef RUSAGE_SELF     /* to prevent "RUSAGE_SELF redefined" gcc warning, fixme if this is more intricate */
+#define RUSAGE_SELF 0
+#endif
+
+void timeUpdate (FILE *f)
+{
+  static bool isFirst = 1 ;
+  static struct rusage rOld, rFirst ;
+  struct rusage rNew ;
+  int secs, usecs ;
+
+  getrusage (RUSAGE_SELF, &rNew) ;
+  if (!isFirst)
+    { secs = rNew.ru_utime.tv_sec - rOld.ru_utime.tv_sec ;
+      usecs =  rNew.ru_utime.tv_usec - rOld.ru_utime.tv_usec ;
+      if (usecs < 0) { usecs += 1000000 ; secs -= 1 ; }
+      fprintf (f, "user\t%d.%06d", secs, usecs) ;
+      secs = rNew.ru_stime.tv_sec - rOld.ru_stime.tv_sec ;
+      usecs =  rNew.ru_stime.tv_usec - rOld.ru_stime.tv_usec ;
+      if (usecs < 0) { usecs += 1000000 ; secs -= 1 ; }
+      fprintf (f, "\tsystem\t%d.%06d", secs, usecs) ;
+      fprintf (f, "\tmax_RSS\t%ld", rNew.ru_maxrss - rOld.ru_maxrss) ;
+      fputc ('\n', f) ;
+    }
+  else
+    { rFirst = rNew ;
+      isFirst = false ;
+    }
+
+  rOld = rNew ;
+}
+
+int main (int argc, char *argv[])
+{
+  { int   t = 1;
+    char *b = (char *) (&t);
+    if (*b == 0) printf ("bigEndian\n") ; else printf ("smallEndian\n") ;
+  }
+
+  timeUpdate (0) ;
+  
+  FILE *f = fopen ("ltf.test1", "w") ;
+  I64 i, j, n = atoi(argv[1]) ;
+  for (i = 0 ; i < n ; ++i) { ltfWrite (i, f) ; }
+  fclose (f) ;
+
+  timeUpdate (stdout) ;
+  
+  f = fopen ("ltf.test1", "r") ;
+  for (j = 0 ; j < n ; ++j)
+    if ((i = ltfRead (f)) != j)
+      die ("ltf wrote %d read %d", (int)j, (int)i) ;
+  fclose (f) ;
+
+  timeUpdate (stdout) ;
+
+  char buf[12] ;
+  f = fopen ("ltf.test2", "w") ;
+  for (i = 0 ; i < n ; ++i) { int k = ltf8_put (buf, i) ; fwrite (buf, 1, k, f) ; }
+  fclose (f) ;
+
+  timeUpdate (stdout) ;
+}
+#endif // TEST_LTF
+
+#endif // IN_PROGRESS
+
 /***********************************************************************************
  *
  *    UTILITIES: memory allocation, file opening, timer
