@@ -10,7 +10,7 @@ VGP_LIB = ../Core/VGPlib.c
 VGP_DPND = $(VGP_LIB) ../Core/VGPlib.h
 
 ONE_LIB = ../Core/ONElib.c
-ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGPschema.h
+ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGP_1_0.h
 
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h
