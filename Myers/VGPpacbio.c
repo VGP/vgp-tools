@@ -29,7 +29,7 @@
 typedef  struct libdeflate_decompressor Deflator;
 
 #undef   DEBUG_CORE
-#undef   DEBUG_FIND
+#define  DEBUG_FIND
 #undef   DEBUG_RECORDS
 #undef   DEBUG_OUT
 
@@ -331,8 +331,8 @@ static void skip_header(Thread_Arg *parm)
   bam_start(bam,fid,buf,&zero);
 
 #ifdef DEBUG_FIND
-  printf("Header seek\n");
-  fflush(stdout);
+  fprintf(stderr,"Header seek\n");
+  fflush(stderr);
 #endif
 
   bam_get(bam,data,4);
@@ -356,8 +356,8 @@ static void skip_header(Thread_Arg *parm)
   parm->beg = bam->loc;
 
 #ifdef DEBUG_FIND
-  printf("  Begin @ %lld\n",parm->beg.fpos);
-  fflush(stdout);
+  fprintf(stderr,"  Begin @ %lld\n",parm->beg.fpos);
+  fflush(stderr);
 #endif
 }
 
@@ -379,8 +379,8 @@ static void find_nearest(Thread_Arg *parm)
   size_t tsize;
 
 #ifdef DEBUG_FIND
-  printf("Searching from %lld\n",fpos);
-  fflush(stdout);
+  fprintf(stderr,"Searching from %lld\n",fpos);
+  fflush(stderr);
 #endif
 
   lseek(fid,fpos,SEEK_SET);
@@ -407,8 +407,8 @@ static void find_nearest(Thread_Arg *parm)
           if (blen < IO_BLOCK)
             last = 1;
 #ifdef DEBUG_FIND
-          printf("Loading %d(last=%d)\n",blen,last);
-          fflush(stdout);
+          fprintf(stderr,"Loading %d(last=%d)\n",blen,last);
+          fflush(stderr);
 #endif
           bptr = 0;
         }
@@ -426,8 +426,8 @@ static void find_nearest(Thread_Arg *parm)
             continue;
   
 #ifdef DEBUG_FIND
-          printf("  Putative header @ %d\n",bptr-3);
-          fflush(stdout);
+          fprintf(stderr,"  Putative header @ %d\n",bptr-3);
+          fflush(stderr);
 #endif
 
           if (bptr + 12 > blen)
@@ -462,8 +462,8 @@ static void find_nearest(Thread_Arg *parm)
             }
 
 #ifdef DEBUG_FIND
-          printf("    Putative Extra %d\n",bsize);
-          fflush(stdout);
+          fprintf(stderr,"    Putative Extra %d\n",bsize);
+          fflush(stderr);
 #endif
   
           isize = getint(block+(bsize-4),4);
@@ -479,8 +479,8 @@ static void find_nearest(Thread_Arg *parm)
               notfound = 0;
 
 #ifdef DEBUG_FIND
-              printf("    First block at %lld (%d)\n",fpos,ssize);
-              fflush(stdout);
+              fprintf(stderr,"    First block at %lld (%d)\n",fpos,ssize);
+              fflush(stderr);
 #endif
 	      break;
             }
@@ -519,8 +519,8 @@ static void find_nearest(Thread_Arg *parm)
                 else
                   beg = run-MAX_PREFIX;
 #ifdef DEBUG_FIND
-                printf("      Possible seq @ %d (%d)\n",run+1,beg);
-                fflush(stdout);
+                fprintf(stderr,"      Possible seq @ %d (%d)\n",run+1,beg);
+                fflush(stderr);
 #endif
                 for (k = run-(HEADER_LEN-1); k >= beg; k--)
                   { ldata  = getint(block+k,4);
@@ -532,8 +532,8 @@ static void find_nearest(Thread_Arg *parm)
                         { parm->beg.fpos = bam->loc.fpos;
                           parm->beg.boff = k;
 #ifdef DEBUG_FIND
-                          printf("      Found @ %d: '%s':%d\n",k,block+(k+36),lseq);
-                          fflush(stdout);
+                          fprintf(stderr,"      Found @ %d: '%s':%d\n",k,block+(k+36),lseq);
+                          fflush(stderr);
 #endif
 
                           close(fid);
@@ -698,6 +698,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
     ldata  = getint(x,4) - 32;
     lname  = getint(x+12,1);
     lseq   = getint(x+20,4);
+fprintf(stderr,"%d %d %d %d\n",ldata,lseq,lname,aux); fflush(stderr);
 
     if (ldata < 0 || lseq < 0 || lname < 1)
       { fprintf(stderr,"%s: Non-sensical BAM record, file corrupted?\n",Prog_Name);
@@ -705,6 +706,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
       }
 
     aux = lname + ((lseq + 1)>>1) + lseq;
+fprintf(stderr,"%d %d %d %d\n",ldata,lseq,lname,aux); fflush(stderr);
     if (aux > ldata)
       { fprintf(stderr,"%s: Non-sensical BAM record, file corrupted?\n",Prog_Name);
         exit (1);
@@ -1216,9 +1218,9 @@ static void *output_thread(void *arg)
         sam_start(bam,fid,buf,&(parm->beg));
 
 #ifdef DEBUG_OUT
-      printf("Block: %12lld / %5d to %12lld / %5d --> %8lld\n",bam->loc.fpos,bam->loc.boff,
+      fprintf(stderr,"Block: %12lld / %5d to %12lld / %5d --> %8lld\n",bam->loc.fpos,bam->loc.boff,
                                                                epos,eoff,epos - bam->loc.fpos);
-      fflush(stdout);
+      fflush(stderr);
 #endif
 
       while (bam->loc.fpos != epos || bam->loc.boff != eoff)
@@ -1482,8 +1484,8 @@ int main(int argc, char* argv[])
             parm[i].end.fpos = 0;
 
 #ifdef DEBUG_FIND
-          printf(" %2d: %1d %10lld (%10lld)\n",i,f,b,parm[i].end.fpos);
-          fflush(stdout);
+          fprintf(stderr," %2d: %1d %10lld (%10lld)\n",i,f,b,parm[i].end.fpos);
+          fflush(stderr);
 #endif
 
           parm[i].beg.fpos = b;
@@ -1559,10 +1561,12 @@ int main(int argc, char* argv[])
 
 #if defined(DEBUG_FIND) || defined(DEBUG_OUT)
       for (i = 0; i < NTHREADS; i++)
-        { printf(" %2d: %2d / %12lld / %5d",i,parm[i].bidx,parm[i].beg.fpos,parm[i].beg.boff);
-          printf("  -  %2d / %12lld / %5d\n",parm[i].eidx,parm[i].end.fpos,parm[i].end.boff);
+        { fprintf(stderr," %2d: %2d / %12lld / %5d",
+                         i,parm[i].bidx,parm[i].beg.fpos,parm[i].beg.boff);
+          fprintf(stderr,"  -  %2d / %12lld / %5d\n",
+                         parm[i].eidx,parm[i].end.fpos,parm[i].end.boff);
         }
-      fflush(stdout);
+      fflush(stderr);
 #endif
     }
 
@@ -1575,8 +1579,8 @@ int main(int argc, char* argv[])
       oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
       oneWriteHeader(vf);
 #ifdef DEBUG_OUT
-      printf("Opened\n");
-      fflush(stdout);
+      fprintf(stderr,"Opened\n");
+      fflush(stderr);
 #endif
 
       if (VERBOSE)
@@ -1586,6 +1590,7 @@ int main(int argc, char* argv[])
 
       //  Generate the data lines in parallel threads
 
+#define DEBUG_OUT
 #ifdef DEBUG_OUT
       for (i = 0; i < NTHREADS; i++)
         { parm[i].vf = vf+i;

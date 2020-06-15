@@ -566,7 +566,7 @@ static void *fast_output_thread(void *arg)
               switch (state)
 
               { case QAT:
-                  if (GROUP)
+                  if (GROUP || QNAME)
                     state = HEAD;
                   else
                     state = HSKP;
@@ -648,8 +648,7 @@ static void *fast_output_thread(void *arg)
                           if (lane == NULL || last == NULL)
                             exit (1);
                         }
-                      if (llen > 0 || c != '@' || !fastq)
-                        lane[llen++] = c;
+                      lane[llen++] = c;
                     }
                   break;
 
@@ -728,7 +727,7 @@ static void *fast_output_thread(void *arg)
                           oneWriteLine(vf,'I',ilen,last);
                         }
                       olen  = 0;
-                      if (GROUP)
+                      if (GROUP || QNAME)
                         state = HEAD;
                       else
                         state = HSKP;
