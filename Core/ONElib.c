@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Jun 12 12:49 2020 (rd109)
+ * Last edited: Jun 15 01:47 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -63,6 +63,8 @@ int       vcEncode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
 int       vcDecode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
 
 // forward declarations of 64-bit integer encoding/decoding
+
+#define IN_PROGRESS
 
 #ifdef IN_PROGRESS
 
@@ -871,7 +873,7 @@ static int writeCompressedFields (FILE *f, OneField *field, OneInfo *li)
     switch (li->fieldType[i])
       {
       case oneREAL: fwrite (&field[i].r, 8, 1, f) ; n += 8 ; break ;
-      case oneCHAR: fputc (field[i].c, f) ; ++n ; break ;
+      case oneCHAR: putc (field[i].c, f) ; ++n ; break ;
       default: // includes INT and all the LISTs, which store their length in field as an INT
 	n += ltfWrite (field[i].i, f) ;
       }
@@ -3693,28 +3695,63 @@ static inline int intGet (unsigned char *u, I64 *pval)
     case 2: case 3: // single byte positive
       *pval = (I64) (u[0] & 0x3f) ; return 1 ;
     case 6: case 7: // single byte negative
-      *pval = - (I64) (u[0] & 0x3f) ; return 1 ;
+      *pval =  (I64) u[0] | 0xffffffffffffff00 ; return 1 ;
     case 1: // two bytes positive
       *pval = (I64) (u[0] & 0x1f) << 8 | (I64)u[1] ; return 2 ;
     case 5: // two bytes negative
       *pval = - ((I64) (u[0] & 0x1f) << 8 | (I64)u[1]) ; return 2 ;
-    default:
-      break ;
+    case 0:
+      switch (u[0] & 0x07)
+	{
+	case 0: die ("int packing error") ;
+	case 1: *pval = *(I64*)(u+1) & 0x0000000000ffff ; return 3 ;
+	case 2: *pval = *(I64*)(u+1) & 0x00000000ffffff ; return 4 ;
+	case 3: *pval = *(I64*)(u+1) & 0x000000ffffffff ; return 5 ;
+	case 4: *pval = *(I64*)(u+1) & 0x0000ffffffffff ; return 6 ;
+	case 5: *pval = *(I64*)(u+1) & 0x00ffffffffffff ; return 7 ;
+	case 6: *pval = *(I64*)(u+1) & 0xffffffffffffff ; return 8 ;
+	case 7: *pval = *(I64*)(u+1) ; return 9 ;
+	}
+    case 4:
+      switch (u[0] & 0x07)
+	{
+	case 0: die ("int packing error") ;
+	case 1: *pval = *(I64*)(u+1) | 0xffffffffffff0000 ; return 3 ;
+	case 2: *pval = *(I64*)(u+1) | 0xffffffffff000000 ; return 4 ;
+	case 3: *pval = *(I64*)(u+1) | 0xffffffff00000000 ; return 5 ;
+	case 4: *pval = *(I64*)(u+1) | 0xffffff0000000000 ; return 6 ;
+	case 5: *pval = *(I64*)(u+1) | 0xffff000000000000 ; return 7 ;
+	case 6: *pval = *(I64*)(u+1) | 0xff00000000000000 ; return 8 ;
+	case 7: *pval = *(I64*)(u+1) ; return 9 ;
+	}
     }
-
-  *pval = 0 ;
-  int n = u[0] & 0xf, i = n ;
-  unsigned char *v = u+1 ;
-  while (i--) *pval = *pval << 8 | v[i] ;
-  if (u[0] & 0x80) *pval = -*pval ;
-    
-  return n+1 ;
+  return 0 ; // shouldn't get here, but needed for compiler happiness
 }
 
 static inline int intPut (unsigned char *u, I64 val) // in progress
 {
-  *u = val & 0xff ; // junk to prevent compiler errors
-  return (int) u ;
+  if (val >= 0)
+    { if (     !(val & 0xffffffffffffffc0)) { *u = val | 0x40 ;  return 1 ; }
+      else if (!(val & 0xffffffffffffe000)) { *u++ = (val >> 8) | 0x20 ; *u = val & 0xff ; return 2 ; }
+      else if (!(val & 0xffffffffffff0000)) { *u++ = 1 ; *(I64*)u = val ; return 3 ; }
+      else if (!(val & 0xffffffffff000000)) { *u++ = 2 ; *(I64*)u = val ; return 4 ; }
+      else if (!(val & 0xffffffff00000000)) { *u++ = 3 ; *(I64*)u = val ; return 5 ; }
+      else if (!(val & 0xffffff0000000000)) { *u++ = 4 ; *(I64*)u = val ; return 6 ; }
+      else if (!(val & 0xffff000000000000)) { *u++ = 5 ; *(I64*)u = val ; return 7 ; }
+      else if (!(val & 0xff00000000000000)) { *u++ = 6 ; *(I64*)u = val ; return 8 ; }
+      else                                  { *u++ = 7 ; *(I64*)u = val ; return 9 ; }
+    }
+  else
+    { if (     !(~val & 0xffffffffffffffc0)) { *u = val | 0x40 ;  return 1 ; }
+      //     else if (!(~val & 0xffffffffffffe000)) { *u++ = (val >> 8) | 0x20 ; *u = val & 0xff ; return 2 ; }
+      else if (!(~val & 0xffffffffffff0000)) { *u++ = 0x81 ; *(I64*)u = val ; return 3 ; }
+      else if (!(~val & 0xffffffffff000000)) { *u++ = 0x82 ; *(I64*)u = val ; return 4 ; }
+      else if (!(~val & 0xffffffff00000000)) { *u++ = 0x83 ; *(I64*)u = val ; return 5 ; }
+      else if (!(~val & 0xffffff0000000000)) { *u++ = 0x84 ; *(I64*)u = val ; return 6 ; }
+      else if (!(~val & 0xffff000000000000)) { *u++ = 0x85 ; *(I64*)u = val ; return 7 ; }
+      else if (!(~val & 0xff00000000000000)) { *u++ = 0x86 ; *(I64*)u = val ; return 8 ; }
+      else                                   { *u++ = 0x87 ; *(I64*)u = val ; return 9 ; }
+    }
 }
 
 static inline I64 ltfRead (FILE *f)
@@ -3722,10 +3759,23 @@ static inline I64 ltfRead (FILE *f)
   unsigned char u[16] ;
   I64 val ;
 
-  u[0] = fgetc (f) ;
-  if (u[0] & 0x40) intGet (u, &val) ;
-  else if (u[0] & 0x20) { u[1] = fgetc (f) ; intGet (u, &val) ; }
-  else { fread (&u[1], 1, u[0]&0xf, f) ; intGet (u, &val) ; }
+  u[0] = getc (f) ;
+  if (u[0] & 0x40)
+    { intGet (u, &val) ;
+      //      printf ("read %d n 1 u %02x\n", (int)val, u[0]) ;
+    }
+  else if (u[0] & 0x20)
+    { u[1] = getc (f) ; intGet (u, &val) ;
+      //      printf ("read %d n 2 u %02x %02x\n", (int)val, u[0], u[1]) ;
+    }
+  else
+    { int n = 1 + (u[0] & 0x0f) ;
+      unsigned char *v = &u[1] ;
+      while (n--) *v++ = getc(f) ;
+      n = intGet (u, &val) ;
+      //      printf ("read %d n %d u", (int)val, n) ;
+      //      { int i ; for (i = 0 ; i< n ; ++i) printf (" %02x", u[i]) ; putchar ('\n') ; }
+    }
 
   return val ;
 }
@@ -3733,38 +3783,16 @@ static inline I64 ltfRead (FILE *f)
 static inline int ltfWrite (I64 x, FILE *f)
 {
   unsigned char u[16] ;
-  int n ;
+  int n = intPut (u, x) ;
 
-  if (x < 0)
-    { x = -x ;
-      u[0] = 0x80 ;
-    }
-  else
-    u[0] = 0 ;
-  
-  if (x < (1<<6) )
-    { u[0] |= x | 0x40 ; n = 1 ; }
-  else if (x < (1<<13))
-    { u[0] |= (x >> 8) | 0x20 ;
-      u[1] = x & 0xff ; n = 2 ;
-    }
-  else
-    { if (x >= ((I64)1 << 56))
-	n = 9 ;
-      else
-	{ n = 3 ;
-	  I64 z = x >> 16 ;
-	  while (z) { ++n ; z >>= 8 ; }
-	}
-      u[0] |= (n-1) ;
-      *(I64*)(u+1) = x ;
-    }
+  //  printf ("write %d n %d u", (int)x, n) ;
+  //  { int i ; for (i = 0 ; i< n ; ++i) printf (" %02x", u[i]) ; putchar ('\n') ; }
 
   fwrite (u, 1, n, f) ;
   return n ;
 }
 
-#ifdef TEST_LTF
+#if defined(TEST_LTF) || defined(TEST_INT)
 
 #include <sys/resource.h>
 #ifndef RUSAGE_SELF     /* to prevent "RUSAGE_SELF redefined" gcc warning, fixme if this is more intricate */
@@ -3801,33 +3829,95 @@ void timeUpdate (FILE *f)
 
 int main (int argc, char *argv[])
 {
-  { int   t = 1;
-    char *b = (char *) (&t);
-    if (*b == 0) printf ("bigEndian\n") ; else printf ("smallEndian\n") ;
-  }
+  I64   i, j, x, n, tot, mod ;
+  FILE *f ;
+  static unsigned char buffer[9*(1<<20)] ;
+
+  if (argc < 3) die ("usage: ./test <start> <n> [mod]") ;
+  
+//  { int   t = 1;
+//    char *b = (char *) (&t);
+//    if (*b == 0) printf ("bigEndian\n") ; else printf ("smallEndian\n") ;
+//  }
 
   timeUpdate (0) ;
   
-  FILE *f = fopen ("ltf.test1", "w") ;
-  I64 i, j, n = atoi(argv[1]) ;
-  for (i = 0 ; i < n ; ++i) { ltfWrite (i, f) ; }
+  x = atoi(argv[1]) ;
+  n = atoi(argv[2]) ;
+  if (argc == 4) mod = atoi(argv[3]) ; else mod = 0 ;
+  tot = 0 ;
+#ifdef TEST_INT
+  f = fopen ("int.test", "w") ;
+#endif
+#ifdef TEST_LTF
+  f = fopen ("ltf.test", "w") ;
+#endif
+  if (argc > 4)
+    for (i = 0 ; i < n ; ++i) { tot += ltfWrite (x++, f) ; if (x == mod) x = 0 ; }
+  else
+    { while (n)
+	{ int m = (n > 1<<20) ? 1<<20 : n ;
+	  unsigned char *u = buffer ;
+	  for (i = 0 ; i < m ; ++i)
+	    {
+#ifdef TEST_INT
+	      u += intPut (u, x++) ;
+#endif
+#ifdef TEST_LTF
+	      u += ltf8_put ((char*)u, x++) ;
+#endif
+	      if (x == mod) x = 0 ;
+	    }
+	  tot += (u-buffer) ;
+	  fwrite (buffer, 1, (u-buffer), f) ;
+	  n -= m ;
+	}
+    }
   fclose (f) ;
-
+  printf ("wrote %" PRId64 " bytes: ", tot) ;
   timeUpdate (stdout) ;
-  
-  f = fopen ("ltf.test1", "r") ;
-  for (j = 0 ; j < n ; ++j)
-    if ((i = ltfRead (f)) != j)
-      die ("ltf wrote %d read %d", (int)j, (int)i) ;
+
+  x = atoi(argv[1]) ;
+  n = atoi(argv[2]) ;
+  tot = 0 ;
+#ifdef TEST_INT
+  f = fopen ("int.test", "r") ;
+#endif
+#ifdef TEST_LTF
+  f = fopen ("ltf.test", "r") ;
+#endif
+  if (argc > 4)
+    {  for (j = 0 ; j < n ; ++j)
+	if ((i = ltfRead (f)) != j)
+	  die ("ltf wrote %d read %d", (int)j, (int)i) ;
+    }
+  else
+    { unsigned char *u = buffer, *v = buffer ; // u is current pos, v is end of section read in
+      while (n)
+	{ int m = (n > 1<<20) ? 1<<20 : n ;
+//	  printf ("attempting to read %d chars: n %d (v-u) %d\n", (int)(9*m - (v-u)), m, (int)(v-u)) ;
+	  unsigned char *v0 = v, *u0 = u ;
+	  v += fread (v, 1, 9*m - (v-u), f) ;
+//	  printf ("  read %d chars\n", (int)(v-v0)) ;
+	  for (i = 0 ; i < m ; ++i)
+#ifdef TEST_INT
+	    u += intGet (u, &j) ;
+#endif
+#ifdef TEST_LTF
+	    u += ltf8_get ((char*)u, &j) ;
+#endif
+//	  printf ("  intGet m %d ints used %d chars\n", m, (int)(u-u0)) ;
+	  n -= m ;
+	  m = v - u ;
+//	  printf ("  memmove %d\n", m) ;
+	  memmove (buffer, u, m) ;
+	  tot += (u-buffer) ;
+	  v -= (u-buffer) ; u = buffer ;
+	}
+    }
   fclose (f) ;
 
-  timeUpdate (stdout) ;
-
-  char buf[12] ;
-  f = fopen ("ltf.test2", "w") ;
-  for (i = 0 ; i < n ; ++i) { int k = ltf8_put (buf, i) ; fwrite (buf, 1, k, f) ; }
-  fclose (f) ;
-
+  printf ("read  %" PRId64 " bytes: ", tot) ;
   timeUpdate (stdout) ;
 }
 #endif // TEST_LTF
