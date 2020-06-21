@@ -11,7 +11,7 @@ PROGS = ONEstat ONEview
 all: $(LIB) $(PROGS)
 
 clean:
-	$(RM) *.o ONEstat ONEview $(LIB)
+	$(RM) *.o ONEstat ONEview $(LIB) ZZ*
 	$(RM) -r *.dSYM
 
 install:
