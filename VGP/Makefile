@@ -6,11 +6,8 @@ ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs
 
 all: deflate.lib libhts.a $(ALL)
 
-VGP_LIB = ../Core/VGPlib.c
-VGP_DPND = $(VGP_LIB) ../Core/VGPlib.h
-
 ONE_LIB = ../Core/ONElib.c
-ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGP_1_0.h
+ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGPschema.h
 
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h
@@ -30,28 +27,29 @@ VGPseq: VGPseq.c $(ONE_DPND) $(GENE_DPND) HTSLIB/libhts.a
 VGPpair: VGPpair.c $(ONE_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPpair VGPpair.c $(ONE_LIB) $(GENE_CORE) -lpthread
 
-VGPpacbio: VGPpacbio.c pb_expr.c pb_expr.h $(VGP_DPND) $(GENE_DPND)
-	gcc $(CFLAGS) -o VGPpacbio VGPpacbio.c pb_expr.c $(VGP_LIB) $(GENE_CORE) -lpthread
+VGPpacbio: VGPpacbio.c pb_expr.c pb_expr.h $(ONE_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPpacbio VGPpacbio.c pb_expr.c $(ONE_LIB) $(GENE_CORE) -lpthread
 
-VGPcloud: VGPcloud.c msd.sort.c msd.sort.h $(VGP_DPND) $(GENE_DPND)
-	gcc $(CFLAGS) -o VGPcloud VGPcloud.c msd.sort.c $(VGP_LIB) $(GENE_CORE) -lpthread
+VGPcloud: VGPcloud.c msd.sort.c msd.sort.h $(ONE_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o VGPcloud VGPcloud.c msd.sort.c $(ONE_LIB) $(GENE_CORE) -lpthread
 
-Dazz2pbr: Dazz2pbr.c $(VGP_DPND) $(GENE_DPND)
-	gcc $(CFLAGS) -o Dazz2pbr Dazz2pbr.c $(VGP_LIB) $(GENE_CORE) -lpthread
+Dazz2pbr: Dazz2pbr.c $(ONE_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o Dazz2pbr Dazz2pbr.c $(ONE_LIB) $(GENE_CORE) -lpthread
 
-Dazz2sxs: Dazz2sxs.c $(VGP_DPND) $(GENE_DPND)
-	gcc $(CFLAGS) -o Dazz2sxs Dazz2sxs.c $(VGP_LIB) $(GENE_CORE) -lpthread
+Dazz2sxs: Dazz2sxs.c $(ONE_DPND) $(GENE_DPND)
+	gcc $(CFLAGS) -o Dazz2sxs Dazz2sxs.c $(ONE_LIB) $(GENE_CORE) -lpthread
 
 tidyup:
 	rm -f $(ALL)
 	rm -fr *.dSYM
+	rm -f VGPtools.tar.gz
 
 clean:
+	cd LIBDEFLATE; make clean; cd ..
+	cd HTSLIB; make clean; cd ..
 	rm -f $(ALL)
 	rm -fr *.dSYM
 	rm -f VGPtools.tar.gz
-	cd LIBDEFLATE; make clean; cd ..
-	cd HTSLIB; make clean; cd ..
 
 install:
 	cp $(ALL) $(DEST_DIR)

@@ -471,7 +471,6 @@ static void *output_thread(void *arg)
   al = parm->alast;
   for (f = parm->bidx; f <= parm->eidx; f++)
     { fid = fopen(fobj[f].fname,"r");
-fprintf(stderr,"Opening %s\n",fobj[f].fname);
       if (f < parm->eidx)
         epos = fobj[f].fsize;
       else

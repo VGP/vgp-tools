@@ -53,6 +53,7 @@ static char *Error_Messages[] =
 
 static char      *Scan;
 static int        Error;
+static int        Contents;
 
 #define ERROR(msg)	\
 { Error = msg;		\
@@ -86,6 +87,7 @@ static Node *terminal()
       if (Scan[1] != 'm')
         ERROR(1);
       op = OP_ZM;
+      Contents |= HAS_ZM;
       Scan += 2;
       break;
     case 'l':
@@ -98,6 +100,7 @@ static Node *terminal()
       if (Scan[1] != 'q')
         ERROR(1);
       op = OP_RQ;
+      Contents |= HAS_RQ;
       Scan += 2;
       break;
     case 'b':
@@ -108,10 +111,12 @@ static Node *terminal()
             op = OP_BC2;
           else
             ERROR(1);
+          Contents |= HAS_BC;
           Scan += 3;
         }
       else if (Scan[1] == 'q')
         { op = OP_BQ;
+          Contents |= HAS_BQ;
           Scan += 2;
         }
       else
@@ -121,13 +126,18 @@ static Node *terminal()
       if (Scan[1] != 'p')
         ERROR(1);
       op = OP_NP;
+      Contents |= HAS_NP;
       Scan += 2;
       break;
     case 'q':
       if (Scan[1] == 's')
-        op = OP_QS;
+        { Contents |= HAS_QS;
+          op = OP_QS;
+        }
       else if (Scan[1] == 'e')
-        op = OP_QE;
+        { Contents |= HAS_QE;
+          op = OP_QE;
+        }
       else
         ERROR(1);
       Scan += 2;
@@ -279,11 +289,12 @@ static void print_tree(Node *v, int level)
 
 #endif
 
-Filter *parse_filter(char *expr)
+Filter *parse_filter(char *expr, int *need)
 { Node *v;
 
-  Scan = expr;
-  v    = or();
+  Contents = 0;
+  Scan  = expr;
+  v     = or();
   if (v == NULL)
     { if (Error == 0)
         fprintf(stderr,"%s: Out of memory parsing filter expression\n",Prog_Name);
@@ -294,6 +305,7 @@ Filter *parse_filter(char *expr)
         }
     }
 
+  *need = Contents;
   return ((Filter *) v);
 }
 

@@ -1,5 +1,3 @@
-/*  Last edited: Feb  4 11:54 2020 (rd109) */
-
 /*******************************************************************************************
  *
  *  Display a portion of the data-base and selected information in 1-code format.

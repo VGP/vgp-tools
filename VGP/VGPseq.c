@@ -1,4 +1,3 @@
-/*  Last edited: May 13 23:47 2020 (rd109) */
 /*******************************************************************************************
  *
  *  VGPseq can read fasta, fastq, sam, bam, and cram files and outputs to the standard output
@@ -22,11 +21,13 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
-#include "LIBDEFLATE/libdeflate.h"
+#include "VGPschema.h"
+
 #include "gene_core.h"
 #include "../Core/ONElib.h"
-#include "VGPschema.h"
+#include "LIBDEFLATE/libdeflate.h"
 #include "HTSLIB/htslib/hts.h"
 #include "HTSLIB/htslib/hfile.h"
 #include "HTSLIB/cram/cram.h"
@@ -39,7 +40,7 @@
 #undef    DEBUG_BAM_IO
 #undef    DEBUG_BAM_RECORD
 
-static char *Usage = "[-viqp] [-g#x] [-T<int(4)>] <data:cram|[bs]am|fast[aq][.gz]> ...";
+static char *Usage = "[-viqp] [-g#x] [-T<int(4)>] <data:cram|[bs]am|f{ast}[aq][.gz]> ...";
 
 #define IO_BLOCK 10000000ll
 
@@ -75,7 +76,7 @@ typedef struct
     int64   zsize;  //    Size of zip index (in blocks)
     int64  *zoffs;  //    zoffs[i] = offset to compressed block i
                     //  Fasta/q specific:
-    int     zipd;   //    Is file ONEzip'd (has paired .vzi file)
+    int     zipd;   //    Is file VGPzip'd (has paired .vzi file)
     int     recon;  //    Is file an uncompressed regular zip-file?
   } File_Object;
 
@@ -115,9 +116,10 @@ static void do_nothing(Thread_Arg *parm)
   //  Open and get info about each input file
 
 static void Fetch_File(char *arg, File_Object *input)
-{ static char *suffix[7] = { ".cram", ".bam", ".sam",
-                                         ".fastq.gz",   ".fasta.gz", ".fastq", ".fasta" };
-  static char *sufidx[7] = { "", "", "", ".fastq.vzi", ".fasta.vzi", "", "" };
+{ static char *suffix[11] = { ".cram", ".bam", ".sam",
+                              ".fastq.gz",   ".fasta.gz", ".fastq", ".fasta",
+                              ".fq.gz",  ".fa.gz", ".fq", ".fa" };
+  static char *sufidx[11] = { "", "", "", ".fastq.vzi", ".fasta.vzi", "", "", ".fq.vzi", ".fa.vzi", "", "" };
 
   int64 *genes_cram_index(char *path, int64 fsize, int64 *zsize);
 
@@ -128,17 +130,22 @@ static void Fetch_File(char *arg, File_Object *input)
   int    ftype, zipd, recon;
 
   pwd = PathTo(arg);
-  OPEN2(arg,pwd,root,fid,suffix,7)
+  OPEN2(arg,pwd,root,fid,suffix,11)
   if (fid < 0)
-    { fprintf(stderr,"%s: Cannot open %s as a .cram|[bs]am|fast[aq] file\n",Prog_Name,arg);
+    { fprintf(stderr,"%s: Cannot open %s as a .cram|[bs]am|f{ast}[aq][.gz] file\n",Prog_Name,arg);
       exit (1);
     }
   path  = Strdup(Catenate(pwd,"/",root,suffix[i]),"Allocating full path name");
   ftype = i;
   if (i >= 3)
-    { ftype = 4 - (i%2);
-      zipd  = (i < 5);
-    }
+    if (i >= 7)
+      { ftype = 4 - (i%2);
+        zipd  = (i < 9);
+      }
+    else
+      { ftype = 4 - (i%2);
+        zipd  = (i < 5);
+      }
   else
     { ftype = i;
       zipd  = 0;
@@ -153,7 +160,7 @@ static void Fetch_File(char *arg, File_Object *input)
       free(pwd);
       if (idx < 0)
         { if (VERBOSE)
-            fprintf(stderr,"  File %s not ONEzip'd, decompressing\n",arg);
+            fprintf(stderr,"  File %s not VGPzip'd, decompressing\n",arg);
           system(Catenate("gunzip -k ",path,"",""));
           path[strlen(path)-3] = '\0';
           zipd  = 0;
@@ -167,7 +174,7 @@ static void Fetch_File(char *arg, File_Object *input)
         }
       else
         { read(idx,&zsize,sizeof(int64));
-          zoffs = (int64 *) Malloc(sizeof(int64)*(zsize+1),"Allocating ONEzip index");
+          zoffs = (int64 *) Malloc(sizeof(int64)*(zsize+1),"Allocating VGPzip index");
           if (zoffs == NULL)
             exit (1);
           read(idx,zoffs+1,sizeof(int64)*zsize);
@@ -254,7 +261,7 @@ static void fast_nearest(Thread_Arg *data)
   File_Object *inp    = data->fobj + data->bidx;
   DEPRESS     *decomp = data->decomp;
 
-  int          fastq = inp->ftype;
+  int          fastq = (inp->ftype == FASTQ);
   int64       *zoffs = inp->zoffs;
 
   int64 blk, off;
@@ -431,7 +438,7 @@ static void fast_nearest(Thread_Arg *data)
 #define ASEQ    7
 #define AEOL    8
 
-#if defined(DEBUG_AUTO) || defined(DEBUG_OUTPUT)
+#if defined(DEBUG_AUTO) || defined(DEBUG_OUT)
 
 static char *Name2[] =
   { "QAT", "HEAD", "HSKP", "QSEQ", "QPLS", "QSKP", "QQVS", "ASEQ", "AEOL" };
@@ -447,7 +454,7 @@ static void *fast_output_thread(void *arg)
   uint8       *buf    = parm->buf;
   uint8       *zuf    = parm->zuf;
   DEPRESS     *decomp = parm->decomp;
-  int          fastq  = fobj->ftype;    //  Is the same for all files (already checked)
+  int          fastq  = (fobj->ftype == FASTQ);    //  Is the same for all files (already checked)
 
   File_Object *inp;
   int          f, fid;
@@ -523,7 +530,7 @@ static void *fast_output_thread(void *arg)
         { int c, b, slen;
 
 #ifdef DEBUG_OUT
-      fprintf(stderr,"  Loading block %lld: @%lld",blk,lseek(fid,0,SEEK_CUR));
+          fprintf(stderr,"  Loading block %lld: @%lld",blk,lseek(fid,0,SEEK_CUR));
 #endif
           if (inp->zipd)
             { uint32 dlen, tlen;
@@ -559,7 +566,7 @@ static void *fast_output_thread(void *arg)
               switch (state)
 
               { case QAT:
-                  if (GROUP)
+                  if (GROUP || QNAME)
                     state = HEAD;
                   else
                     state = HSKP;
@@ -576,9 +583,10 @@ static void *fast_output_thread(void *arg)
                   
                 case HEAD:
                   if (c == GROUP_CHAR)
-                    count += 1;
-                  if (count == GROUP_REP)
-                    glen = llen;
+                    { count += 1;
+                      if (count == GROUP_REP)
+                        glen = llen;
+                    }
                   if (c == '\n' || isspace(c))
                     { char *x;
 
@@ -640,8 +648,7 @@ static void *fast_output_thread(void *arg)
                           if (lane == NULL || last == NULL)
                             exit (1);
                         }
-                      if (llen > 0 || c != '@' || !fastq)
-                        lane[llen++] = c;
+                      lane[llen++] = c;
                     }
                   break;
 
@@ -715,8 +722,12 @@ static void *fast_output_thread(void *arg)
                   if (c == '>')
                     { oneInt(vf,0) = olen;
                       oneWriteLine(vf,'S',olen,line);
+                      if (QNAME)
+                        { oneInt(vf,0) = ilen;
+                          oneWriteLine(vf,'I',ilen,last);
+                        }
                       olen  = 0;
-                      if (GROUP)
+                      if (GROUP || QNAME)
                         state = HEAD;
                       else
                         state = HSKP;
@@ -753,27 +764,26 @@ static void *fast_output_thread(void *arg)
  ********************************************************************************************/
 
 #define BAM_BLOCK  0x10000
-#define MAX_PREFIX     292
 #define HEADER_LEN      36
 #define SEQ_RUN         40
 
 static int DNA[256] =
   { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
   };
 
  //  Get value of little endian integer of n-bytes
@@ -800,6 +810,22 @@ static inline int valid_name(char *name, int len)
     if ( ! isprint(name[i]))
       return (0);
   return (name[len] == 0);
+}
+
+ //  Next len ints are plausible cigar codes
+
+static inline int valid_cigar(int32 *cigar, int len, int range)
+{ int i, c;
+
+  for (i = 0; i < len; i++)
+    { c = cigar[i];
+      if ((c & 0xf) > 8)
+        return (0);
+      c >>= 4;
+      if (c < 0 || c > range)
+        return (0);
+    }
+  return (1);
 }
 
 
@@ -1034,13 +1060,13 @@ static void skip_bam_header(Thread_Arg *parm)
   for (i = 0; i < ncnt; i++)
     { bam_get(bam,data,4);
       nlen = getint(data,4);
-      bam_get(bam,NULL,nlen);
+      bam_get(bam,NULL,nlen+4);
     }
 
   parm->beg = bam->loc;
 
 #ifdef DEBUG_FIND
-  fprintf(stderr,"  Begin @ %lld\n",parm->beg.fpos);
+  fprintf(stderr,"  Begin @ %lld/%d\n",parm->beg.fpos,parm->beg.boff);
   fflush(stderr);
 #endif
 }
@@ -1187,8 +1213,8 @@ static void bam_nearest(Thread_Arg *parm)
   bam->decomp   = decomp;
 
   while ( ! bam_eof(bam))
-    { int    j, k, beg;
-      int    run, out;
+    { int    j, k;
+      int    run, out, del;
       int    lname, lcigar, lseq, ldata;
 
       block = bam->bam;
@@ -1196,35 +1222,38 @@ static void bam_nearest(Thread_Arg *parm)
 
       run = HEADER_LEN-1;
       out = 1;
-      for (j = HEADER_LEN; j < (int) 10000; j++)
+      for (j = HEADER_LEN; j < 10000; j++)
         if (DNA[block[j]])
           { if (out && j >= run+SEQ_RUN)
-              { if (run < MAX_PREFIX)
-                  beg = 0;
-                else
-                  beg = run-MAX_PREFIX;
+              {
 #ifdef DEBUG_FIND
-                fprintf(stderr,"      Possible seq @ %d (%d)\n",run+1,beg);
+                fprintf(stderr,"      Possible seq @ %d\n",run+1);
                 fflush(stderr);
 #endif
-                for (k = run-(HEADER_LEN-1); k >= beg; k--)
+                for (k = run-(HEADER_LEN-1); k >= 0; k--)
                   { ldata  = getint(block+k,4);
                     lname  = block[k+12];
                     lcigar = getint(block+(k+16),2);
                     lseq   = getint(block+(k+20),4);
-                    if (lcigar == 0 && lseq+lname < ldata && k + 35 + lname == run)
-                      if (lseq > 0 && ldata > 0 && valid_name((char *) (block+(k+36)),lname))
-                        { parm->beg.fpos = bam->loc.fpos;
-                          parm->beg.boff = k;
+                    if (lname > 0 && lcigar >= 0 && lseq > 0 &&
+                        (lseq+1)/2+lseq+lname+(lcigar<<2) < ldata)
+                      { del = (k+35+lname+(lcigar<<2)) - run;
+                        if (del >= 0 && del < SEQ_RUN/2)
+                          { if (valid_name((char *) (block+(k+36)),lname) &&
+                                valid_cigar((int32 *) (block+(k+36+lname)),lcigar,lseq))
+                              { parm->beg.fpos = bam->loc.fpos;
+                                parm->beg.boff = k;
 #ifdef DEBUG_FIND
-                          fprintf(stderr,"      Found @ %d: '%s':%d\n",k,block+(k+36),lseq);
-                          fflush(stderr);
+                                fprintf(stderr,"      Found @ %d: '%s':%d\n",k,block+(k+36),lseq);
+                                fflush(stderr);
 #endif
 
-                          close(fid);
+                                close(fid);
 
-                          return;
-                        }
+                                return;
+                              }
+                          }
+                      }
                   }
                 out = 0;
               }
@@ -1285,7 +1314,7 @@ static char INT_2_IUPAC[16] = "=acmgrsvtwyhkdbn";
   //  Scan next bam entry and load PacBio info in record 'theR'
  
 static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
-{ int ldata, lname, lseq, aux;
+{ int ldata, lname, lseq, lcigar, aux;
 
   { uint8  x[36];     //  Process 36 byte header
 
@@ -1293,6 +1322,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
 
     ldata  = getint(x,4) - 32;
     lname  = getint(x+12,1);
+    lcigar = getint(x+16,2);
     lseq   = getint(x+20,4);
 
     if (ldata < 0 || lseq < 0 || lname < 1)
@@ -1300,7 +1330,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
         exit (1);
       }
 
-    aux = lname + ((lseq + 1)>>1) + lseq;
+    aux = lname + ((lseq + 1)>>1) + lseq + (lcigar<<2);
     if (aux > ldata)
       { fprintf(stderr,"%s: Non-sensical BAM record, file corrupted?\n",Prog_Name);
         exit (1);
@@ -1324,10 +1354,13 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
 
     bam_get(sf,theR->data,ldata);
 
-    if (lseq <= 0)
-      { fprintf(stderr,"%s: no sequence for subread !?\n",Prog_Name);
-        exit (1);
+    if ((getint(x+18,2) & 0x900) != 0)
+      { theR->len = 0;
+        return (0);
       }
+
+    if (lseq <= 0)
+      fprintf(stderr,"%s: WARNING: no sequence for subread !?\n",Prog_Name);
 
     theR->header = (char *) theR->data;
     theR->hlen   = lname;
@@ -1337,8 +1370,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
       char  *s;
       int    i, e;
 
-      e = getint(x+16,2);
-      t = theR->data + (lname + (e<<2));
+      t = theR->data + (lname + (lcigar<<2));
       s = theR->seq;
       lseq -= 1;
       for (e = i = 0; i < lseq; e++)
@@ -1392,7 +1424,7 @@ static char  IUPAC_2_DNA[256] =
 
 static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 { char      *p;
-  int        qlen;
+  int        qlen, flags;
 
   //  read next line
 
@@ -1410,7 +1442,11 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 
     theR->header = q;
 
-    for (i = 0; i < 8; i++)   // Skip next 8 required fields
+    p = index(p+1,'\t');
+    flags = strtol(q=p+1,&p,0);
+    CHECK( p == q, "Cannot parse flags")
+
+    for (i = 0; i < 7; i++)   // Skip next 8 required fields
       { p = index(p+1,'\t');
         CHECK( p == NULL, "Too few required fields in SAM record, file corrupted?")
       }
@@ -1428,6 +1464,14 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
         theR->arr  = theR->seq + theR->lmax;
         theR->qvs  = theR->arr + theR->lmax;
       }
+
+    if ((flags & 0x900) != 0)
+      { theR->len = 0;
+        return (0);
+      }
+
+    if (qlen <= 0)
+      fprintf(stderr,"%s: WARNING: no sequence for subread !?\n",Prog_Name);
 
     theR->len = qlen;
     seq = theR->seq;
@@ -1549,6 +1593,9 @@ static void *bam_output_thread(void *arg)
           else
             hasQV = sam_record_scan(bam,theR);
 
+          if (theR->len <= 0)
+            continue;
+
 #ifdef DEBUG_BAM_RECORD
           fprintf(stderr,"S = '%s'\n",theR->seq);
           if (hasQV)
@@ -1618,10 +1665,10 @@ static void *bam_output_thread(void *arg)
               oneWriteLine(vf,'Q',theR->len,theR->qvs);
             }
 
-          // if (QNAME)
-            // { oneInt(vf,0) = theR->hlen;
-              // oneWriteLine(vf,'I',theR->hlen,theR->header);
-            // }
+          if (QNAME)
+            { oneInt(vf,0) = theR->hlen;
+              oneWriteLine(vf,'I',theR->hlen,theR->header);
+            }
         }
 
       close(fid);
@@ -1932,10 +1979,10 @@ static void *cram_output_thread(void *arg)
               oneWriteLine(vf,'Q',rec->len,qual);
             }
 
-          // if (QNAME)
-            // { oneInt(vf,0) = rec->name_len;
-              // oneWriteLine(vf,'I',rec->name_len,rec->s->name_blk->data+rec->name);
-            // }
+          if (QNAME)
+            { oneInt(vf,0) = rec->name_len;
+              oneWriteLine(vf,'I',rec->name_len,rec->s->name_blk->data+rec->name);
+            }
         }
     }
 
@@ -1954,7 +2001,8 @@ static void *cram_output_thread(void *arg)
  ****************************************************************************************/
 
 int main(int argc, char *argv[])
-{ char       *command;
+{ OneSchema  *schema;
+  char       *command;
   int         nfiles;
   int         ftype;
   int         need_decon;
@@ -1983,6 +2031,8 @@ int main(int argc, char *argv[])
           c += sprintf(c," %s",argv[i]);
       }
     *c = '\0';
+
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Parse command line options
@@ -2056,7 +2106,7 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"\nUsage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
         fprintf(stderr,"      -v: verbose mode, output progress as proceed\n");
-        fprintf(stderr,"      -i: Output identifier\n");
+        fprintf(stderr,"      -i: Output identify\n");
         fprintf(stderr,"      -q: Output QV string\n");
         fprintf(stderr,"      -g: Output group where names = identifier prefix\n");
         fprintf(stderr,"                   to #'th instance of character x\n");
@@ -2294,26 +2344,13 @@ int main(int argc, char *argv[])
 
     //  Produce output in parallel threads based on partition
 
-    { OneSchema *vs;
-      OneFile   *vf;
-      int        i, error;
+    { OneFile *vf;
+      int      i, error;
 
-      vs = oneSchemaCreateFromText (vgpSchemaText) ;
-      if (vs == NULL)
-	{ fprintf (stderr, "FATAL: failed to load ONEcode schema - can't write to /tmp/?\n") ;
-	  exit (-1) ;
-	}
-      
       if (PAIRING)
-        vf = oneFileOpenWriteNew("-",vs,"irp",true,NTHREADS);
+        vf = oneFileOpenWriteNew("-",schema,"irp",true,NTHREADS);
       else
-        vf = oneFileOpenWriteNew("-",vs,"seq",true,NTHREADS);
-      if (vf == NULL)
-	{ fprintf (stderr, "FATAL: failed to open stdout as ONEcode file for output\n") ;
-	  exit (-1) ;
-	}
-      oneSchemaDestroy (vs) ;
-		   
+        vf = oneFileOpenWriteNew("-",schema,"seq",true,NTHREADS);
       oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
       oneWriteHeader(vf);
 
@@ -2381,6 +2418,8 @@ int main(int argc, char *argv[])
     }
   }
 
+  oneSchemaDestroy(schema);
+
   if (VERBOSE)
     { fprintf(stderr,"  Done\n");
       fflush(stderr);
@@ -2388,5 +2427,3 @@ int main(int argc, char *argv[])
 
   exit (0);
 }
-
-

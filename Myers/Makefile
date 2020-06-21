@@ -7,7 +7,7 @@ ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe VGPtime
 all: deflate.lib libhts.a $(ALL)
 
 ONE_LIB = ../Core/ONElib.c
-ONE_DPND = $(ONE_LIB) ../Core/ONElib.h
+ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGPschema.h
 
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h
@@ -62,4 +62,4 @@ install:
 
 package:
 	make clean
-	tar -zcf VGPtools.tar.gz Makefile *.h *.c LIBDEFLATE
+	tar -zcf VGPtools.tar.gz Makefile *.h *.c LIBDEFLATE HTSLIB

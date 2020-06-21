@@ -299,6 +299,8 @@ int main(int argc, char *argv[])
           parm[i].v2  = v2+i;
           parm[i].vf  = vf+i;
         }
+      if (parm[0].end == 0 && nreads > 0)
+        parm[0].end = parm[1].beg = 1;
 
       //  Generate the data lines in parallel threads
 

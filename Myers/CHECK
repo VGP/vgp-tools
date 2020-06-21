@@ -1,5 +1,5 @@
 #!/bin/bash
-KERNEL=( 'VGPzip.c' 'VGPseq.c' 'VGPpair.c' 'VGPpacbio.c' 'VGPcloud.c' 'Dazz2pbr.c' 'Dazz2sxs.c' 'gene_core.c' 'gene_core.h' 'pb_expr.c' 'pb_expr.h' 'msd.sort.c' 'msd.sort.h' 'VGP_1_0.h' )
+KERNEL=( 'VGPzip.c' 'VGPseq.c' 'VGPpair.c' 'VGPpacbio.c' 'VGPcloud.c' 'Dazz2pbr.c' 'Dazz2sxs.c' 'gene_core.c' 'gene_core.h' 'pb_expr.c' 'pb_expr.h' 'msd.sort.c' 'msd.sort.h' 'VGPschema.h' )
 echo `pwd`
 for ((j = 0; j < ${#KERNEL[@]}; j++)); do
   FILE=${KERNEL[${j}]}

@@ -1,4 +1,3 @@
-/*  Last edited: Feb  4 11:55 2020 (rd109) */
 /*******************************************************************************************
  *
  *  Utility for displaying the information in the overlaps of a .las file in a very
@@ -22,9 +21,12 @@
 #include <zlib.h>
 #include <time.h>
 #include <limits.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
-#include "../Core/VGPlib.h"
+#include "../Core/ONElib.h"
+
+#include "VGPschema.h"
 
 #undef  DEBUG_FIND
 #undef  DEBUG_OUT
@@ -245,7 +247,7 @@ static void Free_Block_Arg(Block_Looper *parse)
  *****************************************************************************************/
 
 typedef struct
-  { VgpFile     *vf;       //  VgpFile for input
+  { OneFile     *vf;       //  OneFile for input
     int          beg;      //  Range of reads to process
     int          end;
     int         *len;
@@ -257,28 +259,26 @@ typedef struct
 static void *fetch_thread(void *arg)
 { Vector_Arg *parm = (Vector_Arg *) arg;
   int         end  = parm->end;
-  VgpFile    *vf   = parm->vf;
+  OneFile    *vf   = parm->vf;
   int        *len  = parm->len;
   int         i;
 
   for (i = parm->beg; i < end; i++) 
-    { vgpGotoObject(vf,i);
-      vgpReadLine(vf);
-      len[i] = vgpLen(vf);
+    { oneGotoObject(vf,i);
+      oneReadLine(vf);
+      len[i] = oneLen(vf);
     }
 
   return (NULL);
 }
        
-int *Fetch_Length_Vector(char *fname, int *nread, int *rmax)
+int *Fetch_Length_Vector(OneFile *vf, int *nread, int *rmax)
 { int       *rlen, i;
-  VgpFile   *vf;
   int64      nreads;
   Vector_Arg parm[NTHREADS];
   pthread_t  threads[NTHREADS];
 
-  vf     = vgpFileOpenRead(fname,SEQ,NTHREADS);
-  nreads = vf->lineInfo['S']->given.count;
+  nreads = vf->info['S']->given.count;
   rlen   = (int *) Malloc(sizeof(int)*nreads,"Allocating read length vector");
   if (rlen == NULL)
     exit (1);
@@ -294,10 +294,11 @@ int *Fetch_Length_Vector(char *fname, int *nread, int *rmax)
   for (i = 0; i < NTHREADS; i++)
     pthread_join(threads[i],NULL);
 
-  vgpFileClose(vf);
-
-  *rmax  = vf->lineInfo['S']->given.max;
+  *rmax  = vf->info['S']->given.max;
   *nread = (int) nreads;
+
+  oneFileClose(vf);
+
   return (rlen);
 }
 
@@ -423,14 +424,14 @@ static int64 find_nearest(int fid, uint8 *buf, int64 beg, int *alast)
 /*******************************************************************************************
  *
  *  Parallel:  Each thread processes is a contiguous stripe across the .las input files
- *               sending the compressed binary data lines to their assigned VgpFile.
+ *               sending the compressed binary data lines to their assigned OneFile.
  *
  ********************************************************************************************/
 
 typedef struct
   { File_Object *fobj;     //  Reference to array of file objects
     uint8       *buf;      //  IO buffer for this thread
-    VgpFile     *vf;       //  VgpFile for output
+    OneFile     *vf;       //  OneFile for output
     int          bidx;     //  Scan range is [bidx:beg,eidx:end)
     int64        beg;
     int          eidx;
@@ -443,7 +444,7 @@ typedef struct
 static void *output_thread(void *arg)
 { Thread_Arg  *parm  = (Thread_Arg *) arg;
   File_Object *fobj  = parm->fobj;
-  VgpFile     *vf    = parm->vf;
+  OneFile     *vf    = parm->vf;
 
   void        (*decon)(Overlap *, int64 *, int64 *);
   int          trmax;
@@ -470,7 +471,6 @@ static void *output_thread(void *arg)
   al = parm->alast;
   for (f = parm->bidx; f <= parm->eidx; f++)
     { fid = fopen(fobj[f].fname,"r");
-fprintf(stderr,"Opening %s\n",fobj[f].fname);
       if (f < parm->eidx)
         epos = fobj[f].fsize;
       else
@@ -511,37 +511,37 @@ fprintf(stderr,"Opening %s\n",fobj[f].fname);
             { if (DOGROUP)
                 { int glen = sprintf(groupno,"%d",ar+1);
 
-                  vgpInt(vf,0) = 0;
-                  vgpInt(vf,1) = glen;
-                  vgpWriteLine(vf,'g',glen,groupno);
+                  oneInt(vf,0) = 0;
+                  oneInt(vf,1) = glen;
+                  oneWriteLine(vf,'g',glen,groupno);
                 }
               al = ar;
             }
 
-          vgpInt(vf,0) = ar+1;
-          vgpInt(vf,1) = ovl->bread+1;
-          vgpWriteLine(vf,'A',0,NULL);
+          oneInt(vf,0) = ar+1;
+          oneInt(vf,1) = ovl->bread+1;
+          oneWriteLine(vf,'A',0,NULL);
 
           blen = RLEN2[ovl->bread];
           if (DOCOORD)
-            { vgpInt(vf,0) = ovl->path.abpos;
-              vgpInt(vf,1) = ovl->path.aepos;
-              vgpInt(vf,2) = RLEN1[ar];
+            { oneInt(vf,0) = ovl->path.abpos;
+              oneInt(vf,1) = ovl->path.aepos;
+              oneInt(vf,2) = RLEN1[ar];
               if (COMP(ovl->flags))
-                { vgpInt(vf,3) = ovl->path.bepos;
-                  vgpInt(vf,4) = ovl->path.bbpos;
+                { oneInt(vf,3) = ovl->path.bepos;
+                  oneInt(vf,4) = ovl->path.bbpos;
                 }
               else
-                { vgpInt(vf,3) = ovl->path.bbpos;
-                  vgpInt(vf,4) = ovl->path.bepos;
+                { oneInt(vf,3) = ovl->path.bbpos;
+                  oneInt(vf,4) = ovl->path.bepos;
                 }
-              vgpInt(vf,5) = blen;
-              vgpWriteLine(vf,'I',0,NULL);
+              oneInt(vf,5) = blen;
+              oneWriteLine(vf,'I',0,NULL);
             }
   
           if (DODIFF)
-            { vgpInt(vf,0) = ovl->path.diffs;
-              vgpWriteLine(vf,'D',0,NULL);
+            { oneInt(vf,0) = ovl->path.diffs;
+              oneWriteLine(vf,'D',0,NULL);
             }
   
           if (DOTRACE)
@@ -549,9 +549,9 @@ fprintf(stderr,"Opening %s\n",fobj[f].fname);
   
               decon(ovl,bdels,diffs);
            
-              vgpInt(vf,0) = tlen;
-              vgpWriteLine(vf,'W',tlen,bdels);
-              vgpWriteLine(vf,'X',tlen,diffs);
+              oneInt(vf,0) = tlen;
+              oneWriteLine(vf,'W',tlen,bdels);
+              oneWriteLine(vf,'X',tlen,diffs);
             }
         }
     }
@@ -568,10 +568,11 @@ fprintf(stderr,"Opening %s\n",fobj[f].fname);
  ****************************************************************************************/
 
 int main(int argc, char *argv[])
-{ char     *fname1, *fname2;
-  char     *command;
-  int       nfiles;
-  int       ISTWO;
+{ OneSchema *schema;
+  char      *fname1, *fname2;
+  char      *command;
+  int        nfiles;
+  int        ISTWO;
 
   //  Capture command line for provenance
 
@@ -593,6 +594,8 @@ int main(int argc, char *argv[])
           c += sprintf(c," %s",argv[i]);
       }
     *c = '\0';
+
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Process options
@@ -647,10 +650,11 @@ int main(int argc, char *argv[])
 
   //  Get read lengths and # of reads from sequence files in fnameA, rlenA, nreadA where A = 1,2
 
-  { char *pwd, *root;
-    int   i;
-    FILE *input;
-    char *suffix[1] = { ".pbr" };
+  { char    *pwd, *root;
+    int      i;
+    OneFile *vf;
+    FILE    *input;
+    char    *suffix[1] = { ".pbr" };
 
     pwd    = PathTo(argv[1]);
     OPEN(argv[1],pwd,root,input,suffix,1)
@@ -668,7 +672,8 @@ int main(int argc, char *argv[])
         fflush(stderr);
       }
 
-    RLEN1 = Fetch_Length_Vector(fname1,&NREAD1,&RMAX1);
+    vf = oneFileOpenRead(fname1,schema,"seq",NTHREADS);
+    RLEN1 = Fetch_Length_Vector(vf,&NREAD1,&RMAX1);
 
     pwd = PathTo(argv[2]);
     OPEN(argv[2],pwd,root,input,suffix,1)
@@ -689,7 +694,8 @@ int main(int argc, char *argv[])
           { fprintf(stderr,"  Scanning .pbr file %s\n",fname2);
             fflush(stderr);
           }
-        RLEN2 = Fetch_Length_Vector(fname2,&NREAD2,&RMAX2);
+        vf = oneFileOpenRead(fname2,schema,"seq",NTHREADS);
+        RLEN2 = Fetch_Length_Vector(vf,&NREAD2,&RMAX2);
       }
     else
       { RLEN2  = RLEN1;
@@ -895,19 +901,19 @@ int main(int argc, char *argv[])
 
     //  Produce output in parallel threads based on partition
 
-    { VgpFile *vf;
+    { OneFile *vf;
       int      i;
 
-      vf = vgpFileOpenWriteNew("-",ALN,SXS,TRUE,NTHREADS);
+      vf = oneFileOpenWriteNew("-",schema,"sxs",true,NTHREADS);
 
-      vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
-      vgpAddReference(vf,fname1,NREAD1);
-      vgpAddReference(vf,fname2,NREAD2);
+      oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+      oneAddReference(vf,fname1,NREAD1);
+      oneAddReference(vf,fname2,NREAD2);
 
-      vgpWriteHeader(vf);
+      oneWriteHeader(vf);
 
-      vgpInt(vf,0) = TSPACE;
-      vgpWriteLine(vf,'T',0,NULL);
+      oneInt(vf,0) = TSPACE;
+      oneWriteLine(vf,'T',0,NULL);
 
 #ifdef DEBUG_OUT
       fprintf(stderr,"Opened\n");
@@ -936,7 +942,7 @@ int main(int argc, char *argv[])
         pthread_join(threads[i],NULL);
 #endif
 
-      vgpFileClose(vf);
+      oneFileClose(vf);
     }
 
     //  Free everything as a matter of good form
@@ -955,6 +961,8 @@ int main(int argc, char *argv[])
       free(command);
     }
   }
+
+  oneSchemaDestroy(schema);
 
   if (VERBOSE)
     { fprintf(stderr,"  Done\n");

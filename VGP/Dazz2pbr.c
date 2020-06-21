@@ -1,5 +1,3 @@
-/*  Last edited: Feb  4 11:54 2020 (rd109) */
-
 /*******************************************************************************************
  *
  *  Display a portion of the data-base and selected information in 1-code format.
@@ -17,9 +15,12 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
-#include "../Core/VGPlib.h"
+#include "../Core/ONElib.h"
+
+#include "VGPschema.h"
 
 #define PATHSEP "/."
 
@@ -588,18 +589,18 @@ static char      **fhead = NULL;
 static int        *findx = NULL;
 
 typedef struct
-  { VgpFile     *vf;       //  VgpFile for output
+  { OneFile     *vf;       //  OneFile for output
     int          beg;      //  Range of reads to output
     int          end;
     char        *arg;
   } Thread_Arg;
 
-  //  Output reads [beg,end) as per the options into the VgpFile for
+  //  Output reads [beg,end) as per the options into the OneFile for
   //     the thread.
 
 static void *output_thread(void *arg)
 { Thread_Arg *parm = (Thread_Arg *) arg;
-  VgpFile    *vf   = parm->vf;
+  OneFile    *vf   = parm->vf;
   int         beg  = parm->beg;
   int         end  = parm->end;
 
@@ -640,23 +641,23 @@ static void *output_thread(void *arg)
       if (DOGRP && i == findx[map])
         { map += 1;
           len  = strlen(fhead[map]);
-          vgpInt(vf,0) = 0;
-          vgpInt(vf,1) = len;
-          vgpWriteLine(vf,'g',len,fhead[map]);
+          oneInt(vf,0) = 0;
+          oneInt(vf,1) = len;
+          oneWriteLine(vf,'g',len,fhead[map]);
         }
 
       Load_Read(db,i,read);
       if (DOARW)
         Load_Arrow(db,i,arrow);
 
-      vgpInt(vf,0) = len;
-      vgpWriteLine(vf,'S',len,read);
+      oneInt(vf,0) = len;
+      oneWriteLine(vf,'S',len,read);
       
-      vgpInt(vf,0) = r->origin;
-      vgpInt(vf,1) = r->fpulse;
-      vgpInt(vf,2) = r->fpulse+len;
-      vgpReal(vf,3) = (r->flags & DB_QV) / 1000.;
-      vgpWriteLine(vf,'W',0,NULL);
+      oneInt(vf,0) = r->origin;
+      oneInt(vf,1) = r->fpulse;
+      oneInt(vf,2) = r->fpulse+len;
+      oneReal(vf,3) = (r->flags & DB_QV) / 1000.;
+      oneWriteLine(vf,'W',0,NULL);
 
       if (DOARW)
         { int   j, snr[4];
@@ -667,14 +668,14 @@ static void *output_thread(void *arg)
             { snr[3-j] = (big & 0xffff);
               big >>= 16;
             }
-          vgpReal(vf,0) = snr[0] / 100.;
-          vgpReal(vf,1) = snr[1] / 100.;
-          vgpReal(vf,2) = snr[2] / 100.;
-          vgpReal(vf,3) = snr[3] / 100.;
-          vgpWriteLine(vf,'N',0,NULL);
+          oneReal(vf,0) = snr[0] / 100.;
+          oneReal(vf,1) = snr[1] / 100.;
+          oneReal(vf,2) = snr[2] / 100.;
+          oneReal(vf,3) = snr[3] / 100.;
+          oneWriteLine(vf,'N',0,NULL);
 
-          vgpInt(vf,0) = len;
-          vgpWriteLine(vf,'A',len,arrow);
+          oneInt(vf,0) = len;
+          oneWriteLine(vf,'A',len,arrow);
         }
     }
 
@@ -691,7 +692,8 @@ static void *output_thread(void *arg)
  ********************************************************************************************/
 
 int main(int argc, char *argv[])
-{ int         hasArrow;
+{ OneSchema  *schema;
+  int         hasArrow;
   char       *command;
   int         nfiles;
   int64       nreads;
@@ -720,6 +722,8 @@ int main(int argc, char *argv[])
           c += sprintf(c," %s",argv[i]);
       }
     *c = '\0';
+
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Process arguments
@@ -883,9 +887,9 @@ int main(int argc, char *argv[])
 
   Close_DB(db);
 
-  //  Setup a VgpFile for each thread, put the header in the first one
+  //  Setup a OneFile for each thread, put the header in the first one
 
-  { VgpFile   *vf;
+  { OneFile   *vf;
     Thread_Arg parm[NTHREADS];
     pthread_t  threads[NTHREADS];
     int        i;
@@ -895,9 +899,9 @@ int main(int argc, char *argv[])
         fflush(stderr);
       }
 
-    vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
-    vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
-    vgpWriteHeader(vf);
+    vf = oneFileOpenWriteNew("-",schema,"pbr",true,NTHREADS);
+    oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+    oneWriteHeader(vf);
 
     for (i = 0; i < NTHREADS; i++)
       { parm[i].vf = vf+i;
@@ -919,13 +923,15 @@ int main(int argc, char *argv[])
     for (i = 0; i < NTHREADS; i++)
       pthread_join(threads[i],NULL);
 
-    vgpFileClose(vf);
+    oneFileClose(vf);
 
     for (i = 0; i < nfiles; i++)
       free(fhead[i]);
     free(fhead);
     free(findx-1);
   }
+
+  oneSchemaDestroy(schema);
 
   if (VERBOSE)
     { fprintf(stderr,"  Done\n");

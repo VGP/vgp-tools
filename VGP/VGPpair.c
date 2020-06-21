@@ -1,4 +1,3 @@
-/*  Last edited: May  7 09:40 2020 (rd109) */
 /*******************************************************************************************
  *
  *  Utility for displaying the information in the overlaps of a .las file in a very
@@ -22,11 +21,12 @@
 #include <zlib.h>
 #include <time.h>
 #include <limits.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
 #include "../Core/ONElib.h"
 
-#include "VGP_1_0.h"
+#include "VGPschema.h"
 
 #undef  DEBUG_OUT
 
@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
   char      *command;
   OneSchema *schema;
 
-  //  Capture command line for provenance & load VGP schema
+  //  Capture command line for provenance & load ONE schema
 
   { int   n, i;
     char *c;
@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
       }
     *c = '\0';
 
-    schema = Startup_Schema();
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Process options
@@ -299,6 +299,8 @@ int main(int argc, char *argv[])
           parm[i].v2  = v2+i;
           parm[i].vf  = vf+i;
         }
+      if (parm[0].end == 0 && nreads > 0)
+        parm[0].end = parm[1].beg = 1;
 
       //  Generate the data lines in parallel threads
 
@@ -329,6 +331,8 @@ int main(int argc, char *argv[])
     free(fname2);
     free(command);
   }
+
+  oneSchemaDestroy(schema);
 
   if (VERBOSE)
     { fprintf(stderr,"  Done\n");

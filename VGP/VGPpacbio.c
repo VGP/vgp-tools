@@ -16,12 +16,15 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
 #include "gene_core.h"
 #include "pb_expr.h"
-#include "../Core/VGPlib.h"
+#include "../Core/ONElib.h"
 
 #include "LIBDEFLATE/libdeflate.h"
+
+#include "VGPschema.h"
 
 typedef  struct libdeflate_decompressor Deflator;
 
@@ -32,7 +35,6 @@ typedef  struct libdeflate_decompressor Deflator;
 
 #define IO_BLOCK  10000000
 #define BAM_BLOCK  0x10000
-#define MAX_PREFIX     292
 #define HEADER_LEN      36
 #define SEQ_RUN         40
 
@@ -41,6 +43,7 @@ static int     NTHREADS;
 static int     QUALITY;         //  Output quality vector
 static int     ARROW;           //  Output arrow/A lines?
 static Filter *EXPR;            //  Filter expression
+static int     EFLAGS;          //  Fields needed in filter expression
 static int     IS_BIG_ENDIAN;   //  Is machine big-endian?
 
 static char *Usage = "[-vaq] [-e<expr(ln>=500 && rq>=750)> [-T<int(4)>] <input:pacbio> ...";
@@ -53,21 +56,21 @@ typedef struct
 
 static int DNA[256] =
   { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
   };
 
  //  Get value of little endian integer of n-bytes
@@ -94,6 +97,22 @@ static inline int valid_name(char *name, int len)
     if ( ! isprint(name[i]))
       return (0);
   return (name[len] == 0);
+}
+
+ //  Next len ints are plausible cigar codes
+
+static inline int valid_cigar(int32 *cigar, int len, int range)
+{ int i, c;
+
+  for (i = 0; i < len; i++)
+    { c = cigar[i];
+      if ((c & 0xf) > 8)
+        return (0);
+      c >>= 4;
+      if (c < 0 || c > range)
+        return (0);
+    }
+  return (1);
 }
 
 
@@ -300,7 +319,7 @@ typedef struct
   { File_Object *fobj;     //  Reference to array of file objects
     uint8       *buf;      //  IO buffer for this thread
     Deflator    *decomp;   //  Decompression codec (LIBDEFLATE)
-    VgpFile     *vf;       //  VgpFile for output
+    OneFile     *vf;       //  OneFile for output
     BAM_FILE     bam;
     int          fid;      //  fid of fobj[bidx].fname
     int          bidx;     //  Scan range is [bidx:beg,eidx:end)
@@ -328,8 +347,8 @@ static void skip_header(Thread_Arg *parm)
   bam_start(bam,fid,buf,&zero);
 
 #ifdef DEBUG_FIND
-  printf("Header seek\n");
-  fflush(stdout);
+  fprintf(stderr,"Header seek\n");
+  fflush(stderr);
 #endif
 
   bam_get(bam,data,4);
@@ -347,14 +366,14 @@ static void skip_header(Thread_Arg *parm)
   for (i = 0; i < ncnt; i++)
     { bam_get(bam,data,4);
       nlen = getint(data,4);
-      bam_get(bam,NULL,nlen);
+      bam_get(bam,NULL,nlen+4);
     }
 
   parm->beg = bam->loc;
 
 #ifdef DEBUG_FIND
-  printf("  Begin @ %lld\n",parm->beg.fpos);
-  fflush(stdout);
+  fprintf(stderr,"  Begin @ %lld/%d\n",parm->beg.fpos,parm->beg.boff);
+  fflush(stderr);
 #endif
 }
 
@@ -376,8 +395,8 @@ static void find_nearest(Thread_Arg *parm)
   size_t tsize;
 
 #ifdef DEBUG_FIND
-  printf("Searching from %lld\n",fpos);
-  fflush(stdout);
+  fprintf(stderr,"Searching from %lld\n",fpos);
+  fflush(stderr);
 #endif
 
   lseek(fid,fpos,SEEK_SET);
@@ -404,8 +423,8 @@ static void find_nearest(Thread_Arg *parm)
           if (blen < IO_BLOCK)
             last = 1;
 #ifdef DEBUG_FIND
-          printf("Loading %d(last=%d)\n",blen,last);
-          fflush(stdout);
+          fprintf(stderr,"Loading %d(last=%d)\n",blen,last);
+          fflush(stderr);
 #endif
           bptr = 0;
         }
@@ -423,8 +442,8 @@ static void find_nearest(Thread_Arg *parm)
             continue;
   
 #ifdef DEBUG_FIND
-          printf("  Putative header @ %d\n",bptr-3);
-          fflush(stdout);
+          fprintf(stderr,"  Putative header @ %d\n",bptr-3);
+          fflush(stderr);
 #endif
 
           if (bptr + 12 > blen)
@@ -459,8 +478,8 @@ static void find_nearest(Thread_Arg *parm)
             }
 
 #ifdef DEBUG_FIND
-          printf("    Putative Extra %d\n",bsize);
-          fflush(stdout);
+          fprintf(stderr,"    Putative Extra %d\n",bsize);
+          fflush(stderr);
 #endif
   
           isize = getint(block+(bsize-4),4);
@@ -476,8 +495,8 @@ static void find_nearest(Thread_Arg *parm)
               notfound = 0;
 
 #ifdef DEBUG_FIND
-              printf("    First block at %lld (%d)\n",fpos,ssize);
-              fflush(stdout);
+              fprintf(stderr,"    First block at %lld (%d)\n",fpos,ssize);
+              fflush(stderr);
 #endif
 	      break;
             }
@@ -499,8 +518,8 @@ static void find_nearest(Thread_Arg *parm)
   bam->decomp   = decomp;
 
   while ( ! bam_eof(bam))
-    { int    j, k, beg;
-      int    run, out;
+    { int    j, k;
+      int    run, out, del;
       int    lname, lcigar, lseq, ldata;
 
       block = bam->bam;
@@ -508,35 +527,39 @@ static void find_nearest(Thread_Arg *parm)
 
       run = HEADER_LEN-1;
       out = 1;
-      for (j = HEADER_LEN; j < (int) 10000; j++)
+      for (j = HEADER_LEN; j < 10000; j++)
         if (DNA[block[j]])
           { if (out && j >= run+SEQ_RUN)
-              { if (run < MAX_PREFIX)
-                  beg = 0;
-                else
-                  beg = run-MAX_PREFIX;
+              {
 #ifdef DEBUG_FIND
-                printf("      Possible seq @ %d (%d)\n",run+1,beg);
-                fflush(stdout);
+                fprintf(stderr,"      Possible seq @ %d\n",run+1);
+                fflush(stderr);
 #endif
-                for (k = run-(HEADER_LEN-1); k >= beg; k--)
+                for (k = run-(HEADER_LEN-1); k >= 0; k--)
                   { ldata  = getint(block+k,4);
                     lname  = block[k+12];
                     lcigar = getint(block+(k+16),2);
                     lseq   = getint(block+(k+20),4);
-                    if (lcigar == 0 && lseq+lname < ldata && k + 35 + lname == run)
-                      if (lseq > 0 && ldata > 0 && valid_name((char *) (block+(k+36)),lname))
-                        { parm->beg.fpos = bam->loc.fpos;
-                          parm->beg.boff = k;
+
+                    if (lname > 0 && lcigar >= 0 && lseq > 0 &&
+                        (lseq+1)/2+lseq+lname+(lcigar<<2) < ldata)
+                      { del = (k+35+lname+(lcigar<<2)) - run;
+                        if (del >= 0 && del < SEQ_RUN/2)
+                          { if (valid_name((char *) (block+(k+36)),lname) &&
+                                valid_cigar((int32 *) (block+(k+36+lname)),lcigar,lseq))
+                              { parm->beg.fpos = bam->loc.fpos;
+                                parm->beg.boff = k;
 #ifdef DEBUG_FIND
-                          printf("      Found @ %d: '%s':%d\n",k,block+(k+36),lseq);
-                          fflush(stdout);
+                                fprintf(stderr,"      Found @ %d: '%s':%d\n",k,block+(k+36),lseq);
+                                fflush(stderr);
 #endif
 
-                          close(fid);
+                                close(fid);
 
-                          return;
-                        }
+                                return;
+                              }
+                         }
+                     }
                   }
                 out = 0;
               }
@@ -685,7 +708,7 @@ static void flip_auxilliary(uint8 *s, uint8 *e)
   //  Scan next bam entry and load PacBio info in record 'theR'
  
 static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
-{ int ldata, lname, lseq, aux;
+{ int ldata, lname, lseq, lcigar, aux;
 
   { uint8  x[36];     //  Process 36 byte header
     char  *eoh;
@@ -694,6 +717,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
 
     ldata  = getint(x,4) - 32;
     lname  = getint(x+12,1);
+    lcigar = getint(x+16,2);
     lseq   = getint(x+20,4);
 
     if (ldata < 0 || lseq < 0 || lname < 1)
@@ -701,7 +725,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
         exit (1);
       }
 
-    aux = lname + ((lseq + 1)>>1) + lseq;
+    aux = lname + ((lseq + 1)>>1) + lseq + (lcigar<<2);
     if (aux > ldata)
       { fprintf(stderr,"%s: Non-sensical BAM record, file corrupted?\n",Prog_Name);
         exit (1);
@@ -725,10 +749,13 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
 
     bam_get(sf,theR->data,ldata);
 
-    if (lseq <= 0)
-      { fprintf(stderr,"%s: no sequence for subread !?\n",Prog_Name);
-        exit (1);
+    if ((getint(x+18,2) & 0x900) != 0)
+      { theR->len = 0;
+        return (0);
       }
+
+    if (lseq <= 0)
+      fprintf(stderr,"%s: WARNING: no sequence for subread !?\n",Prog_Name);
 
     theR->header = (char *) theR->data;
     theR->len = lseq;
@@ -740,8 +767,7 @@ static int bam_record_scan(BAM_FILE *sf, samRecord *theR)
       char  *s;
       int    i, e;
 
-      e = getint(x+16,2);
-      t = theR->data + (lname + (e<<2));
+      t = theR->data + (lname + (lcigar<<2));
       s = theR->seq;
       lseq -= 1;
       for (e = i = 0; i < lseq; e++)
@@ -803,7 +829,9 @@ for (i = 0; i < len; i++, p += size)    \
   { int      size, len;    //  Get sn, pw, bc, bq, zm, qs, qe, rq, and np from auxilliary tags
     uint8   *p, *e;
     char    *arr;
-    int      i, alines;
+    int      i, alines, contents;
+
+    contents = 0;
 
     arr = theR->arr;
     p = theR->data + aux;
@@ -883,26 +911,31 @@ for (i = 0; i < len; i++, p += size)    \
                     BARCODES(uint32)
                     break;
                 }
+                contents |= HAS_BC;
                 continue;
               }
             else if (p[1] == 'q')
               { GET_UINT("bq",theR->bqual)
+                contents |= HAS_BQ;
                 continue;
               }
             break;
           case 'z':
             if (p[1] == 'm')
               { GET_UINT("zm",theR->well)
+                contents |= HAS_ZM;
                 continue;
               }
             break;
           case 'q':
             if (p[1] == 's')
               { GET_UINT("qs",theR->beg)
+                contents |= HAS_QS;
                 continue;
               }
             else if (p[1] == 'e')
               { GET_UINT("qe",theR->end)
+                contents |= HAS_QE;
                 continue;
               }
             break;
@@ -910,12 +943,14 @@ for (i = 0; i < len; i++, p += size)    \
             if (memcmp(p+1,"qf",2) == 0)
               { theR->qual = *((float *) (p+3));
                 p += 7;
+                contents |= HAS_RQ;
                 continue;
               }
             break;
           case 'n':
             if (p[1] == 'p')
               { GET_UINT("np",theR->nump)
+                contents |= HAS_NP;
                 continue;
               }
           default:
@@ -935,6 +970,7 @@ for (i = 0; i < len; i++, p += size)    \
       }
     if (ARROW && alines < 2)
       return (1);
+    theR->defined = contents;
   }
 
   return (0);
@@ -971,7 +1007,7 @@ static char  IUPAC_2_DNA[256] =
 
 static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 { char      *p;
-  int        qlen;
+  int        qlen, flags;
 
   //  read next line
 
@@ -992,7 +1028,11 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
     if (q != NULL && q < p)
       *q = 0;
 
-    for (i = 0; i < 8; i++)   // Skip next 8 required fields
+    p = index(p+1,'\t');
+    flags = strtol(q=p+1,&p,0);
+    CHECK( p == q, "Cannot parse flags")
+
+    for (i = 0; i < 7; i++)   // Skip next 8 required fields
       { p = index(p+1,'\t');
         CHECK( p == NULL, "Too few required fields in SAM record, file corrupted?")
       }
@@ -1010,6 +1050,14 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
         theR->arr  = theR->seq + theR->lmax;
         theR->qvs  = theR->arr + theR->lmax;
       }
+
+    if ((flags & 0x900) != 0)
+      { theR->len = 0;
+        return (0);
+      }
+
+    if (qlen <= 0)
+      fprintf(stderr,"%s: WARNING: no sequence for subread !?\n",Prog_Name);
 
     theR->len = qlen;
     seq = theR->seq;
@@ -1032,7 +1080,9 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 
   { char *q, *arr;       //  Get zm, qs, qe, rq, sn, and pw from auxilliary tags
     int   x, cnt, aline;
+    int   contents;
 
+    contents = 0;
     aline = 0;
     arr = theR->arr;
     while (*p++ == '\t')
@@ -1084,12 +1134,14 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
                   }
                 CHECK ( *p == ',' || cnt < 2, "more than 2 barcode values?")
                 CHECK ( *p != '\t' && *p != '\n', "Cannot parse barcode values")
+                contents |= HAS_BC;
                 continue;
               }
             else if (strncmp(p+1,"q:",2) == 0 && is_integer[(int) p[3]] && p[4] == ':')
               { theR->bqual = strtol(p+5,&q,0);
                 CHECK (p+5 == q, "Could not parse integer barcode quality")
                 p = q;
+                contents |= HAS_BQ;
                 continue;
               }
             break;
@@ -1098,6 +1150,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
               { theR->well = strtol(p+5,&q,0);
                 CHECK (p+5 == q, "Could not parse integer well number")
                 p = q;
+                contents |= HAS_ZM;
                 continue;
               }
             break;
@@ -1106,12 +1159,14 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
               { theR->beg = strtol(p+5,&q,0);
                 CHECK (p+5 == q, "Could not parse integer start pulse")
                 p = q;
+                contents |= HAS_QS;
                 continue;
               }
             else if (strncmp(p+1,"e:",2) == 0 && is_integer[(int) p[3]] && p[4] == ':')
               { theR->end = strtol(p+5,&q,0);
                 CHECK (p+5 == q, "Could not parse integer end pulse")
                 p = q;
+                contents |= HAS_QE;
                 continue;
               }
             break;
@@ -1120,6 +1175,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
               { theR->qual = strtod(p+5,&q);
                 CHECK (p+5 == q, "Could not parse floating point quality value")
                 p = q;
+                contents |= HAS_RQ;
                 continue;
               }
             break;
@@ -1128,6 +1184,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
               { theR->nump = strtol(p+5,&q,0);
                 CHECK (p+5 == q, "Could not parse integer number of passes")
                 p = q;
+                contents |= HAS_NP;
                 continue;
               }
             break;
@@ -1141,6 +1198,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 
     if (ARROW && aline < 2)
       return (1);
+    theR->defined = contents;
   }
 
   return (0);
@@ -1149,7 +1207,7 @@ static int sam_record_scan(BAM_FILE *sf, samRecord *theR)
 /*******************************************************************************************
  *
  *  Parallel:  Each thread processes a contiguous stripe across the input files
- *               sending the compressed binary data lines to their assigned VgpFile.
+ *               sending the compressed binary data lines to their assigned OneFile.
  *
  ********************************************************************************************/
 
@@ -1160,7 +1218,7 @@ static void *output_thread(void *arg)
   File_Object *fobj  = parm->fobj;
   uint8       *buf   = parm->buf;
   BAM_FILE    *bam   = &(parm->bam);
-  VgpFile     *vf    = parm->vf;
+  OneFile     *vf    = parm->vf;
 
   samRecord    _theR, *theR = &_theR;
 
@@ -1213,9 +1271,9 @@ static void *output_thread(void *arg)
         sam_start(bam,fid,buf,&(parm->beg));
 
 #ifdef DEBUG_OUT
-      printf("Block: %12lld / %5d to %12lld / %5d --> %8lld\n",bam->loc.fpos,bam->loc.boff,
+      fprintf(stderr,"Block: %12lld / %5d to %12lld / %5d --> %8lld\n",bam->loc.fpos,bam->loc.boff,
                                                                epos,eoff,epos - bam->loc.fpos);
-      fflush(stdout);
+      fflush(stderr);
 #endif
 
       while (bam->loc.fpos != epos || bam->loc.boff != eoff)
@@ -1232,6 +1290,10 @@ static void *output_thread(void *arg)
                 { parm->error = error;
                   return (NULL);
                 }
+            }
+          if (EFLAGS & ~ theR->defined)
+            { parm->error = 4;
+              return (NULL);
             }
 
 #ifdef DEBUG_RECORDS
@@ -1254,38 +1316,38 @@ static void *output_thread(void *arg)
           if (head)
             { int len = strlen(theR->header);
     
-              vgpInt(vf,0) = 0;     //  don't actually know, OK for binary
-              vgpInt(vf,1) = len;
-              vgpWriteLine(vf,'g',len,theR->header);
+              oneInt(vf,0) = 0;     //  don't actually know, OK for binary
+              oneInt(vf,1) = len;
+              oneWriteLine(vf,'g',len,theR->header);
               head = 0;
             }
 
-          if ( ! evaluate_bam_filter(EXPR,theR))
+          if (theR->len <= 0 || ! evaluate_bam_filter(EXPR,theR))
             continue;
     
-          vgpInt(vf,0) = theR->len;
-          vgpWriteLine(vf,'S',theR->len,theR->seq);
+          oneInt(vf,0) = theR->len;
+          oneWriteLine(vf,'S',theR->len,theR->seq);
     
-          vgpInt(vf,0) = theR->well;
-          vgpInt(vf,1) = theR->beg;
-          vgpInt(vf,2) = theR->end;
-          vgpReal(vf,3) = theR->qual;
-          vgpWriteLine(vf,'W',0,NULL);
+          oneInt(vf,0) = theR->well;
+          oneInt(vf,1) = theR->beg;
+          oneInt(vf,2) = theR->end;
+          oneReal(vf,3) = theR->qual;
+          oneWriteLine(vf,'W',0,NULL);
 
           if (QUALITY)
-            { vgpInt(vf,0) = theR->len;
-              vgpWriteLine(vf,'Q',theR->len,theR->qvs);
+            { oneInt(vf,0) = theR->len;
+              oneWriteLine(vf,'Q',theR->len,theR->qvs);
             }
     
           if (ARROW)
-            { vgpInt(vf,0) = theR->len;
-              vgpWriteLine(vf,'A',theR->len,theR->arr);
+            { oneInt(vf,0) = theR->len;
+              oneWriteLine(vf,'A',theR->len,theR->arr);
 
-              vgpReal(vf,0) = theR->snr[0];
-              vgpReal(vf,1) = theR->snr[1];
-              vgpReal(vf,2) = theR->snr[2];
-              vgpReal(vf,3) = theR->snr[3];
-              vgpWriteLine(vf,'N',0,NULL);
+              oneReal(vf,0) = theR->snr[0];
+              oneReal(vf,1) = theR->snr[1];
+              oneReal(vf,2) = theR->snr[2];
+              oneReal(vf,3) = theR->snr[3];
+              oneWriteLine(vf,'N',0,NULL);
             }
         }
 
@@ -1308,7 +1370,8 @@ static void *output_thread(void *arg)
   //  Main
 
 int main(int argc, char* argv[])
-{ char *command; 
+{ OneSchema *schema;
+  char      *command; 
 
   //  Capture command line for provenance
 
@@ -1330,6 +1393,8 @@ int main(int argc, char* argv[])
           c += sprintf(c," %s",argv[i]);
       }
     *c = '\0';
+
+    schema = oneSchemaCreateFromText(vgpSchemaText);
   }
 
   //  Process command line arguments
@@ -1352,7 +1417,7 @@ int main(int argc, char* argv[])
             ARG_FLAGS("vaq")
             break;
           case 'e':
-            EXPR = parse_filter(argv[i]+2);
+            EXPR = parse_filter(argv[i]+2,&EFLAGS);
             break;
           case 'T':
             ARG_POSITIVE(NTHREADS,"Number of threads")
@@ -1367,7 +1432,8 @@ int main(int argc, char* argv[])
     QUALITY = flags['q'];
 
     if (EXPR == NULL)
-      EXPR = parse_filter("ln>=500 && rq>=750");
+      EXPR = parse_filter("ln>=500 && rq>=750",&EFLAGS);
+    EFLAGS |= HAS_ZM | HAS_QS | HAS_QE | HAS_RQ;
 
     if (argc == 1)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
@@ -1396,7 +1462,7 @@ int main(int argc, char* argv[])
   { File_Object fobj[10];
     Thread_Arg  parm[NTHREADS];
 
-#if ! defined(DEBUG_CORE) || ! defined(DEBUG_FIND)
+#if ! defined(DEBUG_OUT)
     pthread_t   threads[NTHREADS];
 #endif
 
@@ -1476,8 +1542,8 @@ int main(int argc, char* argv[])
             parm[i].end.fpos = 0;
 
 #ifdef DEBUG_FIND
-          printf(" %2d: %1d %10lld (%10lld)\n",i,f,b,parm[i].end.fpos);
-          fflush(stdout);
+          fprintf(stderr," %2d: %1d %10lld (%10lld,%d)\n",i,f,b,parm[i].end.fpos,parm[i].end.boff);
+          fflush(stderr);
 #endif
 
           parm[i].beg.fpos = b;
@@ -1553,24 +1619,26 @@ int main(int argc, char* argv[])
 
 #if defined(DEBUG_FIND) || defined(DEBUG_OUT)
       for (i = 0; i < NTHREADS; i++)
-        { printf(" %2d: %2d / %12lld / %5d",i,parm[i].bidx,parm[i].beg.fpos,parm[i].beg.boff);
-          printf("  -  %2d / %12lld / %5d\n",parm[i].eidx,parm[i].end.fpos,parm[i].end.boff);
+        { fprintf(stderr," %2d: %2d / %12lld / %5d",
+                         i,parm[i].bidx,parm[i].beg.fpos,parm[i].beg.boff);
+          fprintf(stderr,"  -  %2d / %12lld / %5d\n",
+                         parm[i].eidx,parm[i].end.fpos,parm[i].end.boff);
         }
-      fflush(stdout);
+      fflush(stderr);
 #endif
     }
 
-    //  Setup a VgpFile for each thread, put the header in the first one
+    //  Setup a OneFile for each thread, put the header in the first one
 
-    { VgpFile *vf;
+    { OneFile *vf;
       int      i, error;
 
-      vf = vgpFileOpenWriteNew("-",SEQ,PBR,TRUE,NTHREADS);
-      vgpAddProvenance(vf,Prog_Name,"1.0",command,NULL);
-      vgpWriteHeader(vf);
+      vf = oneFileOpenWriteNew("-",schema,"pbr",true,NTHREADS);
+      oneAddProvenance(vf,Prog_Name,"1.0",command,NULL);
+      oneWriteHeader(vf);
 #ifdef DEBUG_OUT
-      printf("Opened\n");
-      fflush(stdout);
+      fprintf(stderr,"Opened\n");
+      fflush(stderr);
 #endif
 
       if (VERBOSE)
@@ -1600,7 +1668,7 @@ int main(int argc, char* argv[])
           fflush(stderr);
         }
 
-      vgpFileClose(vf);
+      oneFileClose(vf);
 
       //  If asked for arrow / qv vectors but not in input, then error will be 1 / 2.
 
@@ -1609,7 +1677,10 @@ int main(int argc, char* argv[])
         error |= parm[i].error;
 
       if (error)
-        { if (error == 1)
+        { if (error >= 4)
+            fprintf(stderr,"%s: Bam file does not have auxiliary info of a PacBio file\n",
+                           Prog_Name);
+          else if (error == 1)
             fprintf(stderr,"%s: Bam file does not contain pulse information for -a option\n",
                            Prog_Name);
           else if (error == 2)
@@ -1636,6 +1707,8 @@ int main(int argc, char* argv[])
       free(command);
     }
   }
+
+  oneSchemaDestroy(schema);
 
   if (VERBOSE)
     { fprintf(stderr,"  Done\n");

@@ -41,7 +41,7 @@ either 4 by default or the number requested by the ```-T``` option.  The default
 be set with the -C option to a level between 1 and 12, where lower numbers are less time and compression, and higher
 number are more time and better compresssion.
 
-### <code>2. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] \<name:cram|[bs]am|fast[aq][.gz]> ...</code>
+### <code>2. VGPseq [-viqp] [-g#x] [-T\<int(4)\>] \<name:cram|[bs]am|f{ast}[aq][.gz]> ...</code>
 
 VGPseq reads one or more cram, bam, sam, fastq, or fasta files and outputs a single file in .seq format to the standard output.
 If more than one file is given then they must all be of the same type, a mix is currently not allowed.  In addition, fasta or
@@ -84,7 +84,7 @@ VGPpair reads two, presumably paired .seq files and outputs to stdout a compress
 .irp file in which the sequences with the same indices are paired together, with the forward sequence (and any qualifying lines, e.g. 'Q', 'W', etc) immediately preceding the reverse sequence (and its modulating lines if any).  The only condition is that the two files have
 the same number of sequences.  The group structure, if any, is taken from the forward file.
 
-### <code>4. VGPpacbio [-vaq] [-T\<int(4)\>] [-e<expr(ln>=500 && rq>=750)>]</code> <br><code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<data:.subreads.[bam|sam]> ...</code>
+### <code>4. VGPpacbio [-vaq] [-T\<int(4)\>] [-e\<expr(ln>=500 && rq>=750)>]</code> <br><code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \<data:.subreads.[bam|sam]> ...</code>
 
 VGPpacbio reads a sequence of Pacbio .subread.bam or subread.sam files and outputs a compressed
 binary VGP .pbr file to

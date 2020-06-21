@@ -14,6 +14,14 @@
 
 typedef void *Filter;
 
+#define HAS_ZM  0x01   // Aux value flags
+#define HAS_RQ  0x02
+#define HAS_BC  0x04
+#define HAS_BQ  0x08
+#define HAS_NP  0x10
+#define HAS_QS  0x20
+#define HAS_QE  0x40
+
 typedef struct
   { int    len;
     int    well;
@@ -31,9 +39,10 @@ typedef struct
     int    dmax;     //  current size of data
     uint8 *data;     //  data buffer
     char  *header;
+    int    defined;  //  Flags indicating which aux field values were set
   } samRecord;
 
-Filter *parse_filter(char *expr);    //  Not re-entrant
+Filter *parse_filter(char *expr, int *need);    //  Not re-entrant
 
 int evaluate_bam_filter(Filter *v, samRecord *s);   //  Is re-entrant
 
