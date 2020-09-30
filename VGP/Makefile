@@ -12,6 +12,8 @@ ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGPschema.h
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h
 
+include HTSLIB/htslib_static.mk
+
 deflate.lib: LIBDEFLATE
 	cd LIBDEFLATE; make; cd ..
 
@@ -22,7 +24,7 @@ VGPzip: VGPzip.c $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPzip VGPzip.c $(GENE_CORE) -lpthread
 
 VGPseq: VGPseq.c $(ONE_DPND) $(GENE_DPND) HTSLIB/libhts.a
-	gcc $(CFLAGS) -o VGPseq -I./HTSLIB VGPseq.c $(ONE_LIB) $(GENE_CORE) HTSLIB/libhts.a -lpthread -lz -lm -lbz2 -llzma -lcurl
+	gcc $(CFLAGS) -o VGPseq -I./HTSLIB $(HTSLIB_static_LDFLAGS) VGPseq.c $(ONE_LIB) $(GENE_CORE) HTSLIB/libhts.a -lpthread $(HTSLIB_static_LIBS)
 
 VGPpair: VGPpair.c $(ONE_DPND) $(GENE_DPND)
 	gcc $(CFLAGS) -o VGPpair VGPpair.c $(ONE_LIB) $(GENE_CORE) -lpthread
