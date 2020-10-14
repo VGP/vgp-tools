@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Jun 15 01:47 2020 (rd109)
+ * Last edited: Oct 14 08:47 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -98,7 +98,6 @@ static OneInfo *infoDeepCopy (OneInfo *vi0)
     { vi->fieldType = new (vi->nField, OneType) ;
       memcpy (vi->fieldType, vi0->fieldType, vi->nField*sizeof(OneType)) ;
     }
-  if (vi->fieldCodec) vi->fieldCodec = vcCreate() ;
   if (vi->listCodec && vi->listCodec != DNAcodec) vi->listCodec = vcCreate() ;
   if (vi->comment) vi->comment = strdup (vi0->comment) ;
   return vi ;
@@ -116,7 +115,6 @@ static bool infoCheckFields (OneInfo *vi, OneFile *vf)
 
 static void infoDestroy (OneInfo *vi)
 { if (vi->buffer && ! vi->isUserBuf) free (vi->buffer) ;
-  if (vi->fieldCodec) vcDestroy (vi->fieldCodec) ;
   if (vi->listCodec) vcDestroy (vi->listCodec) ;
   if (vi->fieldType) free (vi->fieldType) ;
   if (vi->comment) free (vi->comment) ;
@@ -129,8 +127,7 @@ static void infoDestroy (OneInfo *vi)
 
 static int listEltSize[9] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1, 1 } ;
 
-static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
-				    char t, bool isFieldCompress)
+static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a, char t)
 {
   // use during the bootstrap, while parsing .def files, and while parsing ~ lines in other files
   
@@ -163,8 +160,6 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
 	  vi->listCodec = vcCreate () ; // always make a listCodec for any list type
       }
 
-  if (isFieldCompress) vi->fieldCodec = vcCreate () ;
-
   if (t >= 'A' && t <= 'Z') vi->binaryTypePack = ((t-'A') << 2) | (char) 0x80 ;
   else if (t == vs->groupType) vi->binaryTypePack = (26 << 2) | (char) 0x80 ;
   else if (t == ';') vi->binaryTypePack = (27 << 2) | (char) 0x80 ;
@@ -176,7 +171,7 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a,
   vs->info[(int)t] = vi ;
 }
 
-static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, bool isFieldCompress)
+static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t)
 { // assumes field specification is in the STRING_LIST of the current vf line
   // need to set vi->comment separately
   
@@ -198,7 +193,7 @@ static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, bool isFi
 	     i, n, s, vf->line, t) ;
     }
 
-  schemaAddInfoFromArray (vs, n, a, t, isFieldCompress) ;
+  schemaAddInfoFromArray (vs, n, a, t) ;
 
   if (oneReadComment (vf))
     vs->info[(int)t]->comment = strdup (oneReadComment(vf)) ;
@@ -236,11 +231,9 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
       vs->secondary[vs->nSecondary] = new0 (4, char) ;
       strcpy (vs->secondary[vs->nSecondary++], oneString(vf)) ;
       break ;
-    case 'D':
-      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), false) ;
-      break ;
-    case 'C':
-      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), true) ;
+    case 'D': // we have removed field compression, which was the 'C' option
+    case 'C': // should silently allow for backwards code compatibility, or forbid them?
+      schemaAddInfoFromLine (vs, vf, oneChar(vf,0)) ;
       break ;
     default:
       die ("unrecognized schema line %d starting with %c", vf->line, vf->lineType) ;
@@ -521,10 +514,7 @@ static void oneFileDestroy (OneFile *vf)
             { for (j = 1; j < vf->share; j++)
                 { li = vf[j].info[i];
 		  if (li != lx) // the index OneInfos are shared
-		    { if (li->fieldCodec == lx->fieldCodec)
-			li->fieldCodec = NULL;
-		      if (li->listCodec == lx->listCodec)
-			li->listCodec  = NULL;
+		    { if (li->listCodec == lx->listCodec) li->listCodec  = NULL;
 		      infoDestroy(li);
 		    }
 		}
@@ -762,7 +752,7 @@ static inline void updateGroupCount(OneFile *vf, bool isGroupLine)
  *
  **********************************************************************************/
 
-static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
+static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int *usedBytes)
 { char *y;
   int   d, k;
   I64   z, i, mask, *ibuf;
@@ -786,8 +776,9 @@ static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
         break;
       mask >>= 8;
     }
-  z = k - d;   // number of 0 bytes
+  *usedBytes = d ;
 
+  z = k - d;   // number of 0 bytes
   if (z == 0)
     return (buf);
   
@@ -811,20 +802,17 @@ static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
           *y++ = *buf++;
         buf += z;
       }
-
-  // finally record the number of zero bytes in the top bits of the len field
-  oneInt(vf,li->listField) |= (z << 56);
-  
-  return (li->buffer);
+ 
+  return li->buffer ;
 }
 
-static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf)
+static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int usedBytes)
 { I64   i, *x;
   int   d, z, k;
   char *s, *t;
 
-  z   = (oneInt (vf, li->listField) >> 56);
-
+  z = li->listEltSize - usedBytes ;
+  
   if (z > 0)                      // decompacts in place
     { d = li->listEltSize - z;
       s = buf + d*len;
@@ -869,7 +857,7 @@ static int writeCompressedFields (FILE *f, OneField *field, OneInfo *li)
 {
   int i, n = 0 ;
   
-  for (i = 0 ; i < li->nField ; ++li)
+  for (i = 0 ; i < li->nField ; ++i)
     switch (li->fieldType[i])
       {
       case oneREAL: fwrite (&field[i].r, 8, 1, f) ; n += 8 ; break ;
@@ -885,7 +873,7 @@ static void readCompressedFields (FILE *f, OneField *field, OneInfo *li)
 {
   int i ;
   
-  for (i = 0 ; i < li->nField ; ++li)
+  for (i = 0 ; i < li->nField ; ++i)
     switch (li->fieldType[i])
       {
       case oneREAL: fread (&field[i].r, 8, 1, f) ; break ;
@@ -938,7 +926,7 @@ char oneReadLine (OneFile *vf)
 { bool      isAscii;
   U8        x;
   char      t;
-  OneInfo *li;
+  OneInfo  *li;
 
   if (vf->isWrite)
     die ("ONE read error: trying to read a line from a file open for writing");
@@ -1030,57 +1018,58 @@ char oneReadLine (OneFile *vf)
     }
 
   else        // binary - block read fields and list, potentially compressed
-    { int nField;
-      I64 nBits, listLen, usedBytes, listSize;
+    { 
+      // read the fields
 
-      nField = li->nField;
-      if (nField > 0)
-        { if (x & 0x1)                       // fields are compressed
-            { nBits = (U8) getc (vf->f);     // NB only fields under 255 bits are compressed
-              if (fread (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
-                die ("ONE read error: fail to read compressed fields");
-
-              vcDecode (li->fieldCodec, nBits, vf->codecBuf, (char *) vf->field);
-            }
-          else
-            { if (fread (vf->field, sizeof(OneField), nField, vf->f) != (unsigned long) nField)
-                die ("ONE read error: fail to read binary fields");
-            }
-        }
-
-      if (t == vf->groupType)
+      if (li->nField > 0)
+#ifdef IN_PROGRESS
+	readCompressedFields (vf->f, vf->field, li) ;
+#else
+        { int nField = li->nField;
+	  if (nField > 0)
+	    if (fread (vf->field, sizeof(OneField), nField, vf->f) != (unsigned long) nField)
+	      die ("ONE read error: fail to read binary fields");
+	}
+#endif
+      if (t == vf->groupType) // must follow reading the fields
         { I64 *groupIndex = (I64 *) vf->info['*']->buffer;
           oneInt(vf,0)    = groupIndex[vf->group] - groupIndex[vf->group-1];
         }
 
-      if (li->listEltSize > 0) // there is a list
-        { listLen = oneLen(vf);
-          li->accum.total += listLen;
-          if (listLen > li->accum.max)
-            li->accum.max = listLen;
+      // read the list if there is one
+
+      if (li->listEltSize > 0)
+        { I64 listLen = oneLen(vf);
 
           if (listLen > 0)
-            { if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
-                readStringList (vf, t, listLen);
+            { li->accum.total += listLen;
+	      if (listLen > li->accum.max)
+		li->accum.max = listLen;
 
-              else if (x & 0x2)     // list is compressed
-                { if (fread (&nBits, sizeof(I64), 1, vf->f) != 1)
+	      I64 usedBytes ;
+	      if (li->fieldType[li->listField] == oneINT_LIST)
+		usedBytes = getc(vf->f) ;
+	      else
+		usedBytes = li->listEltSize ;
+
+	      if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
+                readStringList (vf, t, listLen);
+              else if (x & 0x1)    				  // list is compressed
+                { I64 nBits ;
+		  if (fread (&nBits, sizeof(I64), 1, vf->f) != 1)
                     die ("ONE read error: fail to read list nBits");
                   if (fread (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
                     die ("ONE read error: fail to read compressed list");
                   vcDecode (li->listCodec, nBits, vf->codecBuf, li->buffer);
                 }
-
               else
-                { usedBytes = li->listEltSize - (oneInt(vf,li->listField) >> 56); // data bytes
-                  listSize  = listLen * usedBytes;
-
+                { I64 listSize  = listLen * usedBytes;
                   if ((I64) fread (li->buffer, 1, listSize, vf->f) != listSize)
-                    die ("ONE read error: list read %" PRId64 " not %" PRId64 "", x, listSize);
+                    die ("ONE read error: failed to read list size %" PRId64 "", listSize);
                 }
 
               if (li->fieldType[li->listField] == oneINT_LIST)
-                decompactIntList (vf, li, listLen, li->buffer);
+                decompactIntList (vf, li, listLen, li->buffer, usedBytes);
             }
 
           if (li->fieldType[li->listField] == oneSTRING)
@@ -1276,9 +1265,9 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	      { int oldMax = vf->nFieldMax ;
 		switch (oneChar(vf,0))
 		  {
-		  case 'D': schemaAddInfoFromLine (vs, vf, t, false) ; break ;
-		  case 'C': schemaAddInfoFromLine (vs, vf, t, true) ; break ;
-		  default: parseError (vf, "schema defn line must have first char D or C") ;
+		  case 'D': schemaAddInfoFromLine (vs, vf, t) ; break ;
+		  case 'C': schemaAddInfoFromLine (vs, vf, t) ; break ; // perhaps remove?
+		  default: parseError (vf, "schema defn line must have first char D") ;
 		  }
 		vi = vs->info[(int)t] ;
 		vf->info[(int)t] = infoDeepCopy (vi) ;
@@ -1397,10 +1386,6 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
         case '*':
           break;
 
-        case ':':
-          vf->info[(int) oneChar(vf,0)]->fieldCodec = vcDeserialize (oneString(vf));
-          break;
-
         case ';':
           vf->info[(int) oneChar(vf,0)]->listCodec = vcDeserialize (oneString(vf));
           break;
@@ -1466,8 +1451,6 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    { OneInfo *li = v->info[j];
 	      if (li != NULL)
 		{ OneInfo *l0 = vf->info[j];
-		  if (li->fieldCodec) vcDestroy (li->fieldCodec) ;
-		  li->fieldCodec = l0->fieldCodec;
 		  if (li->listCodec) vcDestroy (li->listCodec) ;
 		  li->listCodec  = l0->listCodec;
 		  if (li->listEltSize > 0)
@@ -1634,12 +1617,12 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, bool isBinary, i
   OneSchema *vs = vs0->nxt ; // this is the actual schema - vs0 is for the header
   int i = vfIn->objectType ;
   OneInfo *vi = vfIn->info[i] ; // need to list the object type first
-  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i, vi->fieldCodec ? true : false) ;
+  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i) ;
   if (vi->comment) vs->info[i]->comment = strdup (vi->comment) ;
   for (i = 'A' ; i <= 'z' ; ++i)
     if (isalnum(i) && vfIn->info[i] && i != vfIn->objectType)
       { OneInfo *vi = vfIn->info[i] ;
-	schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i, vi->fieldCodec ? true : false) ;
+	schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i) ;
 	if (vi->comment) vs->info[i]->comment = strdup (vi->comment) ;
       }
 
@@ -1847,14 +1830,10 @@ bool oneAddDeferred (OneFile *vf, char *filename)
 
 static void writeInfoSpec (OneFile *vf, char ci)
 {
-  char c ;
   int i ;
   OneInfo *vi = vf->info[(int) ci] ;
-  
-  if (vi->fieldCodec) c = 'C' ;
-  else c = 'D' ;
 
-  fprintf (vf->f, "\n~ %c %c %d", c, ci, vi->nField) ;
+  fprintf (vf->f, "\n~ D %c %d", ci, vi->nField) ;
   for (i = 0 ; i < vi->nField ; ++i)
     fprintf (vf->f, " %d %s",
 	     (int)strlen(oneTypeString[vi->fieldType[i]]), oneTypeString[vi->fieldType[i]]) ;
@@ -2014,17 +1993,11 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
   if (!vf->isWrite)
     die ("ONE write error: trying to write a line to a file open for reading");
   if (vf->isFinal && isalpha(t))
-    die ("ONE write error: annot write more data after counts are finalized %c", t);
+    die ("ONE write error: cannot write more data after counts are finalized %c", t);
 
   li = vf->info[(int) t];
   if (li == NULL)
     die ("ONE write error: line type %c not present in file spec %s ", t, vf->fileType);
-
-  if (listBuf == NULL)
-    listBuf = li->buffer;
-
-  if (!vf->isLastLineBinary)      // terminate previous ascii line
-    fputc ('\n', vf->f);
 
   vf->line  += 1;
   li->accum.count += 1;
@@ -2036,17 +2009,19 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 	vf->field[li->listField].len = listLen ;
       else
 	die ("ONE write error: listLen %" PRId64 " must be non-negative", listLen) ;
+      if (listBuf == NULL)
+	listBuf = li->buffer;
     }
 
   // BINARY - block write and optionally compress
 
   if (vf->isBinary)
-    { U8  x, cBits;
-      int nField;
-      I64 fieldSize, nBits, listBytes, listSize;
+    { U8  x;
 
       if (!vf->isLastLineBinary)
-	vf->byte = ftello (vf->f) ;
+	{ fputc ('\n', vf->f) ;
+	  vf->byte = ftello (vf->f) ;
+	}
 
       if (t == vf->objectType) // update index and increment object count
         { OneInfo *lx = vf->info['&'];
@@ -2063,7 +2038,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
           ((I64 *) lx->buffer)[vf->object] = vf->byte;
 #define CHECK_INDEX
 #ifdef CHECK_INDEX
-          { if (ftello (vf->f) != ((I64 *) lx->buffer)[vf->object])
+          { if (ftello (vf->f) != vf->byte)
 	      die ("ONE write error: byte offset index error") ;
 	  }
 #endif
@@ -2086,191 +2061,132 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
           ((I64 *) lx->buffer)[vf->group-1] = vf->object; // group # already advanced
         }
 
-      nField    = li->nField;
-      fieldSize = nField*sizeof(OneField);
-
-      if (li->listEltSize > 0 && li->fieldType[li->listField] == oneINT_LIST)
-	listBuf = compactIntList (vf, li, listLen, listBuf);
-
+      // write the line character
+      
       x = li->binaryTypePack;   //  Binary line code + compression flags
       if (li->isUseListCodec)
-        x |= 0x02;
+        x |= 0x01;
+      fputc (x, vf->f);
+      ++vf->byte ;
 
-      if (li->isUseFieldCodec)
-        { nBits = vcEncode (li->fieldCodec, fieldSize, (char *) vf->field, vf->codecBuf);
-          if (nBits < 256)
-            { x |= 0x01;
-              cBits = nBits;
+      // write the fields
 
-              fputc (x, vf->f);
-              fputc (cBits, vf->f) ;
-              if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
-                die("ONE write error: fail to write compressed fields");
-	      vf->byte += 2 + ((nBits+7) >> 3) ;
-            }
-          else
-            { fputc (x, vf->f);
-              if (nField > 0)
-                { if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
-                    die ("ONE write error: write fields: t %c, nField %d, fieldSize %" PRId64 "",
-			 t, nField, fieldSize);
-                }
-	      vf->byte += 1 + fieldSize ;
-            }
-        }
-      else
-        { fputc (x, vf->f);
-          if (nField > 0)
-            if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
-              die ("ONE write error: write fields: t %c, nField %d, fieldSize %" PRId64 "",
-		   t, nField, fieldSize);
-	  vf->byte += 1 + fieldSize ;
+      if (li->nField > 0)
+	{ 
+#ifdef IN_PROGRESS
+	  vf->byte += writeCompressedFields (vf->f, vf->field, li) ;
+#else
+	  I64 fieldSize = li->nField*sizeof(OneField);
+	  if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
+	    die ("ONE write error: write fields: t %c, nField %d, fieldSize %" PRId64 "",
+		 t, li->nField, fieldSize);
+	  vf->byte += fieldSize ;
+#endif
+	}
 
-          if (li->fieldCodec != NULL)
-            { vcAddToTable (li->fieldCodec, fieldSize, (char *) vf->field);
-              li->fieldTack += fieldSize;
+      // write the list if there is one
 
-              if (li->fieldTack > vf->codecTrainingSize)
-                { if (vf->share == 0)
-                    { vcCreateCodec (li->fieldCodec, 1);
-                      li->isUseFieldCodec = true;
-                    }
-                  else
-                    { OneFile  *ms;
-                      OneInfo *lx;
+      if (li->listEltSize && listLen > 0)
+        { I64 nBits, listSize;
+	  int listBytes ;
 
-                      if (vf->share < 0)
-                        { ms = vf + vf->share;
-                          lx = ms->info[(int) t]; 
-                        }
-                      else
-                        { ms = vf;
-                          lx = li;
-                        }
-
-                      pthread_mutex_lock(&ms->fieldLock);
-
-                      if ( ! li->isUseFieldCodec)
-
-                        { if (vf->share < 0)
-                            { lx->fieldTack += li->fieldTack;
-                              li->fieldTack = 0;
-                            }
-                          if (lx->fieldTack > ms->codecTrainingSize)
-                            { for (i = 1; i < ms->share; i++)
-                                vcAddHistogram (lx->fieldCodec,
-                                                ms[i].info[(int) t]->fieldCodec);
-			      vcCreateCodec (lx->fieldCodec, 1);
-                              for (i = 1; i < ms->share; i++)
-                                { OneCodec *m = ms[i].info[(int) t]->fieldCodec;
-                                  ms[i].info[(int) t]->fieldCodec = lx->fieldCodec;
-                                  vcDestroy (m);
-                                }
-                              lx->isUseFieldCodec = true;
-                              for (i = 1; i < ms->share; i++)
-                                ms[i].info[(int) t]->isUseFieldCodec = true;
-                            }
-                        }
-
-                      pthread_mutex_unlock(&ms->fieldLock);
-                    }
-                }
-            }
-        }
-
-      // Write the list if there is one
-
-      if (li->listEltSize)
-        { li->accum.total += listLen;
+	  li->accum.total += listLen;
           if (listLen > li->accum.max)
             li->accum.max = listLen;
+	  
+	  if (li->fieldType[li->listField] == oneINT_LIST)
+	    { listBuf = compactIntList (vf, li, listLen, listBuf, &listBytes) ;
+	      fputc ((char)listBytes, vf->f) ;
+	      vf->byte++ ;
+	    }
+	  else
+	    listBytes = li->listEltSize ;
+	  listSize  = listLen * listBytes;
+	  
+	  if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
+	    vf->byte += writeStringList (vf, t, listLen, listBuf);
+	  else if (x & 0x1)
+	    { if (listSize >= vf->codecBufSize)
+		{ free (vf->codecBuf);
+		  vf->codecBufSize = listSize+1;
+		  vf->codecBuf     = new (vf->codecBufSize, void);
+		}
+	      nBits = vcEncode (li->listCodec, listSize, listBuf, vf->codecBuf);
+	      if (fwrite (&nBits, sizeof(I64), 1, vf->f) != 1)
+		die ("ONE write error: failed to write list nBits");
+	      if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
+		die ("ONE write error: failed to write compressed list");
+	      vf->byte += sizeof(I64) + ((nBits+7) >> 3);
+	    }
+	  else
+	    { if (fwrite (listBuf, listSize, 1, vf->f) != 1)
+		die ("ONE write error: failed to write list field %d listLen %" PRId64 " listSize %" PRId64 " listBuf %lx",
+		     li->listField, listLen, listSize, listBuf);
+	      vf->byte += listSize;
+	      if (li->listCodec != NULL)
+		{ vcAddToTable (li->listCodec, listSize, listBuf);
+		  li->listTack += listSize;
+		  
+		  if (li->listTack > vf->codecTrainingSize)
+		    { if (vf->share == 0)
+			{ vcCreateCodec (li->listCodec, 1);
+			  li->isUseListCodec = true;
+			}
+		      else
+			{ OneFile  *ms;
+			  OneInfo *lx;
+			  
+			  if (vf->share < 0)
+			    { ms = vf + vf->share;
+			      lx = ms->info[(int) t]; 
+			    }
+			  else
+			    { ms = vf;
+			      lx = li;
+			    }
+			  
+			  pthread_mutex_lock(&ms->listLock);
+			  
+			  if ( ! li->isUseListCodec)
+			    
+			    { if (vf->share < 0)
+				{ lx->listTack += li->listTack;
+				  li->listTack = 0;
+				}
+			      if (lx->listTack > ms->codecTrainingSize)
+				{ for (i = 1; i < ms->share; i++)
+				    vcAddHistogram (lx->listCodec,
+						    ms[i].info[(int) t]->listCodec);
+				  vcCreateCodec (lx->listCodec, 1);
+				  for (i = 1; i < ms->share; i++)
+				    { OneCodec *m = ms[i].info[(int) t]->listCodec;
+				      ms[i].info[(int) t]->listCodec = lx->listCodec;
+				      vcDestroy (m);
+				    }
+				  lx->isUseListCodec = true;
+				  for (i = 1; i < ms->share; i++)
+				    ms[i].info[(int) t]->isUseListCodec = true;
+				}
+			    }
+			  
+			  pthread_mutex_unlock(&ms->listLock);
+			}
+		    }
+		}
+	    }
+	}
 
-          if (listLen > 0)
-            { listBytes = li->listEltSize - (oneInt(vf, li->listField) >> 56); // data bytes
-              listSize  = listLen * listBytes;
-
-              if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
-                vf->byte += writeStringList (vf, t, listLen, listBuf);
-
-              else if (x & 0x2)
-                { if (listSize >= vf->codecBufSize)
-                    { free (vf->codecBuf);
-                      vf->codecBufSize = listSize+1;
-                      vf->codecBuf     = new (vf->codecBufSize, void);
-                    }
-                  nBits = vcEncode (li->listCodec, listSize, listBuf, vf->codecBuf);
-                  if (fwrite (&nBits, sizeof(I64), 1, vf->f) != 1)
-                    die ("ONE write error: failed to write list nBits");
-                  if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
-                    die ("ONE write error: failed to write compressed list");
-		  vf->byte += sizeof(I64) + ((nBits+7) >> 3);
-                }
-
-              else
-                { if (fwrite (listBuf, listSize, 1, vf->f) != 1)
-                    die ("ONE write error: failed to write list field %d listLen %" PRId64 " listSize %" PRId64 " listBuf %lx",
-			 li->listField, listLen, listSize, listBuf);
-		  vf->byte += listSize;
-                  if (li->listCodec != NULL)
-                    { vcAddToTable (li->listCodec, listSize, listBuf);
-                      li->listTack += listSize;
-
-                      if (li->listTack > vf->codecTrainingSize)
-                        { if (vf->share == 0)
-                            { vcCreateCodec (li->listCodec, 1);
-                              li->isUseListCodec = true;
-                            }
-                          else
-                            { OneFile  *ms;
-                              OneInfo *lx;
-
-                              if (vf->share < 0)
-                                { ms = vf + vf->share;
-                                  lx = ms->info[(int) t]; 
-                                }
-                              else
-                                { ms = vf;
-                                  lx = li;
-                                }
-
-                              pthread_mutex_lock(&ms->listLock);
-
-                              if ( ! li->isUseListCodec)
-
-                                { if (vf->share < 0)
-                                    { lx->listTack += li->listTack;
-                                      li->listTack = 0;
-                                    }
-                                  if (lx->listTack > ms->codecTrainingSize)
-                                    { for (i = 1; i < ms->share; i++)
-                                        vcAddHistogram (lx->listCodec,
-                                                        ms[i].info[(int) t]->listCodec);
-                                      vcCreateCodec (lx->listCodec, 1);
-                                      for (i = 1; i < ms->share; i++)
-                                        { OneCodec *m = ms[i].info[(int) t]->listCodec;
-                                          ms[i].info[(int) t]->listCodec = lx->listCodec;
-                                          vcDestroy (m);
-                                        }
-                                      lx->isUseListCodec = true;
-                                      for (i = 1; i < ms->share; i++)
-                                        ms[i].info[(int) t]->isUseListCodec = true;
-                                    }
-                                }
- 
-                              pthread_mutex_unlock(&ms->listLock);
-                            }
-                        }
-                    }
-                }
-            }
-        }
       vf->isLastLineBinary = true;
     }
 
   // ASCII - write field by field
 
   else
-    { fputc (t, vf->f);
+    { if (!vf->isLastLineBinary)      // terminate previous ascii line
+	fputc ('\n', vf->f);
+      
+      fputc (t, vf->f);
+
       for (i = 0; i < li->nField; i++)
         switch (li->fieldType[i])
 	  {
@@ -2361,11 +2277,6 @@ static void oneWriteFooter (OneFile *vf)
 	      if (li->listEltSize)
 		fprintf (vf->f, "%% %c + %c %" PRId64 "\n", vf->groupType, i, li->accum.groupTotal);
 	    }
-          if (li->isUseFieldCodec)
-            { oneChar(vf,0) = i;
-              n = vcSerialize (li->fieldCodec, codecBuf);
-              oneWriteLine (vf, ':', n, codecBuf);
-            }
           if (li->isUseListCodec && li->listCodec != DNAcodec)
             { oneChar(vf,0) = i;
               n = vcSerialize (li->listCodec, codecBuf);
@@ -3698,7 +3609,6 @@ static inline int intGet (unsigned char *u, I64 *pval)
       *pval =  (I64) u[0] | 0xffffffffffffff00 ; return 1 ;
     case 1: // two bytes positive
       *pval = (I64) (u[0] & 0x1f) << 8 | (I64)u[1] ; return 2 ;
-    case 5: // two bytes negative
       *pval = - ((I64) (u[0] & 0x1f) << 8 | (I64)u[1]) ; return 2 ;
     case 0:
       switch (u[0] & 0x07)
