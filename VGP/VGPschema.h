@@ -5,7 +5,7 @@
  * Description: schema to include in VGP ONEcode applications
  * Exported functions:
  * HISTORY:
- * Last edited: Oct 16 01:34 2020 (rd109)
+ * Last edited: Oct 17 00:39 2020 (rd109)
  * Created: Wed May 13 23:34:04 2020 (rd109)
  *-------------------------------------------------------------------
  */
@@ -31,7 +31,7 @@ static char *vgpSchemaText =
   "S 3 ctg   contigs from an assembly\n"
   "S 3 kmr   kmers\n"
   "G g 2 3 INT 6 STRING               group: count, name (e.g. use for flow cell/lane grouping)\n"
-  "D S 1 3 DNA                        sequence: the DNA string\n"
+  "O S 1 3 DNA                        sequence: the DNA string\n"
   "D I 1 6 STRING                     id: sequence identifier\n"
   "D Q 1 6 STRING                     quality: Q values (ascii string = q+33)\n"
   "D P 0                              marks start of a readpair\n"
@@ -45,7 +45,7 @@ static char *vgpSchemaText =
   "S 3 rms   maps from sequence\n"
   "S 3 rma   maps from assembly of molecule level data\n"
   "G r 3 3 INT 3 INT 11 STRING_LIST   group: count, number of 'enzymes', corresponding patterns\n"
-  "D R 2 3 INT 8 INT_LIST             map: length, site locations (both in base pairs)\n"
+  "O R 2 3 INT 8 INT_LIST             map: length, site locations (both in base pairs)\n"
   "D E 1 8 INT_LIST                   enzyme: for each site the enzyme index into list in line r\n"
   "D I 1 9 REAL_LIST                  intensities: intensity of signal for each site in map\n"
   "D N 1 9 REAL_LIST                  noise: signal to noise ratio at each site in map\n"
@@ -57,7 +57,7 @@ static char *vgpSchemaText =
   "S 3 sxr   sequence to restriction map alignment\n"
   "S 3 map   relationship between two versions of an object, e.g. contigs before/after polishing\n"
   "G g 2 3 INT 6 STRING                       group: count, name\n"
-  "D A 2 3 INT 3 INT                          alignment: a index in its file, b index in its file\n"
+  "O A 2 3 INT 3 INT                          alignment: a index in its file, b index in its file\n"
   "D I 6 3 INT 3 INT 3 INT 3 INT 3 INT 3 INT  start, end, len for A, start, end, len for B\n"
   "D Q 1 3 INT                                quality: alignment confidence in phred units\n"
   "D M 1 3 INT                                match: number of matching bases\n"
@@ -72,25 +72,25 @@ static char *vgpSchemaText =
   "P 3 hit HIT_LIST\n"
   "S 3 s2k   sequence to kmer hit list\n"
   "S 3 k2s   kmer to sequence hit list\n"
-  "D H 2 3 INT 8 INT_LIST     hits: indices of query a in its file, targets b in their file\n"
+  "O H 2 3 INT 8 INT_LIST     hits: indices of query a in its file, targets b in their file\n"
   "D O 1 8 INT_LIST           offsets: in query a of each target b\n"
   "D P 1 8 INT_LIST           positions: in each target b of query a\n"
   ".\n"
   "P 3 jns JOIN\n"
-  "D J 6 3 INT 3 INT 4 CHAR 3 INT 3 INT 4 CHAR join: a, a-pos, a-dir s or e, b, b-pos, b-dir\n"
+  "O J 6 3 INT 3 INT 4 CHAR 3 INT 3 INT 4 CHAR join: a, a-pos, a-dir s or e, b, b-pos, b-dir\n"
   "D G 2 3 INT 3 INT                           gap: size estimate, standard dev. estimate (bp)\n"
   "D Q 1 3 INT                                 quality: confidence in phred units\n"
   "D E 1 8 INT_LIST                            evidence: list of alignments supporting the join\n"
   ".\n"
   "P 3 brk BREAK\n"
-  "D B 3 3 INT 3 INT 3 INT    break: object, start, end - material in [start,end] uncertain\n"
+  "O B 3 3 INT 3 INT 3 INT    break: object, start, end - material in [start,end] uncertain\n"
   "D Q 1 3 INT                quality: confidence in phred units\n"
   "D E 1 8 INT_LIST           evidence: list of alignments supporting the break\n"
   ".\n"
   "P 3 lis LIST    \n"
   "S 3 lyo   layout for assembly: selection of alignments generating a contig\n"
   "S 3 scf   scaffold: list over joins\n"
-  "D L 1 8 INT_LIST           list: indexes of objects in list in reference file\n"
+  "O L 1 8 INT_LIST           list: indexes of objects in list in reference file\n"
   "D N 1 6 STRING             name: optional name for list\n"
   "D S 1 3 INT                seed: optional seed sequence for scaffold\n"
   ".\n"
