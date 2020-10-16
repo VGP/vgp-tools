@@ -217,8 +217,9 @@ and provenance lines.  In a rule:
 
 ## 2. File Data and Schema Definition
 
-Every data line has a type designated by a letter.  There can be at most one lower case letter, which designates 
-The types of data lines permitted depend on the primary file type.
+Every data line has a type designated by a letter. The types of data
+lines permitted depend on the schema associated to the primary file type.
+At most one data line type can be designated as a *group type*.
 
 
 

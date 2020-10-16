@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: May 16 19:07 2020 (rd109)
+ * Last edited: Sep 30 23:41 2020 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -100,14 +100,10 @@ typedef struct
     I64       bufSize;          // system buffer and size if not user supplied
     void     *buffer;
 
-    OneCodec *fieldCodec;       // compression codecs and flags
-    OneCodec *listCodec;
-    bool      isUseFieldCodec;  // on once enough data collected to train associated codec
-    bool      isUseListCodec;
+    OneCodec *listCodec;       // compression codec and flags
+    bool      isUseListCodec;  // on once enough data collected to train associated codec
     char      binaryTypePack;   // binary code for line type, bit 8 set.
-                                //     bit 0: fields compressed
-                                //     bit 1: list compressed
-    I64       fieldTack;        // accumulated training data for this threads fieldCodec (master)
+                                //     bit 0: list compressed
     I64       listTack;         // accumulated training data for this threads codeCodec (master)
   } OneInfo;
 
