@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Oct 14 08:47 2020 (rd109)
+ * Last edited: Oct 16 01:23 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -64,14 +64,8 @@ int       vcDecode(OneCodec *vc, int ilen, char *ibytes, char *obytes);
 
 // forward declarations of 64-bit integer encoding/decoding
 
-#define IN_PROGRESS
-
-#ifdef IN_PROGRESS
-
 static inline int ltfWrite (I64 x, FILE *f) ;
 static inline I64 ltfRead (FILE *f) ;
-
-#endif
 
 /***********************************************************************************
  *
@@ -127,19 +121,19 @@ static void infoDestroy (OneInfo *vi)
 
 static int listEltSize[9] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1, 1 } ;
 
-static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a, char t)
+static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a, char t, bool isGroupType)
 {
   // use during the bootstrap, while parsing .def files, and while parsing ~ lines in other files
   
   if (vs->info[(int) t])
     die ("duplicate schema specification for linetype %c in filetype %s", t, vs->primary) ;
-  if (t >= 'a' && t <= 'z') // the group type
+  if (isalpha(t) && isGroupType)
     { if (vs->groupType) die ("second group type in schema for filetype %s", vs->primary) ;
       vs->groupType = t ;
     }
-  else if (!vs->objectType && t >= 'A' && t <= 'Z')
+  else if (!vs->objectType && isalpha(t))
     vs->objectType = t ;
-  else if ((t < 'A' || t > 'Z') && *vs->primary) // allow non-alphabetic lines in header
+  else if (!isalpha(t) && *vs->primary) // allow non-alphabetic lines in header
     die ("non-alphabetic linetype %c (ascii %d) in schema for filetype %s",t,t,vs->primary) ;
 
   if (n > vs->nFieldMax) vs->nFieldMax = n ;
@@ -160,29 +154,30 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a, char t)
 	  vi->listCodec = vcCreate () ; // always make a listCodec for any list type
       }
 
-  if (t >= 'A' && t <= 'Z') vi->binaryTypePack = ((t-'A') << 2) | (char) 0x80 ;
-  else if (t == vs->groupType) vi->binaryTypePack = (26 << 2) | (char) 0x80 ;
-  else if (t == ';') vi->binaryTypePack = (27 << 2) | (char) 0x80 ;
-  else if (t == ':') vi->binaryTypePack = (28 << 2) | (char) 0x80 ;
-  else if (t == '&') vi->binaryTypePack = (29 << 2) | (char) 0x80 ;
-  else if (t == '*') vi->binaryTypePack = (30 << 2) | (char) 0x80 ;
-  else if (t == '/') vi->binaryTypePack = (31 << 2) | (char) 0x80 ;
+  if (t >= 'A' && t <= 'Z') vi->binaryTypePack = ((t-'A') << 1) | (char) 0x80 ;
+  else if (t >= 'a' && t <= 'z') vi->binaryTypePack = ((26+t-'a') << 1) | (char) 0x80 ;
+  else if (t == ';') vi->binaryTypePack = (52 << 2) | (char) 0x80 ;
+  else if (t == ':') vi->binaryTypePack = (53 << 2) | (char) 0x80 ;
+  else if (t == '&') vi->binaryTypePack = (54 << 2) | (char) 0x80 ;
+  else if (t == '*') vi->binaryTypePack = (55 << 2) | (char) 0x80 ;
+  else if (t == '/') vi->binaryTypePack = (56 << 2) | (char) 0x80 ;
+  else if (t == '.') vi->binaryTypePack = (57 << 2) | (char) 0x80 ;
 
   vs->info[(int)t] = vi ;
 }
 
-static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t)
+static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, bool isGroupType)
 { // assumes field specification is in the STRING_LIST of the current vf line
   // need to set vi->comment separately
   
-  static OneType a[16] ;
+  static OneType a[32] ;
   int            i ;
   OneType        j ;
   int            n = oneLen(vf) ;
   char          *s = oneString(vf) ;
   
-  if (n > 16)
-    die ("line specfication %d fields too long - need to recompile", n) ;
+  if (n > 32)
+    die ("line specification %d fields too long - need to recompile", n) ;
 
   for (i = 0 ; i < n ; ++i, s = oneNextString(vf,s))
     { a[i] = 0 ;
@@ -193,7 +188,7 @@ static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t)
 	     i, n, s, vf->line, t) ;
     }
 
-  schemaAddInfoFromArray (vs, n, a, t) ;
+  schemaAddInfoFromArray (vs, n, a, t, isGroupType) ;
 
   if (oneReadComment (vf))
     vs->info[(int)t]->comment = strdup (oneReadComment(vf)) ;
@@ -231,9 +226,11 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
       vs->secondary[vs->nSecondary] = new0 (4, char) ;
       strcpy (vs->secondary[vs->nSecondary++], oneString(vf)) ;
       break ;
-    case 'D': // we have removed field compression, which was the 'C' option
-    case 'C': // should silently allow for backwards code compatibility, or forbid them?
-      schemaAddInfoFromLine (vs, vf, oneChar(vf,0)) ;
+    case 'G': // group type
+      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), true) ;
+      break ;
+    case 'D': // standard record type - first of these in a schema is the object type
+      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), false) ;
       break ;
     default:
       die ("unrecognized schema line %d starting with %c", vf->line, vf->lineType) ;
@@ -313,8 +310,8 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "P 3 def                      this is the primary file type for schemas\n") ;
   fprintf (vf->f, "D P 1 6 STRING               primary type name\n") ;
   fprintf (vf->f, "D S 1 6 STRING               secondary type name\n") ;
-  fprintf (vf->f, "D D 2 4 CHAR 11 STRING_LIST  define linetype without field compression\n") ;
-  fprintf (vf->f, "D C 2 4 CHAR 11 STRING_LIST  define linetype with field compression\n") ;
+  fprintf (vf->f, "D G 2 4 CHAR 11 STRING_LIST  define linetype for groupType\n") ;
+  fprintf (vf->f, "D D 2 4 CHAR 11 STRING_LIST  define linetype for other records\n") ;
   fprintf (vf->f, "\n") ; // terminator
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
   OneSchema *vs0 = vs ;  // need this because loadInfo() updates vs on reading P lines
@@ -446,12 +443,7 @@ static OneFile *oneFileCreate (OneSchema **vsp, char *type)
       { U8 x = vf->info[i]->binaryTypePack ;
 	vf->binaryTypeUnpack[x] = i ;
 	vf->binaryTypeUnpack[x+1] = i ;
-	vf->binaryTypeUnpack[x+2] = i ;
-	vf->binaryTypeUnpack[x+3] = i ;
       }
-  // special case '.' to overload '/' field compression bit, to keep within 32 binary symbols
-  U8 x = vf->info['.']->binaryTypePack = vf->info['/']->binaryTypePack + 1 ;
-  vf->binaryTypeUnpack[(int)x] = '.' ;
   
   // set other information
   vf->objectType = vs->objectType ;
@@ -761,15 +753,15 @@ static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int *
 
   for (i = len-1; i > 0; i--)  // convert to differences - often a big win, else harmless
     ibuf[i] -= ibuf[i-1];
-
+  
   mask = 0;                    // find how many top bytes can be skipped
-  for (i = 0; i < len; i++)
+  for (i = 1; i < len; i++)
     if (ibuf[i] >= 0) 
       mask |= ibuf[i];
     else
       mask |= -(ibuf[i]+1);
 
-  k = li->listEltSize;
+  k = sizeof(I64) ;
   mask >>= 7;
   for (d = 1; d < k; d++)
     { if (mask == 0)
@@ -779,17 +771,17 @@ static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int *
   *usedBytes = d ;
 
   z = k - d;   // number of 0 bytes
-  if (z == 0)
-    return (buf);
+  if (z == 0) return (char*)&ibuf[1] ;
   
-  if (buf != li->buffer && ! li->isUserBuf && (I64) (li->bufSize*sizeof(I64)) < d*len)
+  if (buf != li->buffer && !li->isUserBuf && (I64) (li->bufSize*sizeof(I64)) < d*len)
     { if (li->buffer != NULL)
         free (li->buffer);
       li->bufSize = ((d*len) / sizeof(I64)) + 1;
       li->buffer = new (li->bufSize * sizeof(I64), void);
     }
 
-  y = li->buffer;
+  y = li->buffer ;
+  buf += sizeof(I64) ; --len ; // don't record the first element of buf, which is not a diff
   if (vf->isBig)     // copy d bytes per I64, ignoring z before or after depending on isBig
     while (len--)
       { buf += z;
@@ -806,19 +798,19 @@ static char *compactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int *
   return li->buffer ;
 }
 
-static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int usedBytes)
-{ I64   i, *x;
-  int   d, z, k;
+static void decompactIntList (OneFile *vf, I64 len, char *buf, int usedBytes)
+{ int   d, z, k;
   char *s, *t;
 
-  z = li->listEltSize - usedBytes ;
+  z = sizeof(I64) - usedBytes ;
   
-  if (z > 0)                      // decompacts in place
-    { d = li->listEltSize - z;
+  if (z > 0)                          // decompacts in place
+    { buf += sizeof(I64) ; --len ;    // don't decompact 0th element
+      d = usedBytes;
       s = buf + d*len;
       t = s + z*len; 
       if (vf->isBig)
-        do
+	while (s > buf)
           { for (k = 0; k < d; k++)
               *--t = *--s;
             if (*s & 0x80)
@@ -828,9 +820,8 @@ static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int 
               for (k = 0; k < z; k++)
                 *--t = 0x0;
           }
-        while (s > buf);
       else
-        do
+	while (s > buf)
           { if (s[-1] & 0x80)
               for (k = 0; k < z; k++)
                 *--t = 0xff;
@@ -840,10 +831,10 @@ static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int 
             for (k = 0; k < d; k++)
               *--t = *--s;
           }
-        while (s > buf);
+      buf -= sizeof(I64) ; ++len ;
     }
   
-  { x = (I64 *) buf;             // revert differencing
+  { I64 i, *x = (I64 *) buf;             // revert differencing
     for (i = 1; i < len; i++)
       x[i] += x[i-1];
   }
@@ -851,9 +842,7 @@ static void decompactIntList (OneFile *vf, OneInfo *li, I64 len, char *buf, int 
 
 // read and write compressed fields
 
-#ifdef IN_PROGRESS
-
-static int writeCompressedFields (FILE *f, OneField *field, OneInfo *li)
+static inline int writeCompressedFields (FILE *f, OneField *field, OneInfo *li)
 {
   int i, n = 0 ;
   
@@ -869,7 +858,7 @@ static int writeCompressedFields (FILE *f, OneField *field, OneInfo *li)
   return n ;
 }
 
-static void readCompressedFields (FILE *f, OneField *field, OneInfo *li)
+static inline void readCompressedFields (FILE *f, OneField *field, OneInfo *li)
 {
   int i ;
   
@@ -882,8 +871,6 @@ static void readCompressedFields (FILE *f, OneField *field, OneInfo *li)
 	field[i].i = ltfRead (f) ;
       }
 }
-
-#endif // IN_PROGRESS
 
 /***********************************************************************************
  *
@@ -928,10 +915,8 @@ char oneReadLine (OneFile *vf)
   char      t;
   OneInfo  *li;
 
-  if (vf->isWrite)
-    die ("ONE read error: trying to read a line from a file open for writing");
-  if (vf->isFinal)
-    die ("ONE read error: cannot read more data after counts are finalized");
+  assert (!vf->isWrite) ;
+  assert (!vf->isFinal) ;
 
   vf->linePos = 0;                 // must come before first vfGetc()
   x = vfGetc (vf);                 // read first char
@@ -1022,15 +1007,8 @@ char oneReadLine (OneFile *vf)
       // read the fields
 
       if (li->nField > 0)
-#ifdef IN_PROGRESS
 	readCompressedFields (vf->f, vf->field, li) ;
-#else
-        { int nField = li->nField;
-	  if (nField > 0)
-	    if (fread (vf->field, sizeof(OneField), nField, vf->f) != (unsigned long) nField)
-	      die ("ONE read error: fail to read binary fields");
-	}
-#endif
+
       if (t == vf->groupType) // must follow reading the fields
         { I64 *groupIndex = (I64 *) vf->info['*']->buffer;
           oneInt(vf,0)    = groupIndex[vf->group] - groupIndex[vf->group-1];
@@ -1048,16 +1026,18 @@ char oneReadLine (OneFile *vf)
 
 	      I64 usedBytes ;
 	      if (li->fieldType[li->listField] == oneINT_LIST)
-		usedBytes = getc(vf->f) ;
+		{ *(I64*)li->buffer = ltfRead (vf->f) ;
+		  li->buffer = &((I64*)li->buffer)[1] ;
+		  --listLen ;
+		  usedBytes = getc(vf->f) ;
+		}
 	      else
 		usedBytes = li->listEltSize ;
 
 	      if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
                 readStringList (vf, t, listLen);
               else if (x & 0x1)    				  // list is compressed
-                { I64 nBits ;
-		  if (fread (&nBits, sizeof(I64), 1, vf->f) != 1)
-                    die ("ONE read error: fail to read list nBits");
+                { I64 nBits = ltfRead (vf->f) ;
                   if (fread (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
                     die ("ONE read error: fail to read compressed list");
                   vcDecode (li->listCodec, nBits, vf->codecBuf, li->buffer);
@@ -1069,7 +1049,10 @@ char oneReadLine (OneFile *vf)
                 }
 
               if (li->fieldType[li->listField] == oneINT_LIST)
-                decompactIntList (vf, li, listLen, li->buffer, usedBytes);
+                { li->buffer = &((I64*)li->buffer)[-1] ;
+		  ++listLen ;
+		  decompactIntList (vf, listLen, li->buffer, usedBytes);
+		}
             }
 
           if (li->fieldType[li->listField] == oneSTRING)
@@ -1205,13 +1188,6 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 
       if (isalpha(peek))
         break;    // loop exit at standard data line
-
-      //      else if (peek == '!')  // hack to insert a count of 4 for vSTRING_LIST
-      //        { getc(vf->f);
-      //          ungetc('4',vf->f);
-      //          ungetc(' ',vf->f);
-      //          ungetc('!',vf->f);
-      //        }
       
       oneReadLine(vf);  // can't fail because we checked file eof already
 
@@ -1264,10 +1240,10 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    else if (isDynamic)
 	      { int oldMax = vf->nFieldMax ;
 		switch (oneChar(vf,0))
-		  {
-		  case 'D': schemaAddInfoFromLine (vs, vf, t) ; break ;
-		  case 'C': schemaAddInfoFromLine (vs, vf, t) ; break ; // perhaps remove?
-		  default: parseError (vf, "schema defn line must have first char D") ;
+		  { // used to also allow C for field compression
+		  case 'G': schemaAddInfoFromLine (vs, vf, t, true) ; break ; // group type
+		  case 'D': schemaAddInfoFromLine (vs, vf, t, false) ; break ; 
+		  default: parseError (vf, "schema defn line must have first char G or D") ;
 		  }
 		vi = vs->info[(int)t] ;
 		vf->info[(int)t] = infoDeepCopy (vi) ;
@@ -1275,8 +1251,6 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 		  { U8 x = vi->binaryTypePack ;
 		    vf->binaryTypeUnpack[x] = t ;
 		    vf->binaryTypeUnpack[x+1] = t ;
-		    vf->binaryTypeUnpack[x+2] = t ;
-		    vf->binaryTypeUnpack[x+3] = t ;
 		  }
 		if (!vf->objectType && vs->objectType) vf->objectType = vs->objectType ;
 		if (!vf->groupType && vs->groupType) vf->groupType = vs->groupType ;
@@ -1522,9 +1496,9 @@ bool oneGotoObject (OneFile *vf, I64 i)
     if (0 <= i && i < vf->info[(int) vf->objectType]->given.count)
       if (fseek (vf->f, ((I64 *) vf->info['&']->buffer)[i], SEEK_SET) == 0)
         { vf->object = i;
-          return (true);
+          return true ;
         }
-  return (false);
+  return false ;
 }
 
 I64 oneGotoGroup (OneFile *vf, I64 i)
@@ -1532,10 +1506,10 @@ I64 oneGotoGroup (OneFile *vf, I64 i)
     if (0 <= i && i < vf->info[(int) vf->groupType]->given.count)
       { I64 *groupIndex = (I64 *) vf->info['*']->buffer;
         if (!oneGotoObject(vf,groupIndex[i]))
-	  return (0);
+	  return 0 ;
         return (groupIndex[i+1] - groupIndex[i]);
       }
-  return (0);
+  return 0 ;
 }
 
 /***********************************************************************************
@@ -1610,22 +1584,26 @@ OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *fileType,
   return vf;
 }
 
+static inline void infoCopy (OneSchema *vs, OneFile *vfIn, char t, bool isGroupType)
+{
+  OneInfo *vi = vfIn->info[(int)t] ;
+  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, t, isGroupType) ;
+  if (vi->comment) vs->info[(int)t]->comment = strdup (vi->comment) ;
+}
+
 OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, bool isBinary, int nthreads)
 {
   // first build a schema from vfIn
   OneSchema *vs0 = oneSchemaCreateDynamic (vfIn->fileType, vfIn->subType) ;
   OneSchema *vs = vs0->nxt ; // this is the actual schema - vs0 is for the header
-  int i = vfIn->objectType ;
-  OneInfo *vi = vfIn->info[i] ; // need to list the object type first
-  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i) ;
-  if (vi->comment) vs->info[i]->comment = strdup (vi->comment) ;
-  for (i = 'A' ; i <= 'z' ; ++i)
-    if (isalnum(i) && vfIn->info[i] && i != vfIn->objectType)
-      { OneInfo *vi = vfIn->info[i] ;
-	schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, i) ;
-	if (vi->comment) vs->info[i]->comment = strdup (vi->comment) ;
-      }
 
+  if (vfIn->groupType) infoCopy (vs, vfIn, vfIn->groupType, true) ; // first the group
+  infoCopy (vs, vfIn, vfIn->objectType, false) ; // next the object
+  int i ; // then the rest of the record lines
+  for (i = 'A' ; i <= 'z' ; ++i)
+    if (isalpha(i) && vfIn->info[i] && i != vfIn->groupType && i != vfIn->objectType)
+      infoCopy (vs, vfIn, (char)i, false) ;
+      
   // use it to open the file
   OneFile *vf = oneFileOpenWriteNew (path, vs0, *vfIn->subType ? vfIn->subType : vfIn->fileType,
 				     isBinary, nthreads);
@@ -1662,7 +1640,7 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, bool isBinary, i
 
 bool oneFileCheckSchema (OneFile *vf, char *textSchema)
 {
-  char * fixedText = schemaFixNewlines (textSchema) ;
+  char      *fixedText = schemaFixNewlines (textSchema) ;
   OneSchema *vs = oneSchemaCreateFromText (fixedText) ;
   free (fixedText) ;
   OneSchema *vs0 = vs ; // need to keep the root to destroy the full schema
@@ -1680,7 +1658,7 @@ bool oneFileCheckSchema (OneFile *vf, char *textSchema)
   bool isMatch = true ;
   int  i, j ;
 
-  for (i = 'A' ; i <= 'Z' ; ++i)
+  for (i = 'A' ; i <= 'z' ; ++i)
     if (vs->info[i])
       { OneInfo *vis = vs->info[i] ;
 	OneInfo *vif = vf->info[i] ;
@@ -1720,8 +1698,7 @@ static bool addProvenance(OneFile *vf, OneProvenance *from, int n)
 
   if (n == 0)
     return (false);
-  if (vf->isHeaderOut)
-    die("ONE error: can't addProvenance after writing header");
+  assert (!vf->isHeaderOut) ;
 
   l->accum.count += n;
 
@@ -1775,8 +1752,7 @@ static bool addReference(OneFile *vf, OneReference *from, int n, bool isDeferred
 
   if (n == 0)
     return false;
-  if (vf->isHeaderOut)
-    die ("ONE error: can't addReference after writing header");
+  assert (!vf->isHeaderOut) ;
 
   if (isDeferred)
     { l = vf->info['>'];
@@ -1833,7 +1809,10 @@ static void writeInfoSpec (OneFile *vf, char ci)
   int i ;
   OneInfo *vi = vf->info[(int) ci] ;
 
-  fprintf (vf->f, "\n~ D %c %d", ci, vi->nField) ;
+  if (ci == vf->groupType)
+    fprintf (vf->f, "\n~ G %c %d", ci, vi->nField) ;
+  else
+    fprintf (vf->f, "\n~ D %c %d", ci, vi->nField) ;
   for (i = 0 ; i < vi->nField ; ++i)
     fprintf (vf->f, " %d %s",
 	     (int)strlen(oneTypeString[vi->fieldType[i]]), oneTypeString[vi->fieldType[i]]) ;
@@ -1845,10 +1824,8 @@ void oneWriteHeader (OneFile *vf)
 { int         i,n;
   OneInfo   *li;
 
-  if (!vf->isWrite)
-    die ("ONE error: trying to write header to a file open for reading");
-  if (vf->line > 0)
-    die ("ONE error: cannot write header after writing one or more data lines");
+  assert (vf->isWrite) ;
+  assert (vf->line == 0) ;
 
   vf->isLastLineBinary = false; // header is in ASCII
 
@@ -1894,8 +1871,8 @@ void oneWriteHeader (OneFile *vf)
   // write the schema into the header - no need for file type, version etc. since already given
   if (vf->groupType) writeInfoSpec (vf, vf->groupType) ;
   if (vf->objectType) writeInfoSpec (vf, vf->objectType) ;
-  for (i = 'A' ; i <= 'Z' ; ++i)
-    if (vf->info[i] && i != vf->objectType)
+  for (i = 'A' ; i <= 'z' ; ++i)
+    if (isalnum(i) && vf->info[i] && i != vf->objectType && i != vf->groupType)
       writeInfoSpec (vf, i) ;
 
   // any header text on '.' lines
@@ -1990,27 +1967,20 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 
   // fprintf (stderr, "write line %d type %c char %c\n", vf->line, t, oneChar(vf,0)) ;
   
-  if (!vf->isWrite)
-    die ("ONE write error: trying to write a line to a file open for reading");
-  if (vf->isFinal && isalpha(t))
-    die ("ONE write error: cannot write more data after counts are finalized %c", t);
+  assert (vf->isWrite) ;
+  assert (!vf->isFinal || !isalpha(t)) ;
 
   li = vf->info[(int) t];
-  if (li == NULL)
-    die ("ONE write error: line type %c not present in file spec %s ", t, vf->fileType);
+  assert (li) ;
 
   vf->line  += 1;
   li->accum.count += 1;
-  if (t == vf->groupType)
-    updateGroupCount(vf, true);
+  if (t == vf->groupType) updateGroupCount(vf, true);
 
   if (li->listEltSize > 0)  // need to write the list
-    { if (listLen >= 0)
-	vf->field[li->listField].len = listLen ;
-      else
-	die ("ONE write error: listLen %" PRId64 " must be non-negative", listLen) ;
-      if (listBuf == NULL)
-	listBuf = li->buffer;
+    { assert (listLen >= 0) ;
+      vf->field[li->listField].len = listLen ;
+      if (listBuf == NULL) listBuf = li->buffer;
     }
 
   // BINARY - block write and optionally compress
@@ -2036,13 +2006,9 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
               lx->bufSize = ns;
             }
           ((I64 *) lx->buffer)[vf->object] = vf->byte;
-#define CHECK_INDEX
-#ifdef CHECK_INDEX
-          { if (ftello (vf->f) != vf->byte)
-	      die ("ONE write error: byte offset index error") ;
-	  }
-#endif
-          vf->object += 1;
+          assert (ftello (vf->f) == vf->byte) ;
+
+          ++vf->object ;
         }
       if (t == vf->groupType)
         { OneInfo *lx = vf->info['*'];
@@ -2072,17 +2038,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
       // write the fields
 
       if (li->nField > 0)
-	{ 
-#ifdef IN_PROGRESS
-	  vf->byte += writeCompressedFields (vf->f, vf->field, li) ;
-#else
-	  I64 fieldSize = li->nField*sizeof(OneField);
-	  if (fwrite (vf->field, fieldSize, 1, vf->f) != 1)
-	    die ("ONE write error: write fields: t %c, nField %d, fieldSize %" PRId64 "",
-		 t, li->nField, fieldSize);
-	  vf->byte += fieldSize ;
-#endif
-	}
+	vf->byte += writeCompressedFields (vf->f, vf->field, li) ;
 
       // write the list if there is one
 
@@ -2095,7 +2051,9 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
             li->accum.max = listLen;
 	  
 	  if (li->fieldType[li->listField] == oneINT_LIST)
-	    { listBuf = compactIntList (vf, li, listLen, listBuf, &listBytes) ;
+	    { vf->byte += ltfWrite (*(I64*)listBuf, vf->f) ;
+	      listBuf = compactIntList (vf, li, listLen, listBuf, &listBytes) ;
+	      --listLen ;
 	      fputc ((char)listBytes, vf->f) ;
 	      vf->byte++ ;
 	    }
@@ -2112,11 +2070,10 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 		  vf->codecBuf     = new (vf->codecBufSize, void);
 		}
 	      nBits = vcEncode (li->listCodec, listSize, listBuf, vf->codecBuf);
-	      if (fwrite (&nBits, sizeof(I64), 1, vf->f) != 1)
-		die ("ONE write error: failed to write list nBits");
+	      vf->byte += ltfWrite (nBits, vf->f) ;
 	      if (fwrite (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
 		die ("ONE write error: failed to write compressed list");
-	      vf->byte += sizeof(I64) + ((nBits+7) >> 3);
+	      vf->byte += ((nBits+7) >> 3) ;
 	    }
 	  else
 	    { if (fwrite (listBuf, listSize, 1, vf->f) != 1)
@@ -2442,8 +2399,7 @@ void oneFinalizeCounts(OneFile *vf)
 
 void oneFileClose (OneFile *vf)
 {
-  if (vf->share < 0)
-    die ("ONE file error: cannot call oneFileClose on a slave OneFile");
+  assert (vf->share >= 0) ;
 
   if (vf->isWrite)
     {
@@ -3418,7 +3374,124 @@ int vcDecode(OneCodec *vc, int ilen, char *ibytes, char *obytes)
 
   return (o - (uint8 *) obytes);
 }
-  
+
+//////////////////////////////////////////////////////////////////////////////////////
+//
+// integer compression for write/read of fields
+//
+// top bit of first byte: number is negative
+// second bit: one-byte: next six bits give number (make negative if top bit set)
+// third bit: two-byte: next 13 bits give number (make negative if top bit set)
+// if second and third bits are not set, remaining 5 bits give number of bytes to read
+
+static inline int intGet (unsigned char *u, I64 *pval)
+{
+  switch (u[0] >> 5)
+    {
+    case 2: case 3: // single byte positive
+      *pval = (I64) (u[0] & 0x3f) ; return 1 ;
+    case 6: case 7: // single byte negative
+      *pval =  (I64) u[0] | 0xffffffffffffff00 ; return 1 ;
+    case 1: // two bytes positive
+      *pval = (I64) (u[0] & 0x1f) << 8 | (I64)u[1] ; return 2 ;
+      *pval = - ((I64) (u[0] & 0x1f) << 8 | (I64)u[1]) ; return 2 ;
+    case 0:
+      switch (u[0] & 0x07)
+	{
+	case 0: die ("int packing error") ;
+	case 1: *pval = *(I64*)(u+1) & 0x0000000000ffff ; return 3 ;
+	case 2: *pval = *(I64*)(u+1) & 0x00000000ffffff ; return 4 ;
+	case 3: *pval = *(I64*)(u+1) & 0x000000ffffffff ; return 5 ;
+	case 4: *pval = *(I64*)(u+1) & 0x0000ffffffffff ; return 6 ;
+	case 5: *pval = *(I64*)(u+1) & 0x00ffffffffffff ; return 7 ;
+	case 6: *pval = *(I64*)(u+1) & 0xffffffffffffff ; return 8 ;
+	case 7: *pval = *(I64*)(u+1) ; return 9 ;
+	}
+    case 4:
+      switch (u[0] & 0x07)
+	{
+	case 0: die ("int packing error") ;
+	case 1: *pval = *(I64*)(u+1) | 0xffffffffffff0000 ; return 3 ;
+	case 2: *pval = *(I64*)(u+1) | 0xffffffffff000000 ; return 4 ;
+	case 3: *pval = *(I64*)(u+1) | 0xffffffff00000000 ; return 5 ;
+	case 4: *pval = *(I64*)(u+1) | 0xffffff0000000000 ; return 6 ;
+	case 5: *pval = *(I64*)(u+1) | 0xffff000000000000 ; return 7 ;
+	case 6: *pval = *(I64*)(u+1) | 0xff00000000000000 ; return 8 ;
+	case 7: *pval = *(I64*)(u+1) ; return 9 ;
+	}
+    }
+  return 0 ; // shouldn't get here, but needed for compiler happiness
+}
+
+static inline int intPut (unsigned char *u, I64 val)
+{
+  if (val >= 0)
+    { if (     !(val & 0xffffffffffffffc0)) { *u = val | 0x40 ;  return 1 ; }
+      else if (!(val & 0xffffffffffffe000)) { *u++ = (val >> 8) | 0x20 ; *u = val & 0xff ; return 2 ; }
+      else if (!(val & 0xffffffffffff0000)) { *u++ = 1 ; *(I64*)u = val ; return 3 ; }
+      else if (!(val & 0xffffffffff000000)) { *u++ = 2 ; *(I64*)u = val ; return 4 ; }
+      else if (!(val & 0xffffffff00000000)) { *u++ = 3 ; *(I64*)u = val ; return 5 ; }
+      else if (!(val & 0xffffff0000000000)) { *u++ = 4 ; *(I64*)u = val ; return 6 ; }
+      else if (!(val & 0xffff000000000000)) { *u++ = 5 ; *(I64*)u = val ; return 7 ; }
+      else if (!(val & 0xff00000000000000)) { *u++ = 6 ; *(I64*)u = val ; return 8 ; }
+      else                                  { *u++ = 7 ; *(I64*)u = val ; return 9 ; }
+    }
+  else
+    { if (     !(~val & 0xffffffffffffffc0)) { *u = val | 0x40 ;  return 1 ; }
+      //     else if (!(~val & 0xffffffffffffe000)) { *u++ = (val >> 8) | 0x20 ; *u = val & 0xff ; return 2 ; }
+      else if (!(~val & 0xffffffffffff0000)) { *u++ = 0x81 ; *(I64*)u = val ; return 3 ; }
+      else if (!(~val & 0xffffffffff000000)) { *u++ = 0x82 ; *(I64*)u = val ; return 4 ; }
+      else if (!(~val & 0xffffffff00000000)) { *u++ = 0x83 ; *(I64*)u = val ; return 5 ; }
+      else if (!(~val & 0xffffff0000000000)) { *u++ = 0x84 ; *(I64*)u = val ; return 6 ; }
+      else if (!(~val & 0xffff000000000000)) { *u++ = 0x85 ; *(I64*)u = val ; return 7 ; }
+      else if (!(~val & 0xff00000000000000)) { *u++ = 0x86 ; *(I64*)u = val ; return 8 ; }
+      else                                   { *u++ = 0x87 ; *(I64*)u = val ; return 9 ; }
+    }
+}
+
+static inline I64 ltfRead (FILE *f)
+{
+  unsigned char u[16] ;
+  I64 val ;
+
+  u[0] = getc (f) ;
+  if (u[0] & 0x40)
+    { intGet (u, &val) ;
+      //      printf ("read %d n 1 u %02x\n", (int)val, u[0]) ;
+    }
+  else if (u[0] & 0x20)
+    { u[1] = getc (f) ; intGet (u, &val) ;
+      //      printf ("read %d n 2 u %02x %02x\n", (int)val, u[0], u[1]) ;
+    }
+  else
+    { int n = 1 + (u[0] & 0x0f) ;
+      unsigned char *v = &u[1] ;
+      while (n--) *v++ = getc(f) ;
+      n = intGet (u, &val) ;
+      //      printf ("read %d n %d u", (int)val, n) ;
+      //      { int i ; for (i = 0 ; i< n ; ++i) printf (" %02x", u[i]) ; putchar ('\n') ; }
+    }
+
+  return val ;
+}
+
+static inline int ltfWrite (I64 x, FILE *f)
+{
+  unsigned char u[16] ;
+  int n = intPut (u, x) ;
+
+  //  printf ("write %d n %d u", (int)x, n) ;
+  //  { int i ; for (i = 0 ; i< n ; ++i) printf (" %02x", u[i]) ; putchar ('\n') ; }
+
+  fwrite (u, 1, n, f) ;
+  return n ;
+}
+
+#if defined(TEST_LTF) || defined(TEST_INT)
+
+// these are the original routines from James Bonfield on which this is based
+// incorporated here for credit and for comparisons in the TEST functionality
+
 /***********************************************************************************
  *
  *    LTF encoding for integers
@@ -3454,8 +3527,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
  *
  **********************************************************************************/
-
-#ifdef IN_PROGRESS
 
 /* 64-bit itf8 variant */
 
@@ -3594,116 +3665,6 @@ static inline int ltf8_get(char *cp, int64_t *val_p) {
     }
 }
 
-// top bit of first byte: number is negative
-// second bit: one-byte: next six bits give number (make negative if top bit set)
-// third bit: two-byte: next 13 bits give number (make negative if top bit set)
-// if second and third bits are not set, remaining 5 bits give number of bytes to read
-
-static inline int intGet (unsigned char *u, I64 *pval)
-{
-  switch (u[0] >> 5)
-    {
-    case 2: case 3: // single byte positive
-      *pval = (I64) (u[0] & 0x3f) ; return 1 ;
-    case 6: case 7: // single byte negative
-      *pval =  (I64) u[0] | 0xffffffffffffff00 ; return 1 ;
-    case 1: // two bytes positive
-      *pval = (I64) (u[0] & 0x1f) << 8 | (I64)u[1] ; return 2 ;
-      *pval = - ((I64) (u[0] & 0x1f) << 8 | (I64)u[1]) ; return 2 ;
-    case 0:
-      switch (u[0] & 0x07)
-	{
-	case 0: die ("int packing error") ;
-	case 1: *pval = *(I64*)(u+1) & 0x0000000000ffff ; return 3 ;
-	case 2: *pval = *(I64*)(u+1) & 0x00000000ffffff ; return 4 ;
-	case 3: *pval = *(I64*)(u+1) & 0x000000ffffffff ; return 5 ;
-	case 4: *pval = *(I64*)(u+1) & 0x0000ffffffffff ; return 6 ;
-	case 5: *pval = *(I64*)(u+1) & 0x00ffffffffffff ; return 7 ;
-	case 6: *pval = *(I64*)(u+1) & 0xffffffffffffff ; return 8 ;
-	case 7: *pval = *(I64*)(u+1) ; return 9 ;
-	}
-    case 4:
-      switch (u[0] & 0x07)
-	{
-	case 0: die ("int packing error") ;
-	case 1: *pval = *(I64*)(u+1) | 0xffffffffffff0000 ; return 3 ;
-	case 2: *pval = *(I64*)(u+1) | 0xffffffffff000000 ; return 4 ;
-	case 3: *pval = *(I64*)(u+1) | 0xffffffff00000000 ; return 5 ;
-	case 4: *pval = *(I64*)(u+1) | 0xffffff0000000000 ; return 6 ;
-	case 5: *pval = *(I64*)(u+1) | 0xffff000000000000 ; return 7 ;
-	case 6: *pval = *(I64*)(u+1) | 0xff00000000000000 ; return 8 ;
-	case 7: *pval = *(I64*)(u+1) ; return 9 ;
-	}
-    }
-  return 0 ; // shouldn't get here, but needed for compiler happiness
-}
-
-static inline int intPut (unsigned char *u, I64 val) // in progress
-{
-  if (val >= 0)
-    { if (     !(val & 0xffffffffffffffc0)) { *u = val | 0x40 ;  return 1 ; }
-      else if (!(val & 0xffffffffffffe000)) { *u++ = (val >> 8) | 0x20 ; *u = val & 0xff ; return 2 ; }
-      else if (!(val & 0xffffffffffff0000)) { *u++ = 1 ; *(I64*)u = val ; return 3 ; }
-      else if (!(val & 0xffffffffff000000)) { *u++ = 2 ; *(I64*)u = val ; return 4 ; }
-      else if (!(val & 0xffffffff00000000)) { *u++ = 3 ; *(I64*)u = val ; return 5 ; }
-      else if (!(val & 0xffffff0000000000)) { *u++ = 4 ; *(I64*)u = val ; return 6 ; }
-      else if (!(val & 0xffff000000000000)) { *u++ = 5 ; *(I64*)u = val ; return 7 ; }
-      else if (!(val & 0xff00000000000000)) { *u++ = 6 ; *(I64*)u = val ; return 8 ; }
-      else                                  { *u++ = 7 ; *(I64*)u = val ; return 9 ; }
-    }
-  else
-    { if (     !(~val & 0xffffffffffffffc0)) { *u = val | 0x40 ;  return 1 ; }
-      //     else if (!(~val & 0xffffffffffffe000)) { *u++ = (val >> 8) | 0x20 ; *u = val & 0xff ; return 2 ; }
-      else if (!(~val & 0xffffffffffff0000)) { *u++ = 0x81 ; *(I64*)u = val ; return 3 ; }
-      else if (!(~val & 0xffffffffff000000)) { *u++ = 0x82 ; *(I64*)u = val ; return 4 ; }
-      else if (!(~val & 0xffffffff00000000)) { *u++ = 0x83 ; *(I64*)u = val ; return 5 ; }
-      else if (!(~val & 0xffffff0000000000)) { *u++ = 0x84 ; *(I64*)u = val ; return 6 ; }
-      else if (!(~val & 0xffff000000000000)) { *u++ = 0x85 ; *(I64*)u = val ; return 7 ; }
-      else if (!(~val & 0xff00000000000000)) { *u++ = 0x86 ; *(I64*)u = val ; return 8 ; }
-      else                                   { *u++ = 0x87 ; *(I64*)u = val ; return 9 ; }
-    }
-}
-
-static inline I64 ltfRead (FILE *f)
-{
-  unsigned char u[16] ;
-  I64 val ;
-
-  u[0] = getc (f) ;
-  if (u[0] & 0x40)
-    { intGet (u, &val) ;
-      //      printf ("read %d n 1 u %02x\n", (int)val, u[0]) ;
-    }
-  else if (u[0] & 0x20)
-    { u[1] = getc (f) ; intGet (u, &val) ;
-      //      printf ("read %d n 2 u %02x %02x\n", (int)val, u[0], u[1]) ;
-    }
-  else
-    { int n = 1 + (u[0] & 0x0f) ;
-      unsigned char *v = &u[1] ;
-      while (n--) *v++ = getc(f) ;
-      n = intGet (u, &val) ;
-      //      printf ("read %d n %d u", (int)val, n) ;
-      //      { int i ; for (i = 0 ; i< n ; ++i) printf (" %02x", u[i]) ; putchar ('\n') ; }
-    }
-
-  return val ;
-}
-
-static inline int ltfWrite (I64 x, FILE *f)
-{
-  unsigned char u[16] ;
-  int n = intPut (u, x) ;
-
-  //  printf ("write %d n %d u", (int)x, n) ;
-  //  { int i ; for (i = 0 ; i< n ; ++i) printf (" %02x", u[i]) ; putchar ('\n') ; }
-
-  fwrite (u, 1, n, f) ;
-  return n ;
-}
-
-#if defined(TEST_LTF) || defined(TEST_INT)
-
 #include <sys/resource.h>
 #ifndef RUSAGE_SELF     /* to prevent "RUSAGE_SELF redefined" gcc warning, fixme if this is more intricate */
 #define RUSAGE_SELF 0
@@ -3831,8 +3792,6 @@ int main (int argc, char *argv[])
   timeUpdate (stdout) ;
 }
 #endif // TEST_LTF
-
-#endif // IN_PROGRESS
 
 /***********************************************************************************
  *

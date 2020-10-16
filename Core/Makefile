@@ -2,7 +2,7 @@
 
 DEST_DIR = ~/bin
 
-#CFLAGS= -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
+#CFLAGS= -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing -DNDEBUG # NDEBUG drops asserts
 CFLAGS= -g -Wall -Wextra -Wno-unused-result -fno-strict-aliasing  # for debugging
 
 LIB = libONE.a
