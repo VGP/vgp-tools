@@ -72,22 +72,26 @@ a set of objects, one per primary file type.  Valid lines in this file are:
 ```
    P <primary file type>   // a string of length 3
    S <secondary file type> // a string of length 3 - any number of these
-   D <char> <field_list>   // definition of line with uncompressed fields
-   C <char> <field_list>   // definition of line with compressed fields
+   G <char> <field_list>   // definition of group defining line - optional, at most one per P line
+   O <char> <field_list>   // definition of object defining line - once and only once per P line
+   D <char> <field_list>   // definition of standard line
 ```
 
-`<char>` must be a lower or upper case letter.  The first upper case letter definition determines 
-the objects in this file type. A maximum of one lower case letter determines the group type. 
-`<field_list>` is a list of field types from: `CHAR, INT, REAL, STRING, INT_LIST, REAL_LIST, STRING_LIST, DNA`.
-By convention comments on each line explain the definition.  
+`<char>` must be a lower or upper case letter.  The O line specifies
+the records that defines objects in this file type. D lines define other record types used within objects. If objects are
+grouped then the G line specifies the records that demarcate groups. For
+each of O, G and D, `<field_list>` is a list of field types from:
+`CHAR, INT, REAL, STRING, INT_LIST, REAL_LIST, STRING_LIST, DNA` that
+specify the required fields on a record initiated by the `<char>`. 
+Any additional text on the line is a comment.  By convention comments in schema files explain the definitions.
 Example, with lists and strings preceded by their length in OneCode style:
 
 ```
    P 3 seq                            this is a sequence file
-   D S 1 3 DNA                        the DNA sequence - each S line starts an object
+   O S 1 3 DNA                        the DNA sequence - each S line starts an object
    D Q 1 6 STRING                     the phred encoded quality score + ASCII 33
-   C N 4 4 REAL 4 REAL 4 REAL 4 REAL  signal to noise ratio in A, C, G, T channels
-   D g 2 3 INT 6 STRING               group designator: number of objects, name
+   D N 4 4 REAL 4 REAL 4 REAL 4 REAL  signal to noise ratio in A, C, G, T channels
+   G g 2 3 INT 6 STRING               group designator: number of objects, name
 ```
 
 The `oneSchemaCreateFromText()` alternative writes the text to a temp file and reads it with 
@@ -149,7 +153,7 @@ used to access the information of the line most recently read.
 ```
 Access field information.  The index x of a list object is not required as there is
 only one list per line, stored in ->buffer.
-A "string list" is implicitly supported, get the first string with oneString, and
+A "string list" is implicitly supported: get the first string with oneString, and
 subsequent strings sequentially with oneNextString, e.g.:
 
 ```
@@ -176,7 +180,7 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn,
 ```
 Create a new oneFile that will be written to 'path'.  For the 'New' variant supply
 the file type, subtype (if non-zero), and whether it should be binary or ASCII.
-For the 'From' variant, specify binary or ASCII, schema and all other header 
+For the 'From' variant, specify binary or ASCII, then the schema and all other header 
 information is inherited from 'vfIn'.
 
 If nthreads > 1 then nthreads OneFiles are generated as an array and the pointer
@@ -245,17 +249,17 @@ Goto i'th object in the file. This only works on binary files, which have an ind
 ```
 I64  oneGotoGroup  (OneFile *vf, I64 i);
 ```
-Goto the first object in group i. Return the size (in objects) of the group, or 0
-if an error (i out of range or vf has not group type). Only works for binary files.
+Goto the first object in group i. Return the size (number of objects) of the group, or 0
+if an error (i out of range or vf does not have group type defined). Only works for binary files.
 
 ```
 void oneUserBuffer (OneFile *vf, char lineType, void *buffer);
 ```
 A buffer is used to capture the list element of each line type that has one.
-This routine allows you to reassign the buffer to one you've allocated, or
+This routine allows you to reassign the buffer to one you have allocated, or
 to revert to a default system buffer if 'buffer' = NULL.  The previous buffer
 (if any) is freed.  The user must ensure that a buffer they supply is large
-enough. BTW, this buffer is overwritten with each new line read of the given type.
+enough. By the way, this buffer is overwritten with each new line read of the given type.
 
 # DATA TYPES
 
@@ -266,7 +270,8 @@ typedef unsigned char U8;
 typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING, oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
 static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING", "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" };
 ```
-Basic data types.
+Basic data types.  Integers are all as 64-bit, and reals are stored as
+doubles (8 byte).
 
 ```
 typedef union
@@ -305,7 +310,11 @@ Natural data structures for programmatic access to information in the header. No
 typedef void OneCodec; // forward declaration of opaque type for compression codecs
 extern  OneCodec *DNAcodec;
 ```
-OneCodecs are a private package for binary one file compression. DNAcodec is a special pre-existing compressor one should use for DNA. It compresses every base to 2-bits, where any non-acgt letter is effectively converted to an a.  DNA compression is case insensitive, but decompression always delivers lower-case.
+OneCodecs are a private package for binary one file
+compression. DNAcodec is a special pre-existing compressor one should
+use for DNA. It compresses every base to 2-bits, where any non-acgt
+letter is effectively converted to an a.  DNA compression is case
+insensitive, with decompression always delivering lower case.
 
 ```
 typedef struct
@@ -328,7 +337,7 @@ And, finally, the main OneFile type - this is the primary handle used by the end
 ```
 typedef struct
   {
-    // these fielde may be set by the user
+    // these fields may be set by the user
 
     BOOL           isCheckString;      // set if want to validate strings char by char - slows down reading
     I64            codecTrainingSize;  // number of bytes to see before building codec - default 100k - can set before writing
@@ -369,18 +378,24 @@ typedef struct
 ```
 The ASCII prolog contains the type, subtype, provenance, reference, and deferred lines and schema
 in the ASCII format.  The ONE count statistic lines for each data line type are found
-in the footer along with binary ';' and ':' lines that encode their compressors as
+in the footer along with binary ';' lines that encode their compressors as
 needed.  The footer also contains binary '&' and '*' lines that encode the object index
 and group indices, respectively.
 
 ```
 <Binary line> <- <Binary line code + tags> <fields> [<list data>]
 ```
-Binary line codes are >= 128.  The low two order bits of these are flags,
-so each binary-encoded line type has 4 codes and a table maps these to the ASCII code.
-Bit 0 indicates if the fields of the line type are compressed, and Bit 1 indicates if
-the list data (if present) is compressed.
+Binary line codes are >= 128.  The low bit of these is a flag denoting
+whether any list in the line is compressed with a codec, so each binary-encoded line type has two codes and a table maps these to the ASCII code.
 
-If a field is a list, then the field array element for that field is the list's length
-where the low 56 bits encode length, and the high 8 bits encode the # of high-order
-0-bytes in every list element if an INT_LIST (0 otherwise).
+If a field is a list, then the field array element for that field is
+the list's length, and the list itself is stored separately following
+all the fields.
+
+Integer lists (type INT_LIST) are stored with a custom compaction step
+that first takes differences between an element and the preceding
+element for all elements after the first, and second only uses the
+number of bytes needed to capture the information in the remaining
+differences.  For example, if all the differences are between -128 and
+127 then only one byte will be used to store each of them. 
+

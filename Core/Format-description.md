@@ -219,7 +219,7 @@ and provenance lines.  In a rule:
 
 Every data line has a type designated by a letter. The types of data
 lines permitted depend on the schema associated to the primary file type.
-At most one data line type can be designated as a *group type*.
+At most one data line type can be used to start a new *group* of objects.
 
 
 

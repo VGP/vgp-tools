@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Oct 16 01:23 2020 (rd109)
+ * Last edited: Oct 17 00:20 2020 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -121,19 +121,21 @@ static void infoDestroy (OneInfo *vi)
 
 static int listEltSize[9] = { 0, 0, 0, 0, 1, sizeof(I64), sizeof(double), 1, 1 } ;
 
-static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a, char t, bool isGroupType)
+static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a, char t, char type)
 {
   // use during the bootstrap, while parsing .def files, and while parsing ~ lines in other files
   
   if (vs->info[(int) t])
     die ("duplicate schema specification for linetype %c in filetype %s", t, vs->primary) ;
-  if (isalpha(t) && isGroupType)
+  if (isalpha(t) && type == 'G')
     { if (vs->groupType) die ("second group type in schema for filetype %s", vs->primary) ;
       vs->groupType = t ;
     }
-  else if (!vs->objectType && isalpha(t))
-    vs->objectType = t ;
-  else if (!isalpha(t) && *vs->primary) // allow non-alphabetic lines in header
+  else if (isalpha(t) && type == 'O')
+    { if (vs->objectType) die ("second object type in schema for filetype %s", vs->primary) ;
+      vs->objectType = t ;
+    }
+  else if (*vs->primary && (type != 'D' || !isalpha(t))) // allow non-alphabetic lines in header
     die ("non-alphabetic linetype %c (ascii %d) in schema for filetype %s",t,t,vs->primary) ;
 
   if (n > vs->nFieldMax) vs->nFieldMax = n ;
@@ -157,16 +159,15 @@ static void schemaAddInfoFromArray (OneSchema *vs, int n, OneType *a, char t, bo
   if (t >= 'A' && t <= 'Z') vi->binaryTypePack = ((t-'A') << 1) | (char) 0x80 ;
   else if (t >= 'a' && t <= 'z') vi->binaryTypePack = ((26+t-'a') << 1) | (char) 0x80 ;
   else if (t == ';') vi->binaryTypePack = (52 << 2) | (char) 0x80 ;
-  else if (t == ':') vi->binaryTypePack = (53 << 2) | (char) 0x80 ;
-  else if (t == '&') vi->binaryTypePack = (54 << 2) | (char) 0x80 ;
-  else if (t == '*') vi->binaryTypePack = (55 << 2) | (char) 0x80 ;
-  else if (t == '/') vi->binaryTypePack = (56 << 2) | (char) 0x80 ;
-  else if (t == '.') vi->binaryTypePack = (57 << 2) | (char) 0x80 ;
+  else if (t == '&') vi->binaryTypePack = (53 << 2) | (char) 0x80 ;
+  else if (t == '*') vi->binaryTypePack = (54 << 2) | (char) 0x80 ;
+  else if (t == '/') vi->binaryTypePack = (55 << 2) | (char) 0x80 ;
+  else if (t == '.') vi->binaryTypePack = (56 << 2) | (char) 0x80 ;
 
   vs->info[(int)t] = vi ;
 }
 
-static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, bool isGroupType)
+static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, char type)
 { // assumes field specification is in the STRING_LIST of the current vf line
   // need to set vi->comment separately
   
@@ -188,7 +189,7 @@ static void schemaAddInfoFromLine (OneSchema *vs, OneFile *vf, char t, bool isGr
 	     i, n, s, vf->line, t) ;
     }
 
-  schemaAddInfoFromArray (vs, n, a, t, isGroupType) ;
+  schemaAddInfoFromArray (vs, n, a, t, type) ;
 
   if (oneReadComment (vf))
     vs->info[(int)t]->comment = strdup (oneReadComment(vf)) ;
@@ -227,10 +228,9 @@ static OneSchema *schemaLoadRecord (OneSchema *vs, OneFile *vf)
       strcpy (vs->secondary[vs->nSecondary++], oneString(vf)) ;
       break ;
     case 'G': // group type
-      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), true) ;
-      break ;
-    case 'D': // standard record type - first of these in a schema is the object type
-      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), false) ;
+    case 'O': // object type
+    case 'D': // standard record type
+      schemaAddInfoFromLine (vs, vf, oneChar(vf,0), vf->lineType) ;
       break ;
     default:
       die ("unrecognized schema line %d starting with %c", vf->line, vf->lineType) ;
@@ -250,11 +250,14 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   OneFile *vf = new0 (1, OneFile) ;      // shell object to support bootstrap
   // bootstrap specification of linetypes to read schemas
   { OneInfo *vi ;
+    vi = vf->info['P'] = infoCreate (1) ;  // to define the schema for parsing a .def file
+    vi->fieldType[0] = oneSTRING ; vi->listEltSize = 1 ; vi->listField = 0 ;
+    vi = vf->info['O'] = infoCreate (2) ;  // object type specification
+    vi->fieldType[0] = oneCHAR ;
+    vi->fieldType[1] = oneSTRING_LIST ; vi->listEltSize = 1 ; vi->listField = 1 ;
     vi = vf->info['D'] = infoCreate (2) ;  // line type specification
     vi->fieldType[0] = oneCHAR ;
     vi->fieldType[1] = oneSTRING_LIST ; vi->listEltSize = 1 ; vi->listField = 1 ;
-    vi = vf->info['P'] = infoCreate (1) ;  // to define the schema for parsing a .def file
-    vi->fieldType[0] = oneSTRING ; vi->listEltSize = 1 ; vi->listField = 0 ;
     vf->info['/'] = infoCreate (0) ;       // to store comments
     vf->field = new (2, OneField) ;
   }
@@ -298,7 +301,6 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   fprintf (vf->f, "D - 1 3 INT                        binary file: offset of start of footer\n") ;
   fprintf (vf->f, "D & 1 8 INT_LIST                   binary file: object index\n") ;
   fprintf (vf->f, "D * 1 8 INT_LIST                   binary file: group index\n") ;
-  fprintf (vf->f, "D : 2 4 CHAR 6 STRING              binary file: field codec\n") ;
   fprintf (vf->f, "D ; 2 4 CHAR 6 STRING              binary file: list codec\n") ;
   fprintf (vf->f, "D / 1 6 STRING                     binary file: comment\n") ;
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
@@ -308,9 +310,10 @@ OneSchema *oneSchemaCreateFromFile (char *filename)
   // next reuse the temp file to load the schema for reading schemas
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
   fprintf (vf->f, "P 3 def                      this is the primary file type for schemas\n") ;
-  fprintf (vf->f, "D P 1 6 STRING               primary type name\n") ;
+  fprintf (vf->f, "O P 1 6 STRING               primary type name\n") ;
   fprintf (vf->f, "D S 1 6 STRING               secondary type name\n") ;
   fprintf (vf->f, "D G 2 4 CHAR 11 STRING_LIST  define linetype for groupType\n") ;
+  fprintf (vf->f, "D O 2 4 CHAR 11 STRING_LIST  define linetype for objectType\n") ;
   fprintf (vf->f, "D D 2 4 CHAR 11 STRING_LIST  define linetype for other records\n") ;
   fprintf (vf->f, "\n") ; // terminator
   if (fseek (vf->f, 0, SEEK_SET)) die ("ONE schema failure: cannot rewind tmp file") ;
@@ -456,7 +459,6 @@ static OneFile *oneFileCreate (OneSchema **vsp, char *type)
   // setup for compression
 
   vf->codecTrainingSize = 100000;
-  setCodecBuffer (vf->info[':']) ;
   setCodecBuffer (vf->info[';']) ;
   
   // determine endian of machine
@@ -1239,12 +1241,9 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	      }
 	    else if (isDynamic)
 	      { int oldMax = vf->nFieldMax ;
-		switch (oneChar(vf,0))
-		  { // used to also allow C for field compression
-		  case 'G': schemaAddInfoFromLine (vs, vf, t, true) ; break ; // group type
-		  case 'D': schemaAddInfoFromLine (vs, vf, t, false) ; break ; 
-		  default: parseError (vf, "schema defn line must have first char G or D") ;
-		  }
+		schemaAddInfoFromLine (vs, vf, t, oneChar(vf,0)) ;
+		if (oneChar(vf,0) == 'G') vf->groupType = vs->groupType ;
+		if (oneChar(vf,0) == 'O') vf->objectType = vs->objectType ;
 		vi = vs->info[(int)t] ;
 		vf->info[(int)t] = infoDeepCopy (vi) ;
 		if (vi->binaryTypePack)
@@ -1252,8 +1251,6 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 		    vf->binaryTypeUnpack[x] = t ;
 		    vf->binaryTypeUnpack[x+1] = t ;
 		  }
-		if (!vf->objectType && vs->objectType) vf->objectType = vs->objectType ;
-		if (!vf->groupType && vs->groupType) vf->groupType = vs->groupType ;
 		if (vs->nFieldMax > oldMax)
 		  { free (vf->field) ;
 		    vf->nFieldMax = vs->nFieldMax ;
@@ -1584,10 +1581,10 @@ OneFile *oneFileOpenWriteNew (const char *path, OneSchema *vs, char *fileType,
   return vf;
 }
 
-static inline void infoCopy (OneSchema *vs, OneFile *vfIn, char t, bool isGroupType)
+static inline void infoCopy (OneSchema *vs, OneFile *vfIn, char t, char type)
 {
   OneInfo *vi = vfIn->info[(int)t] ;
-  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, t, isGroupType) ;
+  schemaAddInfoFromArray (vs, vi->nField, vi->fieldType, t, type) ;
   if (vi->comment) vs->info[(int)t]->comment = strdup (vi->comment) ;
 }
 
@@ -1597,12 +1594,12 @@ OneFile *oneFileOpenWriteFrom (const char *path, OneFile *vfIn, bool isBinary, i
   OneSchema *vs0 = oneSchemaCreateDynamic (vfIn->fileType, vfIn->subType) ;
   OneSchema *vs = vs0->nxt ; // this is the actual schema - vs0 is for the header
 
-  if (vfIn->groupType) infoCopy (vs, vfIn, vfIn->groupType, true) ; // first the group
-  infoCopy (vs, vfIn, vfIn->objectType, false) ; // next the object
+  if (vfIn->groupType) infoCopy (vs, vfIn, vfIn->groupType, 'G') ; // first the group
+  infoCopy (vs, vfIn, vfIn->objectType, 'O') ; // next the object
   int i ; // then the rest of the record lines
   for (i = 'A' ; i <= 'z' ; ++i)
     if (isalpha(i) && vfIn->info[i] && i != vfIn->groupType && i != vfIn->objectType)
-      infoCopy (vs, vfIn, (char)i, false) ;
+      infoCopy (vs, vfIn, (char)i, 'D') ;
       
   // use it to open the file
   OneFile *vf = oneFileOpenWriteNew (path, vs0, *vfIn->subType ? vfIn->subType : vfIn->fileType,
@@ -1811,6 +1808,8 @@ static void writeInfoSpec (OneFile *vf, char ci)
 
   if (ci == vf->groupType)
     fprintf (vf->f, "\n~ G %c %d", ci, vi->nField) ;
+  else if (ci == vf->objectType)
+    fprintf (vf->f, "\n~ O %c %d", ci, vi->nField) ;
   else
     fprintf (vf->f, "\n~ D %c %d", ci, vi->nField) ;
   for (i = 0 ; i < vi->nField ; ++i)
