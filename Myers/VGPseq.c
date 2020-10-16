@@ -704,20 +704,6 @@ static void *fast_output_thread(void *arg)
                     }
                   break;
 
-                case ASEQ:
-                  if (c == '\n')
-                    state = AEOL;
-                  else
-                    { if (olen >= omax)
-                        { omax = omax*1.2 + 1000;
-                          line = (char *) Realloc(line,omax+1,"Reallocating line buffer");
-                          if (line == NULL)
-                            exit (1);
-                        }
-                      line[olen++] = c;
-                    }
-                  break;
-
                 case AEOL:
                   if (c == '>')
                     { oneInt(vf,0) = olen;
@@ -731,9 +717,21 @@ static void *fast_output_thread(void *arg)
                         state = HEAD;
                       else
                         state = HSKP;
+                      break;
                     }
+
+                case ASEQ:
+                  if (c == '\n')
+                    state = AEOL;
                   else
-                    state = ASEQ;
+                    { if (olen >= omax)
+                        { omax = omax*1.2 + 1000;
+                          line = (char *) Realloc(line,omax+1,"Reallocating line buffer");
+                          if (line == NULL)
+                            exit (1);
+                        }
+                      line[olen++] = c;
+                    }
                   break;
               }
             }
