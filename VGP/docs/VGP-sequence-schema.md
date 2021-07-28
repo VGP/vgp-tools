@@ -17,7 +17,7 @@ that is easy for both humans and programs to read and interpret,
 with a corresponding compressed and indexed binary version so that production
 software can be used for large scale data intensive applications.  Furthermore,
 adding and modifying data types is simply a matter of editing the simple
-specification of the schema [VGP_1_0.def](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP_1_0.def).
+specification of the schema [VGP_1_1.def](https://github.com/VGP/vgp-tools/blob/master/VGP/VGP_1_1.def).
 For descriptions of the basic principles and properties of the One-Code
 framework, we highly recommend you begin by reading the
 [top level document](https://github.com/VGP/vgp-tools/blob/master/README.md).
