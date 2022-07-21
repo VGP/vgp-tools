@@ -10,4 +10,5 @@ clean:
 	rm *.html
 
 %.html: %.md
-	pandoc -sS --toc --toc-depth=1 -o $@ $<
+	pandoc -s --toc --toc-depth=1 -o $@ $<
+# 220721 was "pandoc -sS --toc --toc-depth=1 -o $@ $<" but the -S option has gone
