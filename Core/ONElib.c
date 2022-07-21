@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Oct 17 00:20 2020 (rd109)
+ * Last edited: Mar 23 23:04 2022 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -1146,14 +1146,14 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	    OPEN_ERROR1("end of file before end of line 1") ;
 	++curLine ;
 	if (major != MAJOR)
-	  OPEN_ERROR3("minor version file %d > code %d", minor, MINOR) ;
+	  OPEN_ERROR3("major version file %d > code %d", major, MAJOR) ;
 	if (minor > MINOR)
 	  OPEN_ERROR3("minor version file %d > code %d", minor, MINOR) ;
       }
     else
       { ungetc (c, f) ;
 	if (!fileType)
-	  OPEN_ERROR3("unknown primary file type %s in header line %d", name, 1) ;
+	  OPEN_ERROR1("attempting to open a file without the type being defined") ;
 	strcpy (name, fileType) ;
       }
 
