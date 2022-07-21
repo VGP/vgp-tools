@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Sep 30 23:41 2020 (rd109)
+ * Last edited: Mar 27 22:11 2022 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -194,20 +194,21 @@ OneSchema *oneSchemaCreateFromText (char *text) ;
   //   a set of objects, one per primary file type.  Valid lines in this file are:
   //      P <primary file type>   // a string of length 3
   //      S <secondary file type> // a string of length 3 - any number of these
-  //      D <char> <field_list>   // definition of line with uncompressed fields
-  //      C <char> <field_list>   // definition of line with compressed fields
-  //   <char> must be a lower or upper case letter.  Maximum one lower case letter 
-  //     determines the group type. The first upper case letter definition determines 
-  //     the objects in this file type.
+  //      O <char> <field_list>   // definition of object type
+  //      G <char> <field_list>   // definition of group type - first field must be an int
+  //      D <char> <field_list>   // definition of line
+  //   <char> must be a lower or upper case letter.
   //   <field_list> is a list of field types from:
   //      CHAR, INT, REAL, STRING, INT_LIST, REAL_LIST, STRING_LIST, DNA
-  //   By convention comments on each line explain the definition.  
+  //      Only one list type (STRING, *_LIST or DNA) is allowed per line type.
+  //   All the D lines following an O line apply to that object type.
+  //   By convention comments on each line explain the definition.
   //   Example, with lists and strings preceded by their length in OneCode style
   //      P 3 seq                            this is a sequence file
-  //      D S 1 3 DNA                        the DNA sequence - each S line starts an object
+  //      O S 1 3 DNA                        the DNA sequence - each S line starts an object
   //      D Q 1 6 STRING                     the phred encoded quality score + ASCII 33
-  //      C N 4 4 REAL 4 REAL 4 REAL 4 REAL  signal to noise ratio in A, C, G, T channels
-  //      D g 2 3 INT 6 STRING               group designator: number of objects, name
+  //      D N 4 4 REAL 4 REAL 4 REAL 4 REAL  signal to noise ratio in A, C, G, T channels
+  //      G g 2 3 INT 6 STRING               group designator: number of objects, name
   // The ...FromText() alternative writes the text to a temp file and reads it with 
   //   oneSchemaCreateFromFile(). This allows code to set the schema.
   // Internally a schema is a linked list of OneSchema objects, with the first holding
@@ -231,7 +232,7 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *schema, char *type, int n
   //   to the first, called the master, is returned.  The other nthreads-1 files are
   //   called slaves.  The package routines are aware of when a OneFile argument is a
   //   slave or master in a parallel group.  The master recieves provenance, counts, etc.
-  //   The slaves only read data and have the virture of sharing indices and codecs with
+  //   The slaves only read data and have the virtue of sharing indices and codecs with
   //   the master if relevant.
 
 bool oneFileCheckSchema (OneFile *vf, char *textSchema) ;
