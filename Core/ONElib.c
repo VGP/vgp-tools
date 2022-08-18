@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Mar 23 23:04 2022 (rd109)
+ * Last edited: Aug 18 18:53 2022 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -1029,8 +1029,9 @@ char oneReadLine (OneFile *vf)
 	      I64 usedBytes ;
 	      if (li->fieldType[li->listField] == oneINT_LIST)
 		{ *(I64*)li->buffer = ltfRead (vf->f) ;
-		  li->buffer = &((I64*)li->buffer)[1] ;
 		  --listLen ;
+		  if (!listLen) goto doneLine ;
+		  li->buffer = &((I64*)li->buffer)[1] ;
 		  usedBytes = getc(vf->f) ;
 		}
 	      else
@@ -1060,6 +1061,8 @@ char oneReadLine (OneFile *vf)
           if (li->fieldType[li->listField] == oneSTRING)
             ((char *) li->buffer)[listLen] = '\0'; // 0 terminate
         }
+
+    doneLine:
 
       { U8 peek = getc(vf->f) ; // check if next line is a comment - if so then read it
 	ungetc(peek, vf->f) ;
@@ -2053,6 +2056,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 	    { vf->byte += ltfWrite (*(I64*)listBuf, vf->f) ;
 	      listBuf = compactIntList (vf, li, listLen, listBuf, &listBytes) ;
 	      --listLen ;
+	      if (!listLen) goto doneLine ; // finish writing this line here
 	      fputc ((char)listBytes, vf->f) ;
 	      vf->byte++ ;
 	    }
@@ -2076,8 +2080,8 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 	    }
 	  else
 	    { if (fwrite (listBuf, listSize, 1, vf->f) != 1)
-		die ("ONE write error: failed to write list field %d listLen %" PRId64 " listSize %" PRId64 " listBuf %lx",
-		     li->listField, listLen, listSize, listBuf);
+		die ("ONE write error line %" PRId64 ": failed to write list field %d listLen %" PRId64 " listSize %" PRId64 " listBuf %lx",
+		     vf->line, li->listField, listLen, listSize, listBuf);
 	      vf->byte += listSize;
 	      if (li->listCodec != NULL)
 		{ vcAddToTable (li->listCodec, listSize, listBuf);
@@ -2131,6 +2135,8 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 		}
 	    }
 	}
+
+    doneLine:
 
       vf->isLastLineBinary = true;
     }
