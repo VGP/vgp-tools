@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Aug 18 18:53 2022 (rd109)
+ * Last edited: Aug 18 23:25 2022 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -50,6 +50,7 @@ static void *mycalloc(size_t number, size_t size);    //  allocate & zero # obje
 static pthread_mutex_t mutexInit = PTHREAD_MUTEX_INITIALIZER;
 
 // forward declarations of serialisation functions lower in the file
+// RD 220818: I think that many of int below should be I64, e.g. for len, ilen etc.
 
 OneCodec *vcCreate();
 void      vcAddToTable(OneCodec *vc, int len, char *bytes);
@@ -951,6 +952,8 @@ char oneReadLine (OneFile *vf)
 
   if (vf->info['/']->bufSize) // clear the comment buffer
     *(char*)(vf->info['/']->buffer) = 0 ;
+
+  vf->nBits = 0 ;        // will use for any compressed data read in
   
   if (isAscii)           // read field by field according to ascii spec
     { int     i, j;
@@ -1026,36 +1029,30 @@ char oneReadLine (OneFile *vf)
 	      if (listLen > li->accum.max)
 		li->accum.max = listLen;
 
-	      I64 usedBytes ;
 	      if (li->fieldType[li->listField] == oneINT_LIST)
 		{ *(I64*)li->buffer = ltfRead (vf->f) ;
-		  --listLen ;
-		  if (!listLen) goto doneLine ;
-		  li->buffer = &((I64*)li->buffer)[1] ;
-		  usedBytes = getc(vf->f) ;
+		  if (listLen == 1) goto doneLine ;
+		  vf->intListBytes = getc(vf->f) ;
 		}
-	      else
-		usedBytes = li->listEltSize ;
 
 	      if (li->fieldType[li->listField] == oneSTRING_LIST) // handle as ASCII
                 readStringList (vf, t, listLen);
               else if (x & 0x1)    				  // list is compressed
-                { I64 nBits = ltfRead (vf->f) ;
-                  if (fread (vf->codecBuf, ((nBits+7) >> 3), 1, vf->f) != 1)
+                { vf->nBits = ltfRead (vf->f) ;
+                  if (fread (vf->codecBuf, ((vf->nBits+7) >> 3), 1, vf->f) != 1)
                     die ("ONE read error: fail to read compressed list");
-                  vcDecode (li->listCodec, nBits, vf->codecBuf, li->buffer);
                 }
-              else
-                { I64 listSize  = listLen * usedBytes;
+              else if (li->fieldType[li->listField] == oneINT_LIST)
+                { I64 listSize  = (listLen-1) * vf->intListBytes ;
+                  if ((I64) fread (&(((I64*)li->buffer)[1]), 1, listSize, vf->f) != listSize)
+                    die ("ONE read error: failed to read list size %" PRId64 "", listSize);
+		  decompactIntList (vf, listLen, li->buffer, vf->intListBytes);
+                }
+	      else
+                { I64 listSize  = listLen * li->listEltSize ;
                   if ((I64) fread (li->buffer, 1, listSize, vf->f) != listSize)
                     die ("ONE read error: failed to read list size %" PRId64 "", listSize);
                 }
-
-              if (li->fieldType[li->listField] == oneINT_LIST)
-                { li->buffer = &((I64*)li->buffer)[-1] ;
-		  ++listLen ;
-		  decompactIntList (vf, listLen, li->buffer, usedBytes);
-		}
             }
 
           if (li->fieldType[li->listField] == oneSTRING)
@@ -1087,6 +1084,33 @@ char *oneReadComment (OneFile *vf)
     return comment ;
   else
     return 0 ;
+}
+
+void *oneList (OneFile *vf)
+{
+  OneInfo *li = vf->info[(int) vf->lineType] ;
+
+  if (vf->nBits)
+    { if (li->fieldType[li->listField] == oneINT_LIST) // first elt is already in buffer
+	{ vcDecode (li->listCodec, vf->nBits, vf->codecBuf, (char*)&(((I64*)li->buffer)[1])) ;
+	  decompactIntList (vf, oneLen(vf), li->buffer, vf->intListBytes) ;
+	}
+      else
+	vcDecode (li->listCodec, vf->nBits, vf->codecBuf, li->buffer) ;
+      vf->nBits = 0 ; // so we don't do it again
+    }
+  
+  return li->buffer ;
+}
+
+void *oneCompressedList (OneFile *vf)
+{
+  OneInfo *li = vf->info[(int) vf->lineType] ;
+
+  if (!vf->nBits && oneLen(vf) > 0)      // need to compress
+    vcEncode (li->listCodec, oneLen(vf), vf->info[(int) vf->lineType]->buffer, vf->codecBuf);
+
+  return (void*) vf->codecBuf ;
 }
 
 /***********************************************************************************
@@ -2054,9 +2078,9 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
 	  
 	  if (li->fieldType[li->listField] == oneINT_LIST)
 	    { vf->byte += ltfWrite (*(I64*)listBuf, vf->f) ;
+	      if (listLen == 1) goto doneLine ; // finish writing this line here
 	      listBuf = compactIntList (vf, li, listLen, listBuf, &listBytes) ;
 	      --listLen ;
-	      if (!listLen) goto doneLine ; // finish writing this line here
 	      fputc ((char)listBytes, vf->f) ;
 	      vf->byte++ ;
 	    }

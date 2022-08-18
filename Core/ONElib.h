@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University, 2019
  *
  * HISTORY:
- * Last edited: Mar 27 22:11 2022 (rd109)
+ * Last edited: Aug 18 22:42 2022 (rd109)
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -167,6 +167,8 @@ typedef struct
     int    nFieldMax;
     I64    codecBufSize;
     char  *codecBuf;
+    I64    nBits;                  // number of bits of list currently in codecBuf
+    I64    intListBytes;           // number of bytes per integer in the compacted INT_LIST
     I64    linePos;                // current line position
     OneHeaderText *headerText;     // arbitrary descriptive text that goes with the header
 
@@ -243,20 +245,25 @@ bool oneFileCheckSchema (OneFile *vf, char *textSchema) ;
   // This is provided to enable a program to ensure that its assumptions about data layout
   // are satisfied.
 
-char oneReadLine (OneFile *vf);
+char oneReadLine (OneFile *vf) ;
 
   // Read the next ONE formatted line returning the line type of the line, or 0
   //   if at the end of the data section.  The content macros immediately below are
   //   used to access the information of the line most recently read.
+
+void*   oneList (OneFile *vf) ;                // lazy codec decompression if required
+void*   oneCompressedList (OneFile *vf) ;      // lazy codec compression if required
 
 #define oneInt(vf,x)        ((vf)->field[x].i)
 #define oneReal(vf,x)       ((vf)->field[x].r)
 #define oneChar(vf,x)       ((vf)->field[x].c)
 #define _LF(vf)             ((vf)->info[(int)(vf)->lineType]->listField)
 #define oneLen(vf)          ((vf)->field[_LF(vf)].len & 0xffffffffffffffll)
-#define oneString(vf)       (char *) ((vf)->info[(int) (vf)->lineType]->buffer)
-#define oneIntList(vf)      (I64 *) ((vf)->info[(int) (vf)->lineType]->buffer)
-#define oneRealList(vf)     (double *) ((vf)->info[(int) (vf)->lineType]->buffer)
+#define oneString(vf)       (char *) oneList(vf)
+#define oneDNAchar(vf)      (char *) oneList(vf)
+#define oneDNA2bit(vf)      (U8 *) oneCompressedList(vf)
+#define oneIntList(vf)      (I64 *) oneList(vf)
+#define oneRealList(vf)     (double *) oneList(vf)
 #define oneNextString(vf,s) (s + strlen(s) + 1)
 
   // Access field information.  The index x of a list object is not required as there is
