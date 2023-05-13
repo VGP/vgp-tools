@@ -12,7 +12,7 @@ VGP files are container for objects of a single *type*.  There are *primary* typ
 which has its own schema, and *secondary* types which are specialisations of a primary type for
 particular applications, requiring particular properties or fields to be present.
 Every primary and secondary file type is assigned a 3-letter lower case string, that can be used as a filename suffix, e.g. dataset1.seq
-or dataset2.pbr.  For example, from the [standard  VGP sequence sequence schema](https://github.com/VGP/vgp-tools/blob/master/VGP-sequence-schema.md),
+or dataset2.pbr.  For example, from the [standard  VGP sequence schema](https://github.com/VGP/vgp-tools/blob/master/VGP/docs/VGP-sequence-schema.md),
 
 - **.seq**   primary file type for sequence objects
 	- **.irp** for Illumina read pairs
