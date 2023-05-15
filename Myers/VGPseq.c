@@ -600,7 +600,7 @@ static void *fast_output_thread(void *arg)
                       if (GROUP)
                         { if (strncmp(lane,last,glen) != 0)
                             { oneInt(vf,0) = 0;
-                              oneInt(vf,1) = glen;
+                              // oneInt(vf,1) = glen;
                               oneWriteLine(vf,'g',glen,lane);
                             }
                         }
@@ -663,10 +663,10 @@ static void *fast_output_thread(void *arg)
                       line[olen++] = c;
                     }
                   else
-                    { oneInt(vf,0) = olen;
+                    { // oneInt(vf,0) = olen;
                       oneWriteLine(vf,'S',olen,line);
                       if (QNAME)
-                        { oneInt(vf,0) = ilen;
+                        { // oneInt(vf,0) = ilen;
                           oneWriteLine(vf,'I',ilen,last);
                         }
                       olen  = 0;
@@ -696,7 +696,7 @@ static void *fast_output_thread(void *arg)
                     }
                   else
                     { if (QVS_OUT)
-                        { oneInt(vf,0) = olen;
+                        { // oneInt(vf,0) = olen;
                           oneWriteLine(vf,'Q',olen,line);
                         }
                       olen  = 0;
@@ -706,10 +706,10 @@ static void *fast_output_thread(void *arg)
 
                 case AEOL:
                   if (c == '>')
-                    { oneInt(vf,0) = olen;
+                    { // oneInt(vf,0) = olen;
                       oneWriteLine(vf,'S',olen,line);
                       if (QNAME)
-                        { oneInt(vf,0) = ilen;
+                        { // oneInt(vf,0) = ilen;
                           oneWriteLine(vf,'I',ilen,last);
                         }
                       olen  = 0;
@@ -739,7 +739,7 @@ static void *fast_output_thread(void *arg)
           off = 0;
         }
       if (state == AEOL)
-        { oneInt(vf,0) = olen;
+        { // oneInt(vf,0) = olen;
           oneWriteLine(vf,'S',olen,line);
           olen  = 0;
         }
@@ -1655,16 +1655,16 @@ static void *bam_output_thread(void *arg)
                 }
             }
 
-          oneInt(vf,0) = theR->len;
+          // oneInt(vf,0) = theR->len;
           oneWriteLine(vf,'S',theR->len,theR->seq);
     
           if (hasQV && QVS_OUT)
-            { oneInt(vf,0) = theR->len;
+            { // oneInt(vf,0) = theR->len;
               oneWriteLine(vf,'Q',theR->len,theR->qvs);
             }
 
           if (QNAME)
-            { oneInt(vf,0) = theR->hlen;
+            { // oneInt(vf,0) = theR->hlen;
               oneWriteLine(vf,'I',theR->hlen,theR->header);
             }
         }
@@ -1965,7 +1965,7 @@ static void *cram_output_thread(void *arg)
                 }
             }
 
-          oneInt(vf,0) = rec->len;
+          // oneInt(vf,0) = rec->len;
           oneWriteLine(vf,'S',rec->len,rec->s->seqs_blk->data+rec->seq);
 
           qual = rec->s->qual_blk->data+rec->qual;
@@ -1973,12 +1973,12 @@ static void *cram_output_thread(void *arg)
             { int i;
               for (i = 0; i < rec->len; i++)
                 qual[i] += 33;
-              oneInt(vf,0) = rec->len;
+              // oneInt(vf,0) = rec->len;
               oneWriteLine(vf,'Q',rec->len,qual);
             }
 
           if (QNAME)
-            { oneInt(vf,0) = rec->name_len;
+            { // oneInt(vf,0) = rec->name_len;
               oneWriteLine(vf,'I',rec->name_len,rec->s->name_blk->data+rec->name);
             }
         }

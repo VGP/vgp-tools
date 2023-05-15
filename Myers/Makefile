@@ -6,8 +6,8 @@ ALL = VGPzip VGPseq VGPpair VGPpacbio VGPcloud Dazz2pbr Dazz2sxs VGPpipe VGPtime
 
 all: deflate.lib libhts.a $(ALL)
 
-ONE_LIB = ../Core/ONElib.c
-ONE_DPND = $(ONE_LIB) ../Core/ONElib.h VGPschema.h
+ONE_LIB = ONElib.c
+ONE_DPND = $(ONE_LIB) ONElib.h VGPschema.h
 
 GENE_CORE = gene_core.c LIBDEFLATE/libdeflate.a
 GENE_DPND = $(GENE_CORE) gene_core.h

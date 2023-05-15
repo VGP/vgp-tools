@@ -13,7 +13,7 @@
 
 #include "gene_core.h"
 #include "msd.sort.h"
-#include "../Core/ONElib.h"
+#include "ONElib.h"
 
 #include "VGPschema.h"
 
@@ -149,12 +149,71 @@ static uint8 *Uncompress_SEQ(uint8 *src, char *s, int len)
 
 //  Optimized ReadLine optimized to read binary S-line without decompression
 
+static inline int intGet (unsigned char *u, I64 *pval)
+{ switch (u[0] >> 5)
+  { case 2: case 3: // single byte positive
+      *pval = (I64) (u[0] & 0x3f); return (1);
+    case 6: case 7: // single byte negative
+      *pval =  (I64) u[0] | 0xffffffffffffff00; return (1);
+    case 1: // two bytes positive
+      *pval = (I64) (u[0] & 0x1f) << 8 | (I64)u[1]; return (2);
+      *pval = - ((I64) (u[0] & 0x1f) << 8 | (I64)u[1]); return (2);
+    case 0:
+      switch (u[0] & 0x07)
+      { case 0: fprintf(stderr,"%s: *FATAL* intpacking error\n",Prog_Name); exit (1);
+        case 1: *pval = *(I64*)(u+1) & 0x0000000000ffff; return 3;
+        case 2: *pval = *(I64*)(u+1) & 0x00000000ffffff; return 4;
+        case 3: *pval = *(I64*)(u+1) & 0x000000ffffffff; return 5;
+        case 4: *pval = *(I64*)(u+1) & 0x0000ffffffffff; return 6;
+        case 5: *pval = *(I64*)(u+1) & 0x00ffffffffffff; return 7;
+        case 6: *pval = *(I64*)(u+1) & 0xffffffffffffff; return 8;
+        case 7: *pval = *(I64*)(u+1); return (9);
+      }
+    case 4:
+      switch (u[0] & 0x07)
+      { case 0: fprintf(stderr,"%s: *FATAL* intpacking error\n",Prog_Name); exit (1);
+        case 1: *pval = *(I64*)(u+1) | 0xffffffffffff0000; return 3;
+        case 2: *pval = *(I64*)(u+1) | 0xffffffffff000000; return 4;
+        case 3: *pval = *(I64*)(u+1) | 0xffffffff00000000; return 5;
+        case 4: *pval = *(I64*)(u+1) | 0xffffff0000000000; return 6;
+        case 5: *pval = *(I64*)(u+1) | 0xffff000000000000; return 7;
+        case 6: *pval = *(I64*)(u+1) | 0xff00000000000000; return 8;
+        case 7: *pval = *(I64*)(u+1); return (9);
+      }
+  }
+  return (0);
+}
+
+static inline I64 ltfRead (FILE *f)
+{ unsigned char u[16];
+  int64         val;
+
+  u[0] = getc (f);
+  if (u[0] & 0x40)
+    intGet (u, &val);
+  else if (u[0] & 0x20)
+    { u[1] = getc (f);
+      intGet (u, &val);
+    }
+  else
+    { int n = 1 + (u[0] & 0x0f);
+      unsigned char *v = &u[1];
+      while (n--)
+        *v++ = getc(f);
+      n = intGet (u, &val);
+    }
+
+  return (val);
+}
+
 static char read_raw_seq(OneFile *vf)
-{ U8        x;
+{ uint8     x;
   char      t;
   OneInfo  *li;
 
-  x = getc(vf->f);
+  vf->lineBuf[0] = x = getc(vf->f);
+  if (vf->linePos < 127)
+    vf->lineBuf[vf->linePos++] = x;
   if (feof(vf->f) || x == '\n')
     return (0);
 
@@ -165,37 +224,28 @@ static char read_raw_seq(OneFile *vf)
     }
   else
     return (0);
-  vf->lineType = t;
+
+  vf->lineType = 'S';
 
   li = vf->info['S'];
 
-  { int64 nBits;
+  vf->field[0].i = ltfRead(vf->f);
 
-    if (x & 0x1)
-      { nBits = (U8) getc(vf->f);
-        if (fread(vf->codecBuf,((nBits+7) >> 3),1,vf->f) != 1)
-          { fprintf(stderr,"%s: *FATAL* fail to read compressed fields\n",Prog_Name);
-            exit (1);
-          }
-      }
-    else
-      { if (fread(vf->field,sizeof(OneField),1,vf->f) != (unsigned long) 1)
-          { fprintf(stderr,"%s: *FATAL* fail to read fields\n",Prog_Name);
-            exit (1);
-          }
-      }
-
-    if (fread(&nBits,sizeof(I64),1,vf->f) != 1)
-      { fprintf(stderr,"%s: *FATAL* fail to read list nBits\n",Prog_Name);
-        exit (1);
-      }
-    if (fread(vf->codecBuf,((nBits+7) >> 3),1,vf->f) != 1)
-      { fprintf(stderr,"%s: *FATAL* fail to read compressed list\n",Prog_Name);
-        exit (1);
-      }
-
-    vf->field[0].i = (nBits >> 1);
-  }
+  if (x & 0x1)
+    { vf->nBits = ltfRead(vf->f);
+      if (fread(vf->codecBuf,((vf->nBits+7) >> 3),1,vf->f) != 1)
+        { fprintf(stderr,"%s: *FATAL* fail to read compressed list\n",Prog_Name);
+          exit (1);
+        }
+    }
+  else
+    { unsigned long listSize = oneLen(vf);
+      if (fread(li->buffer,1,listSize,vf->f) != listSize)
+        { fprintf(stderr,"%s: *FATAL* fail to read fields\n",Prog_Name);
+          exit (1);
+        }
+      vf->nBits = 0;
+    }
 
   { U8 peek = getc(vf->f);    // check if next line is a comment - if so then read it
     ungetc(peek,vf->f);
@@ -281,7 +331,7 @@ static void *barcodes_thread(void *arg)
   rlen  = 0;
   flen  = 0;
   for (o = beg; o < end; o += 2)
-    { t = read_raw_seq(vf);
+    { t = oneReadLine(vf);
       if (t != 'S')
         { parm->error = ERROR_SLINE;
           parm->where = o;
@@ -295,7 +345,7 @@ static void *barcodes_thread(void *arg)
           continue;
         }
 
-      n = oneInt(vf,0);
+      n = oneLen(vf);
       if (flen == 0)
         flen = n;
       else if (flen != n)
@@ -310,22 +360,23 @@ static void *barcodes_thread(void *arg)
           parm->where = o;
           return (NULL);
         }
-      if (oneInt(vf,0) != flen)
+      if (oneLen(vf) != flen)
         { parm->error = ERROR_QLEN;
           parm->where = o;
           return (NULL);
         }
 
+      oneString(vf);
       for (n = 0; n < flen; n++)
         used[(int) fqvs[n]] += 1;
 
-      t = read_raw_seq(vf);
+      t = oneReadLine(vf);
       if (t != 'S')
         { parm->error = ERROR_SLINE;
           parm->where = o+1;
           return (NULL);
         }
-      n = oneInt(vf,0);
+      n = oneLen(vf);
       if (rlen == 0)
         rlen = n;
       else if (rlen != n)
@@ -340,13 +391,18 @@ static void *barcodes_thread(void *arg)
           parm->where = o+1;
           return (NULL);
         }
-      if (oneInt(vf,0) != rlen)
+      if (oneLen(vf) != rlen)
         { parm->error = ERROR_QLEN;
           parm->where = o+1;
           return (NULL);
         }
+
+      oneString(vf);
       for (n = 0; n < rlen; n++)
         used[(int) fqvs[n]] += 1;
+
+      if (o+2 >= end)
+        break;
 
       t = oneReadLine(vf);
       if (t == 'g')
@@ -1095,7 +1151,7 @@ static void *load_thread(void *arg)
 
   o = beg;
   while (1)
-    { read_raw_seq(vf);
+    { oneReadLine(vf);
 
       bar = *dcode;
 
@@ -1121,13 +1177,15 @@ static void *load_thread(void *arg)
       aptr += fclen;
 
       oneReadLine(vf);
+      oneString(vf);
       aptr = Compress_QV(aptr,flen,fqvs,qbits,map);
 
-      read_raw_seq(vf);
+      oneReadLine(vf);
       memcpy(aptr,bcode,rclen);
       aptr += rclen;
 
       oneReadLine(vf);
+      oneString(vf);
       aptr = Compress_QV(aptr,rlen,fqvs,qbits,map);
 
       bptr[byte] = aptr - array;
@@ -1220,18 +1278,15 @@ static void *output_thread(void *arg)
 
       if (code != last)
         { oneInt(vg,0) = 0;
-          oneInt(vg,1) = 16;
           oneWriteLine(vg,'g',16,forw);
           last = code;
         }
 
       oneWriteLine(vg,'P',0,NULL);
 
-      oneInt(vg,0) = flen-23;
       oneWriteLine(vg,'S',flen-23,forw+23);
       oneWriteLine(vg,'Q',flen-23,fqvs+23);
 
-      oneInt(vg,0) = rlen;
       oneWriteLine(vg,'S',rlen,revr);
       oneWriteLine(vg,'Q',rlen,rqvs);
     }
@@ -1787,6 +1842,7 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
     }
+
     //  External sort on remaining 3 bytes of bar-code (1st 4 bytes of each record)
 
     { int64 *nucks = bucks + (NTHREADS-1)*256;
@@ -1822,7 +1878,7 @@ int main(int argc, char *argv[])
           fflush(stderr);
         }
 
-      vg = oneFileOpenWriteNew(gname,schema,"x10",true,NTHREADS);
+      vg = oneFileOpenWriteNew(gname,schema,"10x",true,NTHREADS);
       if (vg == NULL)
         { fprintf(stderr,"%s: Cannot open %s.10x for writing\n",Prog_Name,root);
           exit (1);

@@ -1,23 +1,35 @@
-# The One Tools C library interface
+
+# The 1-Code C-library Interface For Developers
+
+### Authors:  Gene Myers & Richard Durbin
+### Last Update: October 19, 2022
 
 The interface is defined in `Onelib.h`.  There are 23 functions and 9 macros, with one primary
-type `OneFile` which maintains information about the file being read or written, including the current line.
+type `OneFile` which maintains information about the file being read or written, including the current line.  All the library code is in the single file `ONElib.c`, so that any project requires simply having a copy of ONElib.c and ONElib.h in the source directory.
 
 ## Synopsis
 
-As a brief synopsis, the following reads a sequence file, prints out some simple stats, and writes a binary file containing the reverse-complemented sequences.
+As a brief synopsis, the following example reads a 1-code sequence file, prints out some simple stats, and writes a binary file containing the reverse-complemented sequences.
 
 ```
 {  int totLen   = 0;
    int totCount = 0;
+
+   // 0 for read schema from file, 1 for single thread
    
-   OneFile *in = oneFileOpenRead(inFile, 0, "seq", 1); // 0 for read schema from file, 1 for single thread
+   OneFile *in = oneFileOpenRead(inFile, 0, "seq", 1);
    if (in == NULL) 
-     die("can't open sequence file %s to read", inFile);
-   
-   OneFile *out = oneFileOpenWriteFrom(outFile, in, false, true, 1); // false for don't use counts from in's header, true for binary, 1 for single thread
+     { fprintf(stderr, "Can't open sequence file %s to read\n", inFile);
+       exit (1);
+     }
+ 
+   // false for don't use counts from in's header, true for binary, 1 for single thread
+    
+   OneFile *out = oneFileOpenWriteFrom(outFile, in, false, true, 1);
    if (out == NULL)
-     die("can't open VGP sequence file %s to write", outFile);
+     { fprintf(stderr, "Can't open sequence file %s to write\n", outFile);
+       exit (1);
+     }
      
    oneAddProvenance(out,"revcomp","1.0","revcomp inFile outFile",0);
    oneWriteHeader(out);
@@ -36,23 +48,31 @@ As a brief synopsis, the following reads a sequence file, prints out some simple
    oneFileClose(out); // NB this writes out the footer as well as closing the file - don't omit!
 }
 ```
+
+
 In the above, there is no check that the schema of the file fits the expectations in the code below.  It would have been possible to carry out such a check using
 
 ```
-  if (! oneFileCheckSchema (in, "D S 1 3 DNA\nD C 1 3 INT\n")) die ("schema mismatch") ;
+  if (! oneFileCheckSchema (in, "D S 1 3 DNA\nD C 1 3 INT\n"))
+    { fprintf(stderr, "Schema mismatch\n");
+      exit (1);
+    }
 ```
-which confirms that there are S lines with a single field encoding DNA, and C lines with a single field encoding an integer.  Alternatively, one could define the schema ahead of opening the file as in
+which confirms that there are S lines with a single field encoding DNA, and C lines with a single field encoding an integer.  Alternatively, one could define the schema ahead of opening the file as 
+in
+
 ```
-  OneSchema *schema = oneSchemaCreateFromText ("P 3 seq\nD S 1 3 DNA\nD C 1 3 INT\n") ;
-  OneFile *in = oneFileOpenRead (inFile, schema, "seq", 1) ;
-  oneSchemaDestroy (schema) ;
+  OneSchema *schema = oneSchemaCreateFromText ("P 3 seq\nD S 1 3 DNA\nD C 1 3 INT\n");
+  OneFile *in = oneFileOpenRead (inFile, schema, "seq", 1);
+  oneSchemaDestroy (schema);
 ```
+
 Note that in this case it is necessary to define the file type "seq" in the schema, since a general schema can specify multiple file types.  The schema can also be read from file using oneSchemacreateFromFile().  
 
 Also there is a more subtle difference, in that the first version checks that the S and C lines are present and specified as required while allowing additional unspecified line types, while the second version requires that the file only contain S and C lines.  i.e. for oneFileCheckSchema() all defined lines must be in the file, and for a schema given as an argument to oneFileOpenRead all lines the in file must be in the schema.
 
 
-# INTERFACE
+# Interface
 
 The following is derived from the file `ONElib.h` which provides the entire interface.  First we provide the subroutine interface, then the data types (reversing the order in a normal C header file).
 
@@ -261,17 +281,36 @@ to revert to a default system buffer if 'buffer' = NULL.  The previous buffer
 (if any) is freed.  The user must ensure that a buffer they supply is large
 enough. By the way, this buffer is overwritten with each new line read of the given type.
 
-# DATA TYPES
+# Data Types
 
 ```
 typedef int64_t       I64;
 typedef unsigned char U8;
 
-typedef enum { oneINT = 1, oneREAL, oneCHAR, oneSTRING, oneINT_LIST, oneREAL_LIST, oneSTRING_LIST, oneDNA } OneType;
-static char* oneTypeString[] = { 0, "INT", "REAL", "CHAR", "STRING", "INT_LIST", "REAL_LIST", "STRING_LIST", "DNA" };
+typedef enum { oneINT = 1,
+               oneREAL,
+               oneCHAR,
+               oneSTRING,
+               oneINT_LIST,
+               oneREAL_LIST,
+               oneSTRING_LIST,
+               oneDNA 
+             } OneType;
+                                
+static char* oneTypeString[] =
+              { NULL,
+                "INT",
+                "REAL",
+                "CHAR",
+                "STRING",
+                "INT_LIST",
+                "REAL_LIST",
+                "STRING_LIST",
+                "DNA"
+              };
 ```
-Basic data types.  Integers are all as 64-bit, and reals are stored as
-doubles (8 byte).
+
+Basic data types.  Integers are all as 64-bit, and reals are stored as doubles (8 byte).
 
 ```
 typedef union
@@ -281,6 +320,7 @@ typedef union
     I64    len; // for lists: top 8 bits encode excess bytes, low 56 bits encode length
   } OneField;
 ```
+
 Encoding of a data value.
 
 ```
@@ -304,12 +344,14 @@ typedef struct
     I64 groupTotal;
   } OneCounts;
 ```
+
 Natural data structures for programmatic access to information in the header. Note that all of these should be used read only.
 
 ```
 typedef void OneCodec; // forward declaration of opaque type for compression codecs
 extern  OneCodec *DNAcodec;
 ```
+
 OneCodecs are a private package for binary one file
 compression. DNAcodec is a special pre-existing compressor one should
 use for DNA. It compresses every base to 2-bits, where any non-acgt
@@ -323,24 +365,29 @@ typedef struct
     int       nField;           // number of fields
     OneType  *fieldType;        // type of each field
     char     *comment;          // the comment on the definition line in the schema
-	// plus private fields
+	...                        
+	 // plus private fields
 } OneInfo;
 ```
+
 Record for a particular line type.  There is at most one list element per line type.  Again, all read only.
 
 ```
 typedef struct OneSchema {} OneSchema ;
 ```
+
 The schema type, all private to the package.  Internally a schema is stored as a linked list of OneSchema objects, with the first holding the (hard-coded) schema for the header and footer, and the remainder each holding the schema definition data for one primary file type.
 
 And, finally, the main OneFile type - this is the primary handle used by the end user.
+
 ```
 typedef struct
   {
     // these fields may be set by the user
 
-    BOOL           isCheckString;      // set if want to validate strings char by char - slows down reading
-    I64            codecTrainingSize;  // number of bytes to see before building codec - default 100k - can set before writing
+    BOOL           isCheckString;      // set to validate strings char by char - slows down reading
+    I64            codecTrainingSize;  // number of bytes to see before building codec --
+                                       //    default 100k - can set before writing
 
     // these fields may be read by user - but don't change them!
 
@@ -361,12 +408,12 @@ typedef struct
     OneField      *field;              // used to hold the current line - accessed by macros
     OneInfo       *info[128];          // all the per-linetype information
  
-    // the remainder is private to the package
+    ...                                // the remainder is private to the package
     
-  } OneFile;                      //   the footer will be in the concatenated result.
+  } OneFile;                           // the footer will be in the concatenated result.
 ```
 
-# A BIT ABOUT THE FORMAT OF BINARY FILES
+# A Bit About the Format of Binary 1-Code Files
 
 ```
 <bin file> <- <ASCII Prolog> <$-line> <binary data> <footer> <^-line> <footer-size:int64>
