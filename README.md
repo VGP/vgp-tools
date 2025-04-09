@@ -3,7 +3,11 @@
 One-Code is a data representation framework with a growing collection of associated software,
 initially designed in the context of the
 [Vertebrate Genomes Project](http://vertebrategenomesproject.org) (VGP) to operate on all the forms of 
-data involved in a DNA sequencing and assembly project.   Data is represented in a very simple ASCII file format that is easy for both humans and
+data involved in a DNA sequencing and assembly project. It developed into a general purpose schema-driven data representation framework, providing interconvertible binary and ascii record support, with (for the binary form) compression and indexing.
+
+**The version of OneCode in this repository is frozen and out of date.  The latest version can be found at [https:github.com/thegenemyers/ONEcode](https:github.com/thegenemyers/ONEcode).**
+
+Data is represented in a very simple ASCII file format that is easy for both humans and
 programs to read and interpret.  Moreover, there is a corresponding compressed and indexed binary
 version for each ASCII file so that production tools built with the One-Code library are very efficient in time and the
 size of the data files they manipulate.  All fields are strongly typed and a specific collection of data types constituting a *schema* is
